@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -35,11 +36,13 @@ func (d *GroupDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Group ID",
-				Required:            true,
+				Computed:            true,
+				Optional:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Group name identifier",
 				Computed:            true,
+				Optional:            true,
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Group issued by",
@@ -88,11 +91,40 @@ func (d *GroupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	group, err := d.client.Groups.Get(ctx, data.Id.ValueString())
+	var group *api.Group
+	var err error
+	if !data.Id.IsUnknown() && !data.Id.IsNull() {
+		group, err = d.client.Groups.Get(ctx, data.Id.ValueString())
+		if !data.Name.IsNull() && !data.Name.IsUnknown() && data.Name.ValueString() != group.Name {
+			group = nil
+		}
+	} else if !data.Name.IsUnknown() && !data.Name.IsNull() {
+		var groups []api.Group
+		groups, err = d.client.Groups.List(ctx)
+		if err == nil {
+			for _, g := range groups {
+				if g.Name == data.Name.ValueString() {
+					if group != nil {
+						resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple groups")
+					}
+					group = &g
+				}
+			}
+
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	if err != nil {
 		resp.Diagnostics.AddError("Error getting Group", err.Error())
 		return
+	}
+
+	if group == nil {
+		resp.Diagnostics.AddError("No match", "Group matching parameters not found")
 	}
 
 	resp.Diagnostics.Append(groupAPIToTerraform(ctx, group, &data)...)

@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -36,14 +37,17 @@ func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "User ID",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"email": schema.StringAttribute{
 				MarkdownDescription: "User Email",
+				Optional:            true,
 				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "User Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"last_login": schema.StringAttribute{
@@ -121,19 +125,32 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		resp.Diagnostics.AddError("Error listing users", err.Error())
 		return
 	}
-	for _, user := range users {
-		if user.Id == data.Id.ValueString() {
-			resp.Diagnostics.Append(userAPIToTerraform(ctx, &user, &data)...)
 
-			if resp.Diagnostics.HasError() {
-				return
+	var user *api.User
+
+	for _, u := range users {
+		match := 0
+		match += matchString(u.Id, data.Id)
+		match += matchString(u.Name, data.Name)
+		match += matchString(u.Email, data.Email)
+		if match > 0 {
+			if user != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple users")
 			}
-
-			// Save data into Terraform state
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-			return
+			user = &u
 		}
 	}
 
-	data.Id = types.StringNull()
+	if user == nil {
+		resp.Diagnostics.AddError("No match", "User matching parameters not found")
+	}
+
+	resp.Diagnostics.Append(userAPIToTerraform(ctx, user, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Save data into Terraform state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
