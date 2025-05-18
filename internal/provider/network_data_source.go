@@ -60,10 +60,6 @@ func (d *NetworkDataSource) Schema(ctx context.Context, req datasource.SchemaReq
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
-			"routing_peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Total number of peers inside all Network Routers",
-				Computed:            true,
-			},
 		},
 	}
 }

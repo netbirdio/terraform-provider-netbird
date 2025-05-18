@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -37,13 +36,11 @@ type Group struct {
 
 // GroupModel describes the resource data model.
 type GroupModel struct {
-	Id             types.String `tfsdk:"id"`
-	Name           types.String `tfsdk:"name"`
-	Peers          types.List   `tfsdk:"peers"`
-	Resources      types.List   `tfsdk:"resources"`
-	PeersCount     types.Int32  `tfsdk:"peers_count"`
-	ResourcesCount types.Int32  `tfsdk:"resources_count"`
-	Issued         types.String `tfsdk:"issued"`
+	Id        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Peers     types.List   `tfsdk:"peers"`
+	Resources types.List   `tfsdk:"resources"`
+	Issued    types.String `tfsdk:"issued"`
 }
 
 func (r *Group) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -65,16 +62,6 @@ func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				MarkdownDescription: "Group name identifier",
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Group peers count",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
-			},
-			"resources_count": schema.Int32Attribute{
-				MarkdownDescription: "Group resources count",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Group issued by",
@@ -124,8 +111,6 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	data.Id = types.StringValue(group.Id)
 	data.Name = types.StringValue(group.Name)
 	data.Issued = types.StringValue(string(*group.Issued))
-	data.PeersCount = types.Int32Value(int32(group.PeersCount))
-	data.ResourcesCount = types.Int32Value(int32(group.ResourcesCount))
 	var peers []string
 	for _, v := range group.Peers {
 		peers = append(peers, v.Id)

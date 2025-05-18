@@ -41,14 +41,6 @@ func (d *GroupDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 				MarkdownDescription: "Group name identifier",
 				Computed:            true,
 			},
-			"peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Group peers count",
-				Computed:            true,
-			},
-			"resources_count": schema.Int32Attribute{
-				MarkdownDescription: "Group resources count",
-				Computed:            true,
-			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Group issued by",
 				Computed:            true,

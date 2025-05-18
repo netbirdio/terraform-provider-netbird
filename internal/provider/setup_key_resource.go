@@ -40,17 +40,6 @@ type SetupKey struct {
 
 // SetupKeyModel describes the resource data model.
 type SetupKeyModel struct {
-	/*
-		"type": "reusable",
-		"usage_limit": 0,
-		"used_times": 2,
-		"state": "valid",
-		"auto_groups": ["ch8i4ug6lnn4g9hqv7m0"],
-		"ephemeral": true,
-		"allow_extra_dns_labels": true,
-		"valid": true,
-		"revoked": false,
-	*/
 	Id                  types.String `tfsdk:"id"`
 	Name                types.String `tfsdk:"name"`
 	Expires             types.String `tfsdk:"expires"`
@@ -139,19 +128,22 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			},
 			"auto_groups": schema.ListAttribute{
 				Computed:            true,
+				Optional:            true,
 				MarkdownDescription: "",
 				ElementType:         types.StringType,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
 			"ephemeral": schema.BoolAttribute{
 				Computed:            true,
+				Optional:            true,
 				MarkdownDescription: "",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"allow_extra_dns_labels": schema.BoolAttribute{
 				Computed:            true,
+				Optional:            true,
 				MarkdownDescription: "",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"valid": schema.BoolAttribute{
 				Computed:            true,
@@ -160,6 +152,7 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			},
 			"revoked": schema.BoolAttribute{
 				Computed:            true,
+				Optional:            true,
 				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
@@ -313,7 +306,7 @@ func (r *SetupKey) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	})
 
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating User", err.Error())
+		resp.Diagnostics.AddError("Error updating Setup Key", err.Error())
 		return
 	}
 

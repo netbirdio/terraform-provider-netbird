@@ -35,13 +35,12 @@ type Network struct {
 
 // NetworkModel describes the resource data model.
 type NetworkModel struct {
-	Id               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	RoutingPeerCount types.Int32  `tfsdk:"routing_peers_count"`
-	Resources        types.List   `tfsdk:"resources"`
-	Routers          types.List   `tfsdk:"routers"`
-	Policies         types.List   `tfsdk:"policies"`
+	Id          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Description types.String `tfsdk:"description"`
+	Resources   types.List   `tfsdk:"resources"`
+	Routers     types.List   `tfsdk:"routers"`
+	Policies    types.List   `tfsdk:"policies"`
 }
 
 func (r *Network) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -84,10 +83,6 @@ func (r *Network) Schema(ctx context.Context, req resource.SchemaRequest, resp *
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
-			"routing_peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Total number of peers inside all Network Routers",
-				Computed:            true,
-			},
 		},
 	}
 }
@@ -118,7 +113,6 @@ func networkAPIToTerraform(ctx context.Context, network *api.Network, data *Netw
 	data.Id = types.StringValue(network.Id)
 	data.Name = types.StringValue(network.Name)
 	data.Description = types.StringPointerValue(network.Description)
-	data.RoutingPeerCount = types.Int32Value(int32(network.RoutingPeersCount))
 	data.Resources, d = types.ListValueFrom(ctx, types.StringType, network.Resources)
 	ret.Append(d...)
 	data.Routers, d = types.ListValueFrom(ctx, types.StringType, network.Routers)

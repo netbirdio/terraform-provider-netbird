@@ -33,7 +33,7 @@ func (d *DNSSettingsDataSource) Schema(ctx context.Context, req datasource.Schem
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Read DNS Management Settings",
 		Attributes: map[string]schema.Attribute{
-			"extra_dns_labels": schema.ListAttribute{
+			"disabled_management_groups": schema.ListAttribute{
 				MarkdownDescription: "Groups whose DNS management is disabled",
 				Computed:            true,
 				ElementType:         types.StringType,
