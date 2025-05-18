@@ -1,6 +1,6 @@
 # Copyright (c) HashiCorp, Inc.
 
-resource "netbird_account" "example" {
+resource "netbird_account_settings" "example" {
   jwt_allow_groups = false
 }
 

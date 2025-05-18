@@ -24,20 +24,20 @@ import (
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
-var _ resource.Resource = &Account{}
-var _ resource.ResourceWithImportState = &Account{}
+var _ resource.Resource = &AccountSettings{}
+var _ resource.ResourceWithImportState = &AccountSettings{}
 
-func NewAccount() resource.Resource {
-	return &Account{}
+func NewAccountSettings() resource.Resource {
+	return &AccountSettings{}
 }
 
-// Account defines the resource implementation.
-type Account struct {
+// AccountSettings defines the resource implementation.
+type AccountSettings struct {
 	client *netbird.Client
 }
 
-// AccountModel describes the resource data model.
-type AccountModel struct {
+// AccountSettingsModel describes the resource data model.
+type AccountSettingsModel struct {
 	Id                                 types.String `tfsdk:"id"`
 	JwtAllowGroups                     types.List   `tfsdk:"jwt_allow_groups"`
 	JwtGroupsClaimName                 types.String `tfsdk:"jwt_groups_claim_name"`
@@ -54,11 +54,11 @@ type AccountModel struct {
 	NetworkTrafficPacketCounterEnabled types.Bool   `tfsdk:"network_traffic_packet_counter_enabled"`
 }
 
-func (r *Account) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_account"
+func (r *AccountSettings) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_account_settings"
 }
 
-func (r *Account) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Manage Account-wide Settings",
@@ -152,7 +152,7 @@ func (r *Account) Schema(ctx context.Context, req resource.SchemaRequest, resp *
 	}
 }
 
-func (r *Account) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *AccountSettings) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
@@ -172,7 +172,7 @@ func (r *Account) Configure(ctx context.Context, req resource.ConfigureRequest, 
 	r.client = client
 }
 
-func accountAPIToTerraform(ctx context.Context, account *api.Account, data *AccountModel) diag.Diagnostics {
+func accountAPIToTerraform(ctx context.Context, account *api.Account, data *AccountSettingsModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(account.Id)
 	data.JwtAllowGroups, ret = types.ListValueFrom(ctx, types.StringType, account.Settings.JwtAllowGroups)
@@ -191,8 +191,8 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	return ret
 }
 
-func (r *Account) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data AccountModel
+func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data AccountSettingsModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -203,7 +203,7 @@ func (r *Account) Create(ctx context.Context, req resource.CreateRequest, resp *
 
 	accounts, err := r.client.Accounts.List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting Account", err.Error())
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
 
@@ -231,7 +231,7 @@ func (r *Account) Create(ctx context.Context, req resource.CreateRequest, resp *
 
 	account, err = r.client.Accounts.Update(ctx, account.Id, updateRequest)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Account", err.Error())
+		resp.Diagnostics.AddError("Error updating AccountSettings", err.Error())
 		return
 	}
 
@@ -245,8 +245,8 @@ func (r *Account) Create(ctx context.Context, req resource.CreateRequest, resp *
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *Account) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data AccountModel
+func (r *AccountSettings) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data AccountSettingsModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -263,7 +263,7 @@ func (r *Account) Read(ctx context.Context, req resource.ReadRequest, resp *reso
 			data.Id = types.StringNull()
 			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 		} else {
-			resp.Diagnostics.AddError("Error getting Account", err.Error())
+			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		}
 		return
 	}
@@ -278,8 +278,8 @@ func (r *Account) Read(ctx context.Context, req resource.ReadRequest, resp *reso
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *Account) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data AccountModel
+func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var data AccountSettingsModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -295,7 +295,7 @@ func (r *Account) Update(ctx context.Context, req resource.UpdateRequest, resp *
 
 	accounts, err := r.client.Accounts.List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting Account", err.Error())
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
 	account := &accounts[0]
@@ -323,7 +323,7 @@ func (r *Account) Update(ctx context.Context, req resource.UpdateRequest, resp *
 	account, err = r.client.Accounts.Update(ctx, data.Id.ValueString(), updateRequest)
 
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Account", err.Error())
+		resp.Diagnostics.AddError("Error updating AccountSettings", err.Error())
 		return
 	}
 
@@ -335,8 +335,8 @@ func (r *Account) Update(ctx context.Context, req resource.UpdateRequest, resp *
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *Account) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data AccountModel
+func (r *AccountSettings) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data AccountSettingsModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -348,6 +348,6 @@ func (r *Account) Delete(ctx context.Context, req resource.DeleteRequest, resp *
 	resp.Diagnostics.AddError("Not Implemented", "For account safety reasons, account deletion through Terraform is disabled, you can remove the resource from Terraform using 'terraform state rm netbird_account...'")
 }
 
-func (r *Account) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+func (r *AccountSettings) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

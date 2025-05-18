@@ -24,6 +24,4 @@ Read Group metadata and associated resources and peers, see [NetBird Docs](https
 - `issued` (String) Group issued by
 - `name` (String) Group name identifier
 - `peers` (List of String) List of peers ids
-- `peers_count` (Number) Group peers count
 - `resources` (List of String) List of network resource ids
-- `resources_count` (Number) Group resources count

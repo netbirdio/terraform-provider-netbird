@@ -75,7 +75,7 @@ func (p *NetBirdProvider) Configure(ctx context.Context, req provider.ConfigureR
 
 func (p *NetBirdProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewAccount,
+		NewAccountSettings,
 		NewDNSSettings,
 		NewGroup,
 		NewNameserverGroup,
@@ -97,7 +97,7 @@ func (p *NetBirdProvider) EphemeralResources(ctx context.Context) []func() ephem
 
 func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
-		NewAccountDataSource,
+		NewAccountSettingsDataSource,
 		NewDNSSettingsDataSource,
 		NewGroupDataSource,
 		NewNameserverGroupDataSource,
@@ -110,6 +110,7 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 		NewSetupKeyDataSource,
 		NewTokenDataSource,
 		NewUserDataSource,
+		NewPeersDataSource,
 	}
 }
 

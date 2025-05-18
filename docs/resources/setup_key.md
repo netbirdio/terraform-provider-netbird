@@ -23,18 +23,18 @@ Create and Manage Setup Keys, see [NetBird Docs](https://docs.netbird.io/how-to/
 
 ### Optional
 
+- `allow_extra_dns_labels` (Boolean)
+- `auto_groups` (List of String)
+- `ephemeral` (Boolean)
+- `revoked` (Boolean)
 - `usage_limit` (Number)
 
 ### Read-Only
 
-- `allow_extra_dns_labels` (Boolean)
-- `auto_groups` (List of String)
-- `ephemeral` (Boolean)
 - `expires` (String) SetupKey Expiration Date
 - `id` (String) SetupKey ID
 - `key` (String, Sensitive) Plaintext setup key
 - `last_used` (String) Last usage time
-- `revoked` (Boolean)
 - `state` (String)
 - `updated_at` (String) Creation timestamp
 - `used_times` (Number)

@@ -1,10 +1,15 @@
 # Copyright (c) HashiCorp, Inc.
 
-data "netbird_account" "example" {
+data "netbird_account_settings" "example" {
 }
 
 data "netbird_peer" "example" {
   id = "d057h0jl0ubs73cftnp0"
+}
+
+data "netbird_peers" "example" {
+  connected = false
+  groups    = ["All"]
 }
 
 data "netbird_token" "example" {

@@ -29,4 +29,3 @@ Create and manage Networks, see [NetBird Docs](https://docs.netbird.io/how-to/ne
 - `policies` (List of String) Policy IDs associated with resources inside this Network
 - `resources` (List of String) Network Resource IDs
 - `routers` (List of String) Network Router IDs
-- `routing_peers_count` (Number) Total number of peers inside all Network Routers

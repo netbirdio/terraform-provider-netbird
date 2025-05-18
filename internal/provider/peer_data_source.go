@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -35,7 +36,8 @@ func (d *PeerDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 		MarkdownDescription: "Read Peer information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 				MarkdownDescription: "Peer ID",
 			},
 			"name": schema.StringAttribute{
@@ -45,6 +47,7 @@ func (d *PeerDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 			},
 			"ip": schema.StringAttribute{
 				MarkdownDescription: "Peer  IP",
+				Optional:            true,
 				Computed:            true,
 			},
 			"connection_ip": schema.StringAttribute{
@@ -78,19 +81,19 @@ func (d *PeerDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 			"groups": schema.ListAttribute{
 				MarkdownDescription: "Peer groups",
 				ElementType:         types.StringType,
-				Optional:            true,
+				Computed:            true,
 			},
 			"ssh_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Enable SSH to Peer",
-				Optional:            true,
+				Computed:            true,
 			},
 			"inactivity_expiration_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Enable inactivity expiration for peer",
-				Optional:            true,
+				Computed:            true,
 			},
 			"approval_required": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether peer needs approval",
-				Optional:            true,
+				Computed:            true,
 			},
 			"dns_label": schema.StringAttribute{
 				MarkdownDescription: "Peer DNS Label",
@@ -110,7 +113,7 @@ func (d *PeerDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 			},
 			"login_expiration_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether login expiration is enabled for peer",
-				Optional:            true,
+				Computed:            true,
 			},
 			"login_expired": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether peer login is expired",
@@ -171,14 +174,61 @@ func (d *PeerDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
-	peer, err := d.client.Peers.Get(ctx, data.Id.ValueString())
+	var err error
+	var peer *api.Peer
+	if !data.Id.IsUnknown() && !data.Id.IsNull() {
+		// Lookup by Id
+		peer, err = d.client.Peers.Get(ctx, data.Id.ValueString())
+		if !data.Name.IsUnknown() && !data.Name.IsNull() && data.Name.ValueString() != peer.Name {
+			peer = nil
+		} else if !data.Ip.IsUnknown() && !data.Ip.IsNull() && data.Ip.ValueString() != peer.Ip {
+			peer = nil
+		}
+	} else {
+		var peers []api.Peer
+		peers, err = d.client.Peers.List(ctx)
+		if err == nil {
+			for _, p := range peers {
+				match := 0
+				if !data.Name.IsUnknown() && !data.Name.IsNull() {
+					if data.Name.ValueString() == p.Name {
+						match++
+					} else {
+						match = -1000
+					}
+				}
+				if !data.Ip.IsUnknown() && !data.Ip.IsNull() {
+					if data.Ip.ValueString() == p.Ip {
+						match++
+					} else {
+						match = -1000
+					}
+				}
+				if match > 0 {
+					if peer != nil {
+						resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple peers")
+					}
+					peer = &p
+				}
+			}
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
+			resp.Diagnostics.AddError("Not Found", "Peer not found")
 		} else {
 			resp.Diagnostics.AddError("Error getting Peer", err.Error())
 		}
+		return
+	}
+
+	if peer == nil {
+		resp.Diagnostics.AddError("Not Found", "Peer not found")
 		return
 	}
 

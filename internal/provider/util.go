@@ -4,7 +4,9 @@ package provider
 
 import (
 	"context"
+	"slices"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -52,4 +54,52 @@ func stringListDefaultPointer(ctx context.Context, a types.List, b *[]string) *[
 	var ret []string
 	a.ElementsAs(ctx, &ret, false)
 	return &ret
+}
+
+func matchString(a string, b types.String) int {
+	if b.IsNull() || b.IsUnknown() {
+		return 0
+	}
+	if b.ValueString() == a {
+		return 1
+	}
+	return -1000
+}
+
+func matchBool(a bool, b types.Bool) int {
+	if b.IsNull() || b.IsUnknown() {
+		return 0
+	}
+	if b.ValueBool() == a {
+		return 1
+	}
+	return -1000
+}
+
+func matchInt32(a int32, b types.Int32) int {
+	if b.IsNull() || b.IsUnknown() {
+		return 0
+	}
+	if b.ValueInt32() == a {
+		return 1
+	}
+	return -1000
+}
+
+func matchListString(ctx context.Context, a []string, b types.List) (int, diag.Diagnostics) {
+	if b.IsNull() || b.IsUnknown() {
+		return 0, nil
+	}
+	var ba []string
+	d := b.ElementsAs(ctx, &ba, false)
+	if d.HasError() {
+		return 0, d
+	}
+	for _, i := range ba {
+		if !slices.Contains(a, i) {
+			return -1000, d
+		}
+	}
+
+	return 1, d
 }

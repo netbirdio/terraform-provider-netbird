@@ -26,6 +26,7 @@ NetBird peer is a machine that runs the NetBird agent and is connected to the ne
 - `inactivity_expiration_enabled` (Boolean) Enable inactivity expiration for peer
 - `login_expiration_enabled` (Boolean) Indicates whether login expiration is enabled for peer
 - `name` (String) Peer Name
+- `prevent_delete` (Boolean) Prevent peer deletion through Terraform
 - `ssh_enabled` (Boolean) Enable SSH to Peer
 
 ### Read-Only

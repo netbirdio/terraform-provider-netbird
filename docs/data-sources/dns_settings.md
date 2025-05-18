@@ -17,4 +17,4 @@ Read DNS Management Settings
 
 ### Read-Only
 
-- `extra_dns_labels` (List of String) Groups whose DNS management is disabled
+- `disabled_management_groups` (List of String) Groups whose DNS management is disabled

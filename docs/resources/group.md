@@ -28,5 +28,3 @@ Create and assign Groups, see [NetBird Docs](https://docs.netbird.io/how-to/mana
 
 - `id` (String) Group ID
 - `issued` (String) Group issued by
-- `peers_count` (Number) Group peers count
-- `resources_count` (Number) Group resources count
