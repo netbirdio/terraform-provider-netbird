@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -84,8 +85,10 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"expiry_seconds": schema.Int32Attribute{
-				Required:            true,
-				MarkdownDescription: "Expiry time in seconds",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(0),
+				MarkdownDescription: "Expiry time in seconds (0 is unlimited)",
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
 			},
 			"updated_at": schema.StringAttribute{
@@ -105,7 +108,9 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"type": schema.StringAttribute{
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("one-off"),
 				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},

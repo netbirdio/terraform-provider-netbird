@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -87,7 +88,9 @@ func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, 
 			},
 			"metric": schema.Int32Attribute{
 				MarkdownDescription: "Route metric number. Lowest number has higher priority",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(9999),
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 				Validators:          []validator.Int32{int32validator.Between(1, 9999)},
 			},

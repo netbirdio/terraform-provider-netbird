@@ -15,8 +15,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -72,7 +74,9 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Description of the nameserver group",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"groups": schema.ListAttribute{
 				MarkdownDescription: "Distribution group IDs that defines group of peers that will use this nameserver group",
@@ -96,11 +100,15 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 						},
 						"ns_type": schema.StringAttribute{
 							MarkdownDescription: "Nameserver Type",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("udp"),
 						},
 						"port": schema.Int32Attribute{
 							MarkdownDescription: "Nameserver Port",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             int32default.StaticInt32(53),
 						},
 					},
 				},
@@ -120,7 +128,9 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 			},
 			"search_domains_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Search domain status for match domains. It should be true only if domains list is not empty.",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 		},
 	}

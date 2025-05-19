@@ -14,8 +14,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -148,11 +150,15 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 						},
 						"action": schema.StringAttribute{
 							MarkdownDescription: "Policy Rule Action (accept|drop)",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("accept"),
 						},
 						"protocol": schema.StringAttribute{
 							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all)",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("all"),
 						},
 						"ports": schema.ListAttribute{
 							MarkdownDescription: "Policy Rule Ports (mutually exclusive with port_ranges)",
@@ -177,11 +183,15 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 						},
 						"enabled": schema.BoolAttribute{
 							MarkdownDescription: "Policy Rule Enabled",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(true),
 						},
 						"bidirectional": schema.BoolAttribute{
 							MarkdownDescription: "Policy Rule Bidirectional",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(true),
 						},
 						"sources": schema.ListAttribute{
 							MarkdownDescription: "Policy Rule Source Groups (mutually exclusive with source_resource)",
@@ -237,7 +247,9 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Policy enabled",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(true),
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"source_posture_checks": schema.ListAttribute{
