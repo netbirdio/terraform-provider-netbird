@@ -13,9 +13,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -103,12 +104,77 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"permissions": schema.ObjectAttribute{
+			"permissions": schema.MapNestedAttribute{
 				Computed: true,
-				AttributeTypes: map[string]attr.Type{
-					"dashboard_view": types.StringType,
+				Optional: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"is_restricted": schema.BoolAttribute{
+							Optional: true,
+							Computed: true,
+							Default:  booldefault.StaticBool(false),
+						},
+						"modules": schema.MapNestedAttribute{
+							NestedObject: schema.NestedAttributeObject{
+								Attributes: map[string]schema.Attribute{
+									"networks": schema.MapNestedAttribute{
+										NestedObject: schema.NestedAttributeObject{
+											Attributes: map[string]schema.Attribute{
+												"read": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"create": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"update": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"delete": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+											},
+										},
+									},
+									"peers": schema.MapNestedAttribute{
+										NestedObject: schema.NestedAttributeObject{
+											Attributes: map[string]schema.Attribute{
+												"read": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"create": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"update": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+												"delete": schema.BoolAttribute{
+													Optional: true,
+													Computed: true,
+													Default:  booldefault.StaticBool(false),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 				},
-				PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+				PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 			},
 			"auto_groups": schema.ListAttribute{
 				MarkdownDescription: "User autogroups",
@@ -166,7 +232,14 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	data.Issued = types.StringValue(*user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
-	m, diag := types.ObjectValue(map[string]attr.Type{"dashboard_view": types.StringType}, map[string]attr.Value{"dashboard_view": types.StringValue(string(*user.Permissions.DashboardView))})
+	perms := struct {
+		IsRestricted bool `tfsdk:"is_restricted"`
+		Modules      map[string]map[string]bool
+	}{
+		IsRestricted: user.Permissions.IsRestricted,
+		Modules:      user.Permissions.Modules,
+	}
+	m, diag := types.ObjectValueFrom(ctx, map[string]attr.Type{}, perms)
 	ret.Append(diag...)
 	data.Permissions = m
 	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)

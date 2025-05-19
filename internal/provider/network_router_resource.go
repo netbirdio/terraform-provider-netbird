@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -85,6 +87,7 @@ func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "Peer Identifier associated with route. This property can not be set together with peer_groups",
 				Optional:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.String{stringvalidator.ConflictsWith(path.MatchRoot("peer_groups"))},
 			},
 			"metric": schema.Int32Attribute{
 				MarkdownDescription: "Route metric number. Lowest number has higher priority",
@@ -98,6 +101,7 @@ func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "Peers Group Identifier associated with route. This property can not be set together with peer",
 				Optional:            true,
 				ElementType:         types.StringType,
+				Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRoot("peer"))},
 			},
 		},
 	}

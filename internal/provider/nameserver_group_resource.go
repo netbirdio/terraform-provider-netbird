@@ -6,9 +6,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -71,6 +73,7 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Name of nameserver group",
 				Required:            true,
+				Validators:          []validator.String{stringvalidator.LengthBetween(1, 40)},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Description of the nameserver group",
@@ -82,6 +85,7 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 				MarkdownDescription: "Distribution group IDs that defines group of peers that will use this nameserver group",
 				ElementType:         types.StringType,
 				Required:            true,
+				Validators:          []validator.List{listvalidator.SizeAtLeast(1), listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 			"domains": schema.ListAttribute{
 				MarkdownDescription: "Match domain list. It should be empty only if primary is true.",
@@ -89,6 +93,7 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Computed:            true,
 				Default:             listdefault.StaticValue(types.ListValueMust(types.StringType, []attr.Value{})),
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile(`^(?i)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$`), "Invalid domain name"))},
 			},
 			"nameservers": schema.ListNestedAttribute{
 				MarkdownDescription: "Nameserver list",
@@ -203,6 +208,21 @@ func nameserverGroupTerraformToAPI(ctx context.Context, data *NameserverGroupMod
 		Primary:              boolDefault(data.Primary, len(data.Domains.Elements()) == 0),
 		SearchDomainsEnabled: boolDefault(data.SearchDomainsEnabled, false),
 		Nameservers:          make([]api.Nameserver, len(data.Nameservers.Elements())),
+	}
+
+	if nameserverGroupReq.SearchDomainsEnabled && nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "search_domains_enabled and primary cannot be both true")
+		return nameserverGroupReq, ret
+	}
+
+	if len(nameserverGroupReq.Domains) != 0 && nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "nameserver group primary status is true and domains are not empty, you should set either primary or domain")
+		return nameserverGroupReq, ret
+	}
+
+	if len(nameserverGroupReq.Domains) == 0 && !nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "nameserver group primary status is false and domains are empty, it should be primary or have at least one domain")
+		return nameserverGroupReq, ret
 	}
 
 	for i, j := range data.Nameservers.Elements() {

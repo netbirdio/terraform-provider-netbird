@@ -6,9 +6,12 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -61,26 +64,32 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 			"netbird_version_check": schema.SingleNestedBlock{
 				Attributes: map[string]schema.Attribute{
 					"min_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 				},
 			},
 			"os_version_check": schema.SingleNestedBlock{
 				Attributes: map[string]schema.Attribute{
 					"android_min_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 					"ios_min_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 					"darwin_min_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 					"linux_min_kernel_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 					"windows_min_kernel_version": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(version.VersionRegexpRaw), "Invalid NetBird Version")},
 					},
 				},
 			},
@@ -90,7 +99,8 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"country_code": schema.StringAttribute{
-									Required: true,
+									Required:   true,
+									Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile("^[a-zA-Z]{2}$"), "country code must be 2 letters (ISO 3166-1 alpha-2 format)")},
 								},
 								"city_name": schema.StringAttribute{
 									Optional: true,
@@ -101,7 +111,8 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 						Validators: []validator.List{listvalidator.SizeAtLeast(1)},
 					},
 					"action": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.OneOf("allow", "block")},
 					},
 				},
 			},
@@ -113,7 +124,8 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 						Validators:  []validator.List{listvalidator.SizeAtLeast(1)},
 					},
 					"action": schema.StringAttribute{
-						Optional: true,
+						Optional:   true,
+						Validators: []validator.String{stringvalidator.OneOf("allow", "block")},
 					},
 				},
 			},
@@ -144,6 +156,7 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "PostureCheck Name",
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "PostureCheck description",

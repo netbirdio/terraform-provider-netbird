@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -87,6 +89,8 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
+				// https://github.com/netbirdio/netbird/blob/main/management/server/account.go#L281
+				Validators: []validator.Int32{int32validator.Between(3600, 180*24*3600)},
 			},
 			"peer_inactivity_expiration": schema.Int32Attribute{
 				MarkdownDescription: "Period of time of inactivity after which peer session expires (seconds).",

@@ -6,9 +6,13 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -153,33 +157,39 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 							Optional:            true,
 							Computed:            true,
 							Default:             stringdefault.StaticString("accept"),
+							Validators:          []validator.String{stringvalidator.OneOf("accept", "drop")},
 						},
 						"protocol": schema.StringAttribute{
 							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all)",
 							Optional:            true,
 							Computed:            true,
 							Default:             stringdefault.StaticString("all"),
+							Validators:          []validator.String{stringvalidator.OneOf("tcp", "udp", "icmp", "all")},
 						},
 						"ports": schema.ListAttribute{
 							MarkdownDescription: "Policy Rule Ports (mutually exclusive with port_ranges)",
 							ElementType:         types.StringType,
 							Optional:            true,
 							Computed:            true,
+							Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRoot("port_ranges")), listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile("^([0-9]{,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"), "Port outside range 0 to 65535"))},
 						},
 						"port_ranges": schema.ListNestedAttribute{
 							MarkdownDescription: "Policy Rule Port Ranges (mutually exclusive with ports)",
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
 									"start": schema.Int32Attribute{
-										Required: true,
+										Required:   true,
+										Validators: []validator.Int32{int32validator.Between(0, 65535)},
 									},
 									"end": schema.Int32Attribute{
-										Required: true,
+										Required:   true,
+										Validators: []validator.Int32{int32validator.Between(0, 65535)},
 									},
 								},
 							},
-							Optional: true,
-							Computed: true,
+							Optional:   true,
+							Computed:   true,
+							Validators: []validator.List{listvalidator.ConflictsWith(path.MatchRoot("ports"))},
 						},
 						"enabled": schema.BoolAttribute{
 							MarkdownDescription: "Policy Rule Enabled",
@@ -198,6 +208,7 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 							ElementType:         types.StringType,
 							Optional:            true,
 							Computed:            true,
+							Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRoot("source_resource")), listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 						},
 						"source_resource": schema.ObjectAttribute{
 							MarkdownDescription: "Policy Rule Source Resource (mutually exclusive with sources)",
@@ -205,14 +216,16 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 								"id":   types.StringType,
 								"type": types.StringType,
 							},
-							Optional: true,
-							Computed: true,
+							Optional:   true,
+							Computed:   true,
+							Validators: []validator.Object{objectvalidator.ConflictsWith(path.MatchRoot("sources"))},
 						},
 						"destinations": schema.ListAttribute{
 							MarkdownDescription: "Policy Rule Destination Groups (mutually exclusive with destination_resource)",
 							ElementType:         types.StringType,
 							Optional:            true,
 							Computed:            true,
+							Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRoot("destination_resource")), listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 						},
 						"destination_resource": schema.ObjectAttribute{
 							MarkdownDescription: "Policy Rule Destination Resource (mutually exclusive with destinations)",
@@ -220,8 +233,9 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 								"id":   types.StringType,
 								"type": types.StringType,
 							},
-							Optional: true,
-							Computed: true,
+							Optional:   true,
+							Computed:   true,
+							Validators: []validator.Object{objectvalidator.ConflictsWith(path.MatchRoot("destinations"))},
 						},
 					},
 				},
