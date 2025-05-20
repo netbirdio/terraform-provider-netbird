@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -15,11 +16,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -48,11 +51,12 @@ type UserModel struct {
 	Role          types.String `tfsdk:"role"`
 	Status        types.String `tfsdk:"status"`
 	Issued        types.String `tfsdk:"issued"`
-	Permissions   types.Object `tfsdk:"permissions"`
+	Permissions   types.Map    `tfsdk:"permissions"`
 	AutoGroups    types.List   `tfsdk:"auto_groups"`
 	IsCurrent     types.Bool   `tfsdk:"is_current"`
 	IsServiceUser types.Bool   `tfsdk:"is_service_user"`
 	IsBlocked     types.Bool   `tfsdk:"is_blocked"`
+	Self          types.Bool   `tfsdk:"self"`
 }
 
 func (r *User) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -61,12 +65,12 @@ func (r *User) Metadata(ctx context.Context, req resource.MetadataRequest, resp 
 
 func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Invite and Manage Users",
 		MarkdownDescription: "Invite and Manage Users, see [NetBird Docs](https://docs.netbird.io/how-to/add-users-to-your-network) for more information, existing users should be imported.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "User ID",
+				MarkdownDescription: "The unique identifier of a user",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
@@ -88,83 +92,69 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"role": schema.StringAttribute{
-				MarkdownDescription: "User role (owner|admin|user|billing_admin).",
+				MarkdownDescription: "User's NetBird account role (owner|admin|user|billing_admin|auditor|network_admin).",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString("user"),
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.String{stringvalidator.OneOf("owner", "admin", "user", "billing_admin", "auditor", "network_admin")},
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User status (active or invited)",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"issued": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User issue method",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"permissions": schema.MapNestedAttribute{
 				Computed: true,
-				Optional: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"is_restricted": schema.BoolAttribute{
-							Optional: true,
 							Computed: true,
 							Default:  booldefault.StaticBool(false),
 						},
 						"modules": schema.MapNestedAttribute{
+							Computed: true,
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
 									"networks": schema.MapNestedAttribute{
+										Computed: true,
 										NestedObject: schema.NestedAttributeObject{
 											Attributes: map[string]schema.Attribute{
 												"read": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"create": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"update": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"delete": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 											},
 										},
 									},
 									"peers": schema.MapNestedAttribute{
+										Computed: true,
 										NestedObject: schema.NestedAttributeObject{
 											Attributes: map[string]schema.Attribute{
 												"read": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"create": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"update": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 												"delete": schema.BoolAttribute{
-													Optional: true,
 													Computed: true,
-													Default:  booldefault.StaticBool(false),
 												},
 											},
 										},
@@ -177,24 +167,28 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 			},
 			"auto_groups": schema.ListAttribute{
-				MarkdownDescription: "User autogroups",
+				MarkdownDescription: "Group IDs to auto-assign to peers registered by this user",
 				ElementType:         types.StringType,
 				Optional:            true,
 				Computed:            true,
+				Default:             listdefault.StaticValue(types.ListValueMust(types.StringType, []attr.Value{})),
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
 			"is_current": schema.BoolAttribute{
-				Computed:      true,
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				MarkdownDescription: "Set to true if the caller user is the same as the resource user",
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"is_service_user": schema.BoolAttribute{
-				Required:      true,
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				MarkdownDescription: "If set to true, creates a Service Account User",
+				Required:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"is_blocked": schema.BoolAttribute{
-				Optional:      true,
-				Computed:      true,
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				MarkdownDescription: "If set to true then user is blocked and can't use the system",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 		},
 	}
@@ -232,16 +226,20 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	data.Issued = types.StringValue(*user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
-	perms := struct {
-		IsRestricted bool `tfsdk:"is_restricted"`
-		Modules      map[string]map[string]bool
-	}{
-		IsRestricted: user.Permissions.IsRestricted,
-		Modules:      user.Permissions.Modules,
+	if user.Permissions != nil {
+		perms := struct {
+			IsRestricted bool `tfsdk:"is_restricted"`
+			Modules      map[string]map[string]bool
+		}{
+			IsRestricted: user.Permissions.IsRestricted,
+			Modules:      user.Permissions.Modules,
+		}
+		m, diag := types.MapValueFrom(ctx, types.DynamicType, perms)
+		ret.Append(diag...)
+		data.Permissions = m
+	} else {
+		data.Permissions = types.MapNull(types.DynamicType)
 	}
-	m, diag := types.ObjectValueFrom(ctx, map[string]attr.Type{}, perms)
-	ret.Append(diag...)
-	data.Permissions = m
 	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)
 	ret.Append(diag...)
 	data.AutoGroups = l

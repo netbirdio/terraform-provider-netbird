@@ -55,8 +55,10 @@ func (r *Token) Metadata(ctx context.Context, req resource.MetadataRequest, resp
 
 func (r *Token) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Create and Manage Personal Access Tokens, see [NetBird Docs](https://docs.netbird.io/how-to/access-netbird-public-api#creating-an-access-token) for more information.",
+		Description: "Create and Manage Personal Access Tokens",
+		MarkdownDescription: `Create and Manage Personal Access Tokens, see [NetBird Docs](https://docs.netbird.io/how-to/access-netbird-public-api#creating-an-access-token) for more information.
+
+Personal Access Tokens can only be created for current user if the current user is a Service User.`,
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

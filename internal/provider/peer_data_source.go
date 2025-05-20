@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -36,9 +35,9 @@ func (d *PeerDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 		MarkdownDescription: "Read Peer information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
+				MarkdownDescription: "Peer ID",
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Peer ID",
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Peer Name",
@@ -174,56 +173,27 @@ func (d *PeerDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
-	var err error
 	var peer *api.Peer
-	if !data.Id.IsUnknown() && !data.Id.IsNull() {
-		// Lookup by Id
-		peer, err = d.client.Peers.Get(ctx, data.Id.ValueString())
-		if !data.Name.IsUnknown() && !data.Name.IsNull() && data.Name.ValueString() != peer.Name {
-			peer = nil
-		} else if !data.Ip.IsUnknown() && !data.Ip.IsNull() && data.Ip.ValueString() != peer.Ip {
-			peer = nil
-		}
-	} else {
-		var peers []api.Peer
-		peers, err = d.client.Peers.List(ctx)
-		if err == nil {
-			for _, p := range peers {
-				match := 0
-				if !data.Name.IsUnknown() && !data.Name.IsNull() {
-					if data.Name.ValueString() == p.Name {
-						match++
-					} else {
-						match = -1000
-					}
-				}
-				if !data.Ip.IsUnknown() && !data.Ip.IsNull() {
-					if data.Ip.ValueString() == p.Ip {
-						match++
-					} else {
-						match = -1000
-					}
-				}
-				if match > 0 {
-					if peer != nil {
-						resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple peers")
-					}
-					peer = &p
-				}
+	peers, err := d.client.Peers.List(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Error listing Peers", err.Error())
+		return
+	}
+
+	for _, p := range peers {
+		match := 0
+		match += matchString(p.Id, data.Id)
+		match += matchString(p.Name, data.Name)
+		match += matchString(p.Ip, data.Ip)
+		if match > 0 {
+			if peer != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple peers")
 			}
+			peer = &p
 		}
 	}
 
 	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			resp.Diagnostics.AddError("Not Found", "Peer not found")
-		} else {
-			resp.Diagnostics.AddError("Error getting Peer", err.Error())
-		}
 		return
 	}
 

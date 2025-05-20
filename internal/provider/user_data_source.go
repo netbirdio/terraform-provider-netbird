@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -33,10 +32,11 @@ func (d *UserDataSource) Metadata(ctx context.Context, req datasource.MetadataRe
 
 func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Existing Users metadata",
 		MarkdownDescription: "Read Existing Users metadata, see [NetBird Docs](https://docs.netbird.io/how-to/add-users-to-your-network) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "User ID",
+				MarkdownDescription: "The unique identifier of a user",
 				Optional:            true,
 				Computed:            true,
 			},
@@ -55,36 +55,93 @@ func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 				Computed:            true,
 			},
 			"role": schema.StringAttribute{
-				MarkdownDescription: "User role",
+				MarkdownDescription: "User's NetBird account role (owner|admin|user|billing_admin|auditor|network_admin).",
 				Computed:            true,
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User status (active or invited)",
 				Computed:            true,
 			},
 			"issued": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User issue method",
 				Computed:            true,
 			},
-			"permissions": schema.ObjectAttribute{
+			"permissions": schema.MapNestedAttribute{
 				Computed: true,
-				AttributeTypes: map[string]attr.Type{
-					"dashboard_view": types.StringType,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"is_restricted": schema.BoolAttribute{
+							Computed: true,
+						},
+						"modules": schema.MapNestedAttribute{
+							Computed: true,
+							NestedObject: schema.NestedAttributeObject{
+								Attributes: map[string]schema.Attribute{
+									"networks": schema.MapNestedAttribute{
+										Computed: true,
+										NestedObject: schema.NestedAttributeObject{
+											Attributes: map[string]schema.Attribute{
+												"read": schema.BoolAttribute{
+													Computed: true,
+												},
+												"create": schema.BoolAttribute{
+													Computed: true,
+												},
+												"update": schema.BoolAttribute{
+													Computed: true,
+												},
+												"delete": schema.BoolAttribute{
+													Computed: true,
+												},
+											},
+										},
+									},
+									"peers": schema.MapNestedAttribute{
+										Computed: true,
+										NestedObject: schema.NestedAttributeObject{
+											Attributes: map[string]schema.Attribute{
+												"read": schema.BoolAttribute{
+													Computed: true,
+												},
+												"create": schema.BoolAttribute{
+													Computed: true,
+												},
+												"update": schema.BoolAttribute{
+													Computed: true,
+												},
+												"delete": schema.BoolAttribute{
+													Computed: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 			"auto_groups": schema.ListAttribute{
-				MarkdownDescription: "User autogroups",
+				MarkdownDescription: "Group IDs to auto-assign to peers registered by this user",
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
 			"is_current": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "Set to true if the caller user is the same as the resource user",
+				Computed:            true,
 			},
 			"is_service_user": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "If set to true, user is a Service Account User",
+				Computed:            true,
 			},
 			"is_blocked": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "If set to true then user is blocked and can't use the system",
+				Computed:            true,
+			},
+			"self": schema.BoolAttribute{
+				MarkdownDescription: "If set to true, retrieve the current user",
+				Optional:            true,
+				Computed:            true,
 			},
 		},
 	}
@@ -118,6 +175,23 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	if data.Self.ValueBool() {
+		user, err := d.client.Users.Current(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Error getting current user", err.Error())
+			return
+		}
+
+		resp.Diagnostics.Append(userAPIToTerraform(ctx, user, &data)...)
+
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		// Save data into Terraform state
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	}
 
 	users, err := d.client.Users.List(ctx)

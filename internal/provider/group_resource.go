@@ -52,7 +52,7 @@ func (r *Group) Metadata(ctx context.Context, req resource.MetadataRequest, resp
 
 func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and assign Groups",
 		MarkdownDescription: "Create and assign Groups, see [NetBird Docs](https://docs.netbird.io/how-to/manage-network-access#groups) for more information.",
 
 		Attributes: map[string]schema.Attribute{

@@ -62,7 +62,6 @@ func (r *AccountSettings) Metadata(ctx context.Context, req resource.MetadataReq
 
 func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Manage Account-wide Settings",
 
 		Attributes: map[string]schema.Attribute{

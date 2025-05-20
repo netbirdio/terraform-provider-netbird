@@ -74,13 +74,13 @@ func (r *Peer) Metadata(ctx context.Context, req resource.MetadataRequest, resp 
 
 func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Manage NetBird Peers",
 		MarkdownDescription: "NetBird peer is a machine that runs the NetBird agent and is connected to the network. This resource doesn't create the Peer itself but manages it.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:            true,
 				MarkdownDescription: "Peer ID",
+				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"name": schema.StringAttribute{

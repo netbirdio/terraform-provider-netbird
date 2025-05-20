@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -31,14 +32,17 @@ func (d *NetworkDataSource) Metadata(ctx context.Context, req datasource.Metadat
 
 func (d *NetworkDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Network Settings and Metadata",
 		MarkdownDescription: "Read Network Settings and Metadata, see [NetBird Docs](https://docs.netbird.io/how-to/networks) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Network ID",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Network Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"description": schema.StringAttribute{
@@ -94,11 +98,31 @@ func (d *NetworkDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	network, err := d.client.Networks.Get(ctx, data.Id.ValueString())
-
+	networks, err := d.client.Networks.List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting Network", err.Error())
+		resp.Diagnostics.AddError("Error listing Networks", err.Error())
 		return
+	}
+
+	var network *api.Network
+	for _, n := range networks {
+		match := 0
+		match += matchString(n.Id, data.Id)
+		match += matchString(n.Name, data.Name)
+		if match > 0 {
+			if network != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple networks")
+			}
+			network = &n
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if network == nil {
+		resp.Diagnostics.AddError("No match", "Network matching parameters not found")
 	}
 
 	resp.Diagnostics.Append(networkAPIToTerraform(ctx, network, &data)...)

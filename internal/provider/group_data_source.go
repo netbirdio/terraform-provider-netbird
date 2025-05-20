@@ -32,6 +32,7 @@ func (d *GroupDataSource) Metadata(ctx context.Context, req datasource.MetadataR
 
 func (d *GroupDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Group metadata and associated resources and peers",
 		MarkdownDescription: "Read Group metadata and associated resources and peers, see [NetBird Docs](https://docs.netbird.io/how-to/manage-network-access#groups) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

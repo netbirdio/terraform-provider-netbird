@@ -131,7 +131,7 @@ func (r *Policy) Metadata(ctx context.Context, req resource.MetadataRequest, res
 
 func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and Manage Policies",
 		MarkdownDescription: "Create and Manage Policies, See [NetBird Docs](https://docs.netbird.io/how-to/manage-network-access#policies) for more information.",
 
 		Blocks: map[string]schema.Block{

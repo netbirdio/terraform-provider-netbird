@@ -54,7 +54,7 @@ func (r *NetworkResource) Metadata(ctx context.Context, req resource.MetadataReq
 
 func (r *NetworkResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and manage Network Resources",
 		MarkdownDescription: "Create and manage Network Resources, see [NetBird Docs](https://docs.netbird.io/how-to/networks#resources) for more information.",
 
 		Attributes: map[string]schema.Attribute{

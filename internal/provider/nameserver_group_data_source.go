@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -35,10 +36,12 @@ func (d *NameserverGroupDataSource) Schema(ctx context.Context, req datasource.S
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "NameserverGroup ID",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Name of nameserver group",
+				Optional:            true,
 				Computed:            true,
 			},
 			"description": schema.StringAttribute{
@@ -121,11 +124,31 @@ func (d *NameserverGroupDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
-	nameserverGroup, err := d.client.DNS.GetNameserverGroup(ctx, data.Id.ValueString())
-
+	nsGroups, err := d.client.DNS.ListNameserverGroups(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting NameserverGroup", err.Error())
+		resp.Diagnostics.AddError("Error listing NameserverGroups", err.Error())
 		return
+	}
+
+	var nameserverGroup *api.NameserverGroup
+	for _, nsg := range nsGroups {
+		match := 0
+		match += matchString(nsg.Id, data.Id)
+		match += matchString(nsg.Name, data.Name)
+		if match > 0 {
+			if nameserverGroup != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple nameserver groups")
+			}
+			nameserverGroup = &nsg
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if nameserverGroup == nil {
+		resp.Diagnostics.AddError("No match", "NameServerGroup matching parameters not found")
 	}
 
 	resp.Diagnostics.Append(nameserverGroupAPIToTerraform(ctx, nameserverGroup, &data)...)

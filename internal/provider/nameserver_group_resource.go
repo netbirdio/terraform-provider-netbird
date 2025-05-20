@@ -61,8 +61,8 @@ func (r *NameserverGroup) Metadata(ctx context.Context, req resource.MetadataReq
 
 func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Create and manage Nameserver Groups",
+		MarkdownDescription: "Create and manage Nameserver Groups, see [NetBird Docs](https://docs.netbird.io/how-to/manage-dns-in-your-network#managing-nameserver-groups) for more information.",
+		Description:         "Create and manage Nameserver Groups",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

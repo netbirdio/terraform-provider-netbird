@@ -6,12 +6,12 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -32,69 +32,71 @@ func (d *SetupKeyDataSource) Metadata(ctx context.Context, req datasource.Metada
 
 func (d *SetupKeyDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Read SetupKey settings and metadata, see [NetBird Docs](https://docs.netbird.io/how-to/register-machines-using-setup-keys) for more information.",
+		Description: "Read SetupKey settings and metadata",
+		MarkdownDescription: `Read SetupKey settings and metadata, see [NetBird Docs](https://docs.netbird.io/how-to/register-machines-using-setup-keys) for more information.
+
+This can **not** read the plain SetupKey.`,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:            true,
 				MarkdownDescription: "SetupKey ID",
+				Optional:            true,
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "SetupKey Name",
+				Optional:            true,
+				Computed:            true,
 			},
 			"expires": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "SetupKey Expiration Date",
+				Computed:            true,
 			},
 			"updated_at": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Creation timestamp",
+				Computed:            true,
 			},
 			"last_used": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Last usage time",
-			},
-			"key": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Plaintext setup key",
 			},
 			"type": schema.StringAttribute{
+				MarkdownDescription: "Setup Key type (one-off or reusable)",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"usage_limit": schema.Int32Attribute{
+				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited)",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"used_times": schema.Int32Attribute{
+				MarkdownDescription: "Number of times Setup Key was used",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"state": schema.StringAttribute{
+				MarkdownDescription: "Setup key state (valid or expired)",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"auto_groups": schema.ListAttribute{
+				MarkdownDescription: "List of groups to automatically assign to peers created through this setup key",
 				Computed:            true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "",
 			},
 			"ephemeral": schema.BoolAttribute{
+				MarkdownDescription: "Indicate that the peer will be ephemeral or not, ephemeral peers are deleted after 10 minutes of inactivity",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"allow_extra_dns_labels": schema.BoolAttribute{
+				MarkdownDescription: "Allow extra DNS labels to be added to the peer",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"valid": schema.BoolAttribute{
+				MarkdownDescription: "True if setup key can be used to create more Peers",
 				Computed:            true,
-				MarkdownDescription: "",
 			},
 			"revoked": schema.BoolAttribute{
+				MarkdownDescription: "Set to true to revoke setup key",
 				Computed:            true,
-				MarkdownDescription: "",
-			}},
+			},
+		},
 	}
 }
 
@@ -128,15 +130,31 @@ func (d *SetupKeyDataSource) Read(ctx context.Context, req datasource.ReadReques
 		return
 	}
 
-	setupKey, err := d.client.SetupKeys.Get(ctx, data.Id.ValueString())
-
+	setupKeys, err := d.client.SetupKeys.List(ctx)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-		} else {
-			resp.Diagnostics.AddError("Error getting SetupKey", err.Error())
-		}
+		resp.Diagnostics.AddError("Error listing SetupKeys", err.Error())
 		return
+	}
+
+	var setupKey *api.SetupKey
+	for _, sk := range setupKeys {
+		match := 0
+		match += matchString(sk.Id, data.Id)
+		match += matchString(sk.Name, data.Name)
+		if match > 0 {
+			if setupKey != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple setup keys")
+			}
+			setupKey = &sk
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if setupKey == nil {
+		resp.Diagnostics.AddError("No match", "Setup Key matching parameters not found")
 	}
 
 	resp.Diagnostics.Append(setupKeyAPIToTerraform(ctx, setupKey, &data)...)

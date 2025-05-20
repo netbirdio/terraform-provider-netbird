@@ -57,7 +57,7 @@ func (r *PostureCheck) Metadata(ctx context.Context, req resource.MetadataReques
 
 func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and Manage Posture Checks",
 		MarkdownDescription: "Create and Manage Posture Checks, see [NetBird Docs](https://docs.netbird.io/how-to/manage-posture-checks) for more information.",
 
 		Blocks: map[string]schema.Block{

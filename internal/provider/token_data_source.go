@@ -6,12 +6,11 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -32,31 +31,34 @@ func (d *TokenDataSource) Metadata(ctx context.Context, req datasource.MetadataR
 
 func (d *TokenDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Personal Access Token metadata",
 		MarkdownDescription: "Read Personal Access Token metadata, see [NetBird Docs](https://docs.netbird.io/how-to/access-netbird-public-api#creating-an-access-token) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Required:            true,
 				MarkdownDescription: "Token ID",
+				Optional:            true,
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Token Name",
+				Optional:            true,
+				Computed:            true,
 			},
 			"expiration_date": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Token Expiration Date",
+				Computed:            true,
 			},
 			"user_id": schema.StringAttribute{
-				Required:            true,
 				MarkdownDescription: "User ID",
+				Required:            true,
 			},
 			"created_at": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Creation timestamp",
+				Computed:            true,
 			},
 			"last_used": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Last usage time",
+				Computed:            true,
 			},
 		},
 	}
@@ -92,15 +94,31 @@ func (d *TokenDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	token, err := d.client.Tokens.Get(ctx, data.UserID.ValueString(), data.Id.ValueString())
-
+	tokens, err := d.client.Tokens.List(ctx, data.UserID.ValueString())
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-		} else {
-			resp.Diagnostics.AddError("Error getting Token", err.Error())
-		}
+		resp.Diagnostics.AddError("Error listing Tokens", err.Error())
 		return
+	}
+
+	var token *api.PersonalAccessToken
+	for _, t := range tokens {
+		match := 0
+		match += matchString(t.Id, data.Id)
+		match += matchString(t.Name, data.Name)
+		if match > 0 {
+			if token != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple tokens")
+			}
+			token = &t
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if token == nil {
+		resp.Diagnostics.AddError("No match", "Token matching parameters not found")
 	}
 
 	tokenAPIToTerraform(token, &data)

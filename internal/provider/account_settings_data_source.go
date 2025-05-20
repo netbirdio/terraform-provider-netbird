@@ -35,8 +35,8 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 		MarkdownDescription: `Read Account-wide Settings`,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "The unique identifier of an account",
+				Computed:            true,
 			},
 			"jwt_allow_groups": schema.ListAttribute{
 				MarkdownDescription: "List of groups to which users are allowed access",

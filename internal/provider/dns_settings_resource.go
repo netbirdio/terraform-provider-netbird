@@ -46,8 +46,8 @@ func (r *DNSSettings) Metadata(ctx context.Context, req resource.MetadataRequest
 
 func (r *DNSSettings) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Manage Account DNS Settings (Only one of this resource should be used per provider)",
+		MarkdownDescription: "Manage Account DNS Settings (Only one of this resource should be used per provider).",
+		Description:         "Manage Account DNS Settings",
 
 		Attributes: map[string]schema.Attribute{
 			"disabled_management_groups": schema.ListAttribute{
