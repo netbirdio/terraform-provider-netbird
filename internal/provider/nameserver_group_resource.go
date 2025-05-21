@@ -6,17 +6,21 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -57,8 +61,8 @@ func (r *NameserverGroup) Metadata(ctx context.Context, req resource.MetadataReq
 
 func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Create and manage Nameserver Groups",
+		MarkdownDescription: "Create and manage Nameserver Groups, see [NetBird Docs](https://docs.netbird.io/how-to/manage-dns-in-your-network#managing-nameserver-groups) for more information.",
+		Description:         "Create and manage Nameserver Groups",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -69,15 +73,19 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Name of nameserver group",
 				Required:            true,
+				Validators:          []validator.String{stringvalidator.LengthBetween(1, 40)},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Description of the nameserver group",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"groups": schema.ListAttribute{
 				MarkdownDescription: "Distribution group IDs that defines group of peers that will use this nameserver group",
 				ElementType:         types.StringType,
 				Required:            true,
+				Validators:          []validator.List{listvalidator.SizeAtLeast(1), listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 			"domains": schema.ListAttribute{
 				MarkdownDescription: "Match domain list. It should be empty only if primary is true.",
@@ -85,6 +93,7 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Computed:            true,
 				Default:             listdefault.StaticValue(types.ListValueMust(types.StringType, []attr.Value{})),
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile(`^(?i)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$`), "Invalid domain name"))},
 			},
 			"nameservers": schema.ListNestedAttribute{
 				MarkdownDescription: "Nameserver list",
@@ -96,11 +105,15 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 						},
 						"ns_type": schema.StringAttribute{
 							MarkdownDescription: "Nameserver Type",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("udp"),
 						},
 						"port": schema.Int32Attribute{
 							MarkdownDescription: "Nameserver Port",
-							Required:            true,
+							Optional:            true,
+							Computed:            true,
+							Default:             int32default.StaticInt32(53),
 						},
 					},
 				},
@@ -120,7 +133,9 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 			},
 			"search_domains_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Search domain status for match domains. It should be true only if domains list is not empty.",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 		},
 	}
@@ -193,6 +208,21 @@ func nameserverGroupTerraformToAPI(ctx context.Context, data *NameserverGroupMod
 		Primary:              boolDefault(data.Primary, len(data.Domains.Elements()) == 0),
 		SearchDomainsEnabled: boolDefault(data.SearchDomainsEnabled, false),
 		Nameservers:          make([]api.Nameserver, len(data.Nameservers.Elements())),
+	}
+
+	if nameserverGroupReq.SearchDomainsEnabled && nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "search_domains_enabled and primary cannot be both true")
+		return nameserverGroupReq, ret
+	}
+
+	if len(nameserverGroupReq.Domains) != 0 && nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "nameserver group primary status is true and domains are not empty, you should set either primary or domain")
+		return nameserverGroupReq, ret
+	}
+
+	if len(nameserverGroupReq.Domains) == 0 && !nameserverGroupReq.Primary {
+		ret.AddError("Invalid Value", "nameserver group primary status is false and domains are empty, it should be primary or have at least one domain")
+		return nameserverGroupReq, ret
 	}
 
 	for i, j := range data.Nameservers.Elements() {

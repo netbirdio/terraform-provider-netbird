@@ -15,28 +15,28 @@ import (
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
-var _ datasource.DataSource = &AccountDataSource{}
+var _ datasource.DataSource = &AccountSettingsDataSource{}
 
-func NewAccountDataSource() datasource.DataSource {
-	return &AccountDataSource{}
+func NewAccountSettingsDataSource() datasource.DataSource {
+	return &AccountSettingsDataSource{}
 }
 
-// AccountDataSource defines the data source implementation.
-type AccountDataSource struct {
+// AccountSettingsDataSource defines the data source implementation.
+type AccountSettingsDataSource struct {
 	client *netbird.Client
 }
 
-func (d *AccountDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_account"
+func (d *AccountSettingsDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_account_settings"
 }
 
-func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: `Read Account-wide Settings`,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "The unique identifier of an account",
+				Computed:            true,
 			},
 			"jwt_allow_groups": schema.ListAttribute{
 				MarkdownDescription: "List of groups to which users are allowed access",
@@ -95,7 +95,7 @@ func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaReq
 	}
 }
 
-func (d *AccountDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *AccountSettingsDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
@@ -115,8 +115,8 @@ func (d *AccountDataSource) Configure(ctx context.Context, req datasource.Config
 	d.client = client
 }
 
-func (d *AccountDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data AccountModel
+func (d *AccountSettingsDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data AccountSettingsModel
 
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
@@ -132,7 +132,7 @@ func (d *AccountDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		if strings.Contains(err.Error(), "not found") {
 			data.Id = types.StringNull()
 		} else {
-			resp.Diagnostics.AddError("Error getting Account", err.Error())
+			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		}
 		return
 	}

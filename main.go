@@ -1,5 +1,6 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
+//go:build !local
 
 package main
 
@@ -29,8 +30,7 @@ func main() {
 
 	opts := providerserver.ServeOpts{
 		Address: "registry.terraform.io/netbirdio/netbird",
-		// Address: "hashicorp.edu/netbirdio/netbird",
-		Debug: debug,
+		Debug:   debug,
 	}
 
 	err := providerserver.Serve(context.Background(), provider.New(version), opts)

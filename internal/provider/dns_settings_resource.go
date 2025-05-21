@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -43,8 +46,8 @@ func (r *DNSSettings) Metadata(ctx context.Context, req resource.MetadataRequest
 
 func (r *DNSSettings) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Manage Account DNS Settings (Only one of this resource should be used per provider)",
+		MarkdownDescription: "Manage Account DNS Settings (Only one of this resource should be used per provider).",
+		Description:         "Manage Account DNS Settings",
 
 		Attributes: map[string]schema.Attribute{
 			"disabled_management_groups": schema.ListAttribute{
@@ -52,6 +55,7 @@ func (r *DNSSettings) Schema(ctx context.Context, req resource.SchemaRequest, re
 				Required:            true,
 				ElementType:         types.StringType,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 		},
 	}

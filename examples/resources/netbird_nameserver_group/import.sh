@@ -1,0 +1,5 @@
+terraform import netbird_nameserver_group.example nameserver_group_id
+
+# For example
+
+terraform import netbird_nameserver_group.example cuqekmjl0ubs73cfjmvg

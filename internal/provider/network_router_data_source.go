@@ -31,6 +31,7 @@ func (d *NetworkRouterDataSource) Metadata(ctx context.Context, req datasource.M
 
 func (d *NetworkRouterDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Network Router settings and metadata",
 		MarkdownDescription: "Read Network Router settings and metadata, see [NetBird Docs](https://docs.netbird.io/how-to/networks#routing-peers) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

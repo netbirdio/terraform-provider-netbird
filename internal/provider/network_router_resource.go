@@ -9,11 +9,14 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -54,7 +57,7 @@ func (r *NetworkRouter) Metadata(ctx context.Context, req resource.MetadataReque
 
 func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and manage Network Routers",
 		MarkdownDescription: "Create and manage Network Routers, see [NetBird Docs](https://docs.netbird.io/how-to/networks#routing-peers) for more information.",
 
 		Attributes: map[string]schema.Attribute{
@@ -84,10 +87,13 @@ func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "Peer Identifier associated with route. This property can not be set together with peer_groups",
 				Optional:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.String{stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("peer_groups"))},
 			},
 			"metric": schema.Int32Attribute{
 				MarkdownDescription: "Route metric number. Lowest number has higher priority",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(9999),
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 				Validators:          []validator.Int32{int32validator.Between(1, 9999)},
 			},
@@ -95,6 +101,7 @@ func (r *NetworkRouter) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "Peers Group Identifier associated with route. This property can not be set together with peer",
 				Optional:            true,
 				ElementType:         types.StringType,
+				Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("peer"))},
 			},
 		},
 	}
@@ -257,5 +264,7 @@ func (r *NetworkRouter) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *NetworkRouter) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	splitID := strings.Split(req.ID, "/")
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("network_id"), splitID[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }

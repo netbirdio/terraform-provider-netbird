@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -31,23 +32,18 @@ func (d *GroupDataSource) Metadata(ctx context.Context, req datasource.MetadataR
 
 func (d *GroupDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Group metadata and associated resources and peers",
 		MarkdownDescription: "Read Group metadata and associated resources and peers, see [NetBird Docs](https://docs.netbird.io/how-to/manage-network-access#groups) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Group ID",
-				Required:            true,
+				Computed:            true,
+				Optional:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Group name identifier",
 				Computed:            true,
-			},
-			"peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Group peers count",
-				Computed:            true,
-			},
-			"resources_count": schema.Int32Attribute{
-				MarkdownDescription: "Group resources count",
-				Computed:            true,
+				Optional:            true,
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Group issued by",
@@ -96,10 +92,36 @@ func (d *GroupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	group, err := d.client.Groups.Get(ctx, data.Id.ValueString())
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
 
+	groups, err := d.client.Groups.List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting Group", err.Error())
+		resp.Diagnostics.AddError("Error listing Groups", err.Error())
+		return
+	}
+
+	var group *api.Group
+	for _, g := range groups {
+		match := 0
+		match += matchString(g.Id, data.Id)
+		match += matchString(g.Name, data.Name)
+		if match > 0 {
+			if group != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple groups")
+			}
+			group = &g
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if group == nil {
+		resp.Diagnostics.AddError("No match", "Group matching parameters not found")
 		return
 	}
 

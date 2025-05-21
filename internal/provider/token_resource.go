@@ -9,12 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -52,8 +55,10 @@ func (r *Token) Metadata(ctx context.Context, req resource.MetadataRequest, resp
 
 func (r *Token) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Create and Manage Personal Access Tokens, see [NetBird Docs](https://docs.netbird.io/how-to/access-netbird-public-api#creating-an-access-token) for more information.",
+		Description: "Create and Manage Personal Access Tokens",
+		MarkdownDescription: `Create and Manage Personal Access Tokens, see [NetBird Docs](https://docs.netbird.io/how-to/access-netbird-public-api#creating-an-access-token) for more information.
+
+Personal Access Tokens can only be created for current user if the current user is a Service User.`,
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -65,6 +70,7 @@ func (r *Token) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				Required:            true,
 				MarkdownDescription: "Token Name",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"expiration_date": schema.StringAttribute{
 				Computed:            true,
@@ -74,6 +80,7 @@ func (r *Token) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 			"expiration_days": schema.Int32Attribute{
 				Required:      true,
 				PlanModifiers: []planmodifier.Int32{int32planmodifier.RequiresReplace()},
+				Validators:    []validator.Int32{int32validator.Between(1, 365)},
 			},
 			"user_id": schema.StringAttribute{
 				Required:            true,
@@ -226,5 +233,7 @@ func (r *Token) Delete(ctx context.Context, req resource.DeleteRequest, resp *re
 }
 
 func (r *Token) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	splitID := strings.Split(req.ID, "/")
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("user_id"), splitID[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }
