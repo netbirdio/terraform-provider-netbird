@@ -49,3 +49,15 @@ resource "netbird_network_router" "example" {
 ### Read-Only
 
 - `id` (String) The unique identifier of a router
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_network_router.example network_id/network_router_id
+
+# For example
+
+terraform import netbird_network_router.example cvr9ibrl0ubs73c11gr0/cvr9ic3l0ubs73c11gs0
+```

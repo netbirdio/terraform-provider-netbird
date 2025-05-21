@@ -41,3 +41,15 @@ resource "netbird_group" "example" {
 
 - `id` (String) Group ID
 - `issued` (String) Group issued by
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_group.example group_id
+
+# For example
+
+terraform import netbird_group.example cvi609bl0ubs73ask10g
+```

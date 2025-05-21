@@ -56,3 +56,15 @@ resource "netbird_setup_key" "example" {
 - `updated_at` (String) Creation timestamp
 - `used_times` (Number) Number of times Setup Key was used
 - `valid` (Boolean) True if setup key can be used to create more Peers
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_setup_key.example setup_key_id
+
+# For example
+
+terraform import netbird_setup_key.example cvr9ibrl0ubs73c11gr0
+```

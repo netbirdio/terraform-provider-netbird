@@ -57,3 +57,15 @@ resource "netbird_user" "real_user" {
 - `issued` (String) User issue method
 - `last_login` (String) User Last Login timedate
 - `status` (String) User status (active or invited)
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_user.example user_id
+
+# For example
+
+terraform import netbird_user.example 2fd8f4d6-d6c2-44c3-b7a4-adb644177b3d
+```

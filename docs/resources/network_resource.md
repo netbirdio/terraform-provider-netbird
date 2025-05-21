@@ -50,3 +50,15 @@ resource "netbird_network_resource" "example" {
 ### Read-Only
 
 - `id` (String) The unique identifier of a resource
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_network_resource.example network_id/network_resource_id
+
+# For example
+
+terraform import netbird_network_resource.example cvr9ibrl0ubs73c11gr0/cvr9ktjl0ubs73c11h70
+```

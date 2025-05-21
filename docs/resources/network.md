@@ -36,3 +36,15 @@ resource "netbird_network" "example" {
 - `policies` (List of String) Policy IDs associated with resources inside this Network
 - `resources` (List of String) Network Resource IDs
 - `routers` (List of String) Network Router IDs
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_network.example network_id
+
+# For example
+
+terraform import netbird_network.example cvr9ibrl0ubs73c11gr0
+```

@@ -233,5 +233,7 @@ func (r *Token) Delete(ctx context.Context, req resource.DeleteRequest, resp *re
 }
 
 func (r *Token) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	splitID := strings.Split(req.ID, "/")
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("user_id"), splitID[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }
