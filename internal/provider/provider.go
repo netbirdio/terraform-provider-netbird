@@ -85,6 +85,7 @@ func (p *NetBirdProvider) Resources(ctx context.Context) []func() resource.Resou
 		NewPeer,
 		NewPolicy,
 		NewPostureCheck,
+		NewRoute,
 		NewSetupKey,
 		NewToken,
 		NewUser,
@@ -105,12 +106,13 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 		NewNetworkResourceDataSource,
 		NewNetworkRouterDataSource,
 		NewPeerDataSource,
+		NewPeersDataSource,
 		NewPolicyDataSource,
 		NewPostureCheckDataSource,
+		NewRouteDataSource,
 		NewSetupKeyDataSource,
 		NewTokenDataSource,
 		NewUserDataSource,
-		NewPeersDataSource,
 	}
 }
 
