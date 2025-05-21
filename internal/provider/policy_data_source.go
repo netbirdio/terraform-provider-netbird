@@ -176,6 +176,11 @@ func (d *PolicyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
+
 	policies, err := d.client.Policies.List(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Policies", err.Error())
@@ -201,6 +206,7 @@ func (d *PolicyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 
 	if policy == nil {
 		resp.Diagnostics.AddError("No match", "Policy matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(policyAPIToTerraform(ctx, policy, &data)...)

@@ -124,6 +124,11 @@ func (d *NameserverGroupDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
+
 	nsGroups, err := d.client.DNS.ListNameserverGroups(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing NameserverGroups", err.Error())
@@ -149,6 +154,7 @@ func (d *NameserverGroupDataSource) Read(ctx context.Context, req datasource.Rea
 
 	if nameserverGroup == nil {
 		resp.Diagnostics.AddError("No match", "NameServerGroup matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(nameserverGroupAPIToTerraform(ctx, nameserverGroup, &data)...)

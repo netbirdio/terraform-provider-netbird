@@ -66,61 +66,6 @@ func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 				MarkdownDescription: "User issue method",
 				Computed:            true,
 			},
-			"permissions": schema.MapNestedAttribute{
-				Computed: true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"is_restricted": schema.BoolAttribute{
-							Computed: true,
-						},
-						"modules": schema.MapNestedAttribute{
-							Computed: true,
-							NestedObject: schema.NestedAttributeObject{
-								Attributes: map[string]schema.Attribute{
-									"networks": schema.MapNestedAttribute{
-										Computed: true,
-										NestedObject: schema.NestedAttributeObject{
-											Attributes: map[string]schema.Attribute{
-												"read": schema.BoolAttribute{
-													Computed: true,
-												},
-												"create": schema.BoolAttribute{
-													Computed: true,
-												},
-												"update": schema.BoolAttribute{
-													Computed: true,
-												},
-												"delete": schema.BoolAttribute{
-													Computed: true,
-												},
-											},
-										},
-									},
-									"peers": schema.MapNestedAttribute{
-										Computed: true,
-										NestedObject: schema.NestedAttributeObject{
-											Attributes: map[string]schema.Attribute{
-												"read": schema.BoolAttribute{
-													Computed: true,
-												},
-												"create": schema.BoolAttribute{
-													Computed: true,
-												},
-												"update": schema.BoolAttribute{
-													Computed: true,
-												},
-												"delete": schema.BoolAttribute{
-													Computed: true,
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
 			"auto_groups": schema.ListAttribute{
 				MarkdownDescription: "Group IDs to auto-assign to peers registered by this user",
 				ElementType:         types.StringType,
@@ -136,11 +81,6 @@ func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 			},
 			"is_blocked": schema.BoolAttribute{
 				MarkdownDescription: "If set to true then user is blocked and can't use the system",
-				Computed:            true,
-			},
-			"self": schema.BoolAttribute{
-				MarkdownDescription: "If set to true, retrieve the current user",
-				Optional:            true,
 				Computed:            true,
 			},
 		},
@@ -177,21 +117,9 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
-	if data.Self.ValueBool() {
-		user, err := d.client.Users.Current(ctx)
-		if err != nil {
-			resp.Diagnostics.AddError("Error getting current user", err.Error())
-			return
-		}
-
-		resp.Diagnostics.Append(userAPIToTerraform(ctx, user, &data)...)
-
-		if resp.Diagnostics.HasError() {
-			return
-		}
-
-		// Save data into Terraform state
-		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if knownCount(data.Id, data.Name, data.Email) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name, email)")
+		return
 	}
 
 	users, err := d.client.Users.List(ctx)
@@ -217,6 +145,7 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	if user == nil {
 		resp.Diagnostics.AddError("No match", "User matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(userAPIToTerraform(ctx, user, &data)...)

@@ -6,9 +6,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
 	"github.com/netbirdio/netbird/management/server/http/api"
 )
@@ -23,6 +25,15 @@ func NewTokenDataSource() datasource.DataSource {
 // TokenDataSource defines the data source implementation.
 type TokenDataSource struct {
 	client *netbird.Client
+}
+
+type TokenDataSourceModel struct {
+	Id             types.String `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	ExpirationDate types.String `tfsdk:"expiration_date"`
+	UserID         types.String `tfsdk:"user_id"`
+	CreatedAt      types.String `tfsdk:"created_at"`
+	LastUsed       types.String `tfsdk:"last_used"`
 }
 
 func (d *TokenDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -84,13 +95,31 @@ func (d *TokenDataSource) Configure(ctx context.Context, req datasource.Configur
 	d.client = client
 }
 
+func tokenDataSourceAPIToTerraform(token *api.PersonalAccessToken, data *TokenDataSourceModel) {
+	data.Id = types.StringValue(token.Id)
+	data.Name = types.StringValue(token.Name)
+	data.ExpirationDate = types.StringValue(token.ExpirationDate.Format(time.RFC3339))
+	data.UserID = types.StringValue(token.CreatedBy)
+	data.CreatedAt = types.StringValue(token.CreatedAt.Format(time.RFC3339))
+	if token.LastUsed == nil {
+		data.LastUsed = types.StringNull()
+	} else {
+		data.LastUsed = types.StringValue(token.LastUsed.Format(time.RFC3339))
+	}
+}
+
 func (d *TokenDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data TokenModel
+	var data TokenDataSourceModel
 
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
 		return
 	}
 
@@ -119,9 +148,10 @@ func (d *TokenDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 	if token == nil {
 		resp.Diagnostics.AddError("No match", "Token matching parameters not found")
+		return
 	}
 
-	tokenAPIToTerraform(token, &data)
+	tokenDataSourceAPIToTerraform(token, &data)
 
 	if resp.Diagnostics.HasError() {
 		return

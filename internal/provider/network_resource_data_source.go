@@ -100,6 +100,11 @@ func (d *NetworkResourceDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
+
 	networks, err := d.client.Networks.Resources(data.NetworkId.ValueString()).List(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Network Resources", err.Error())
@@ -125,6 +130,7 @@ func (d *NetworkResourceDataSource) Read(ctx context.Context, req datasource.Rea
 
 	if networkResource == nil {
 		resp.Diagnostics.AddError("No match", "Network Resource matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(networkResourceAPIToTerraform(ctx, networkResource, &data)...)

@@ -92,26 +92,27 @@ func (d *GroupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	var group *api.Group
-	var err error
-	if !data.Id.IsUnknown() && !data.Id.IsNull() {
-		group, err = d.client.Groups.Get(ctx, data.Id.ValueString())
-		if !data.Name.IsNull() && !data.Name.IsUnknown() && data.Name.ValueString() != group.Name {
-			group = nil
-		}
-	} else if !data.Name.IsUnknown() && !data.Name.IsNull() {
-		var groups []api.Group
-		groups, err = d.client.Groups.List(ctx)
-		if err == nil {
-			for _, g := range groups {
-				if g.Name == data.Name.ValueString() {
-					if group != nil {
-						resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple groups")
-					}
-					group = &g
-				}
-			}
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
 
+	groups, err := d.client.Groups.List(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Error listing Groups", err.Error())
+		return
+	}
+
+	var group *api.Group
+	for _, g := range groups {
+		match := 0
+		match += matchString(g.Id, data.Id)
+		match += matchString(g.Name, data.Name)
+		if match > 0 {
+			if group != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple groups")
+			}
+			group = &g
 		}
 	}
 
@@ -119,13 +120,9 @@ func (d *GroupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	if err != nil {
-		resp.Diagnostics.AddError("Error getting Group", err.Error())
-		return
-	}
-
 	if group == nil {
 		resp.Diagnostics.AddError("No match", "Group matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(groupAPIToTerraform(ctx, group, &data)...)

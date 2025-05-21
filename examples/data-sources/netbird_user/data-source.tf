@@ -1,8 +1,3 @@
-# Retrieve current user
-data "netbird_user" "example" {
-  self = true
-}
-
 # Retrieve by ID
 data "netbird_user" "example" {
   id = "926c2f89-ebc9-4a1b-9cf9-f53a20d06f6c"

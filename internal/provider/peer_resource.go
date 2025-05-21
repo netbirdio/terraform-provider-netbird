@@ -13,7 +13,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -65,7 +64,6 @@ type PeerModel struct {
 	CityName                    types.String `tfsdk:"city_name"`
 	SerialNumber                types.String `tfsdk:"serial_number"`
 	ExtraDnsLabels              types.List   `tfsdk:"extra_dns_labels"`
-	PreventDelete               types.Bool   `tfsdk:"prevent_delete"`
 }
 
 func (r *Peer) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -132,7 +130,6 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			"groups": schema.ListAttribute{
 				MarkdownDescription: "Peer groups",
 				ElementType:         types.StringType,
-				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
@@ -210,12 +207,6 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				Computed:            true,
 				ElementType:         types.StringType,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
-			},
-			"prevent_delete": schema.BoolAttribute{
-				MarkdownDescription: "Prevent peer deletion through Terraform",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(true),
 			},
 		},
 	}

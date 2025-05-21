@@ -1,5 +1,5 @@
 resource "netbird_account_settings" "example" {
-  jwt_allow_groups                       = false
+  jwt_allow_groups                       = []
   jwt_groups_claim_name                  = "claim"
   peer_login_expiration                  = 7200
   peer_inactivity_expiration             = 7200

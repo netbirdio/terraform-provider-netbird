@@ -98,6 +98,11 @@ func (d *NetworkDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
+
 	networks, err := d.client.Networks.List(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Networks", err.Error())
@@ -123,6 +128,7 @@ func (d *NetworkDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	if network == nil {
 		resp.Diagnostics.AddError("No match", "Network matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(networkAPIToTerraform(ctx, network, &data)...)

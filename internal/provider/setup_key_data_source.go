@@ -6,9 +6,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
 	"github.com/netbirdio/netbird/management/server/http/api"
@@ -19,6 +21,24 @@ var _ datasource.DataSource = &SetupKeyDataSource{}
 
 func NewSetupKeyDataSource() datasource.DataSource {
 	return &SetupKeyDataSource{}
+}
+
+// SetupKeyDataSourceModel describes the resource data model.
+type SetupKeyDataSourceModel struct {
+	Id                  types.String `tfsdk:"id"`
+	Name                types.String `tfsdk:"name"`
+	Expires             types.String `tfsdk:"expires"`
+	UpdatedAt           types.String `tfsdk:"updated_at"`
+	LastUsed            types.String `tfsdk:"last_used"`
+	Type                types.String `tfsdk:"type"`
+	UsageLimit          types.Int32  `tfsdk:"usage_limit"`
+	UsedTimes           types.Int32  `tfsdk:"used_times"`
+	State               types.String `tfsdk:"state"`
+	AutoGroups          types.List   `tfsdk:"auto_groups"`
+	Ephemeral           types.Bool   `tfsdk:"ephemeral"`
+	AllowExtraDnsLabels types.Bool   `tfsdk:"allow_extra_dns_labels"`
+	Valid               types.Bool   `tfsdk:"valid"`
+	Revoked             types.Bool   `tfsdk:"revoked"`
 }
 
 // SetupKeyDataSource defines the data source implementation.
@@ -120,13 +140,39 @@ func (d *SetupKeyDataSource) Configure(ctx context.Context, req datasource.Confi
 	d.client = client
 }
 
+func setupKeyDataSourceAPIToTerraform(ctx context.Context, setupKey *api.SetupKey, data *SetupKeyDataSourceModel) diag.Diagnostics {
+	var ret diag.Diagnostics
+	data.Id = types.StringValue(setupKey.Id)
+	data.Name = types.StringValue(setupKey.Name)
+	data.Expires = types.StringValue(setupKey.Expires.Format(time.RFC3339))
+	data.UpdatedAt = types.StringValue(setupKey.UpdatedAt.Format(time.RFC3339))
+	data.LastUsed = types.StringValue(setupKey.LastUsed.Format(time.RFC3339))
+	data.AllowExtraDnsLabels = types.BoolValue(setupKey.AllowExtraDnsLabels)
+	l, diag := types.ListValueFrom(ctx, types.StringType, setupKey.AutoGroups)
+	ret.Append(diag...)
+	data.AutoGroups = l
+	data.Ephemeral = types.BoolValue(setupKey.Ephemeral)
+	data.Revoked = types.BoolValue(setupKey.Revoked)
+	data.State = types.StringValue(setupKey.State)
+	data.Type = types.StringValue(setupKey.Type)
+	data.UsageLimit = types.Int32Value(int32(setupKey.UsageLimit))
+	data.UsedTimes = types.Int32Value(int32(setupKey.UsedTimes))
+	data.Valid = types.BoolValue(setupKey.Valid)
+	return ret
+}
+
 func (d *SetupKeyDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data SetupKeyModel
+	var data SetupKeyDataSourceModel
 
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
 		return
 	}
 
@@ -155,9 +201,10 @@ func (d *SetupKeyDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	if setupKey == nil {
 		resp.Diagnostics.AddError("No match", "Setup Key matching parameters not found")
+		return
 	}
 
-	resp.Diagnostics.Append(setupKeyAPIToTerraform(ctx, setupKey, &data)...)
+	resp.Diagnostics.Append(setupKeyDataSourceAPIToTerraform(ctx, setupKey, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return

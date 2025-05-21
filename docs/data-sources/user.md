@@ -13,11 +13,6 @@ Read Existing Users metadata, see [NetBird Docs](https://docs.netbird.io/how-to/
 ## Example Usage
 
 ```terraform
-# Retrieve current user
-data "netbird_user" "example" {
-  self = true
-}
-
 # Retrieve by ID
 data "netbird_user" "example" {
   id = "926c2f89-ebc9-4a1b-9cf9-f53a20d06f6c"
@@ -42,7 +37,6 @@ data "netbird_user" "example" {
 - `email` (String) User Email
 - `id` (String) The unique identifier of a user
 - `name` (String) User Name
-- `self` (Boolean) If set to true, retrieve the current user
 
 ### Read-Only
 
@@ -52,43 +46,5 @@ data "netbird_user" "example" {
 - `is_service_user` (Boolean) If set to true, user is a Service Account User
 - `issued` (String) User issue method
 - `last_login` (String) User Last Login timedate
-- `permissions` (Attributes Map) (see [below for nested schema](#nestedatt--permissions))
 - `role` (String) User's NetBird account role (owner|admin|user|billing_admin|auditor|network_admin).
 - `status` (String) User status (active or invited)
-
-<a id="nestedatt--permissions"></a>
-### Nested Schema for `permissions`
-
-Read-Only:
-
-- `is_restricted` (Boolean)
-- `modules` (Attributes Map) (see [below for nested schema](#nestedatt--permissions--modules))
-
-<a id="nestedatt--permissions--modules"></a>
-### Nested Schema for `permissions.modules`
-
-Read-Only:
-
-- `networks` (Attributes Map) (see [below for nested schema](#nestedatt--permissions--modules--networks))
-- `peers` (Attributes Map) (see [below for nested schema](#nestedatt--permissions--modules--peers))
-
-<a id="nestedatt--permissions--modules--networks"></a>
-### Nested Schema for `permissions.modules.networks`
-
-Read-Only:
-
-- `create` (Boolean)
-- `delete` (Boolean)
-- `read` (Boolean)
-- `update` (Boolean)
-
-
-<a id="nestedatt--permissions--modules--peers"></a>
-### Nested Schema for `permissions.modules.peers`
-
-Read-Only:
-
-- `create` (Boolean)
-- `delete` (Boolean)
-- `read` (Boolean)
-- `update` (Boolean)

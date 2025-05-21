@@ -14,11 +14,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -51,12 +49,10 @@ type UserModel struct {
 	Role          types.String `tfsdk:"role"`
 	Status        types.String `tfsdk:"status"`
 	Issued        types.String `tfsdk:"issued"`
-	Permissions   types.Map    `tfsdk:"permissions"`
 	AutoGroups    types.List   `tfsdk:"auto_groups"`
 	IsCurrent     types.Bool   `tfsdk:"is_current"`
 	IsServiceUser types.Bool   `tfsdk:"is_service_user"`
 	IsBlocked     types.Bool   `tfsdk:"is_blocked"`
-	Self          types.Bool   `tfsdk:"self"`
 }
 
 func (r *User) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -108,63 +104,6 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				MarkdownDescription: "User issue method",
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"permissions": schema.MapNestedAttribute{
-				Computed: true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"is_restricted": schema.BoolAttribute{
-							Computed: true,
-							Default:  booldefault.StaticBool(false),
-						},
-						"modules": schema.MapNestedAttribute{
-							Computed: true,
-							NestedObject: schema.NestedAttributeObject{
-								Attributes: map[string]schema.Attribute{
-									"networks": schema.MapNestedAttribute{
-										Computed: true,
-										NestedObject: schema.NestedAttributeObject{
-											Attributes: map[string]schema.Attribute{
-												"read": schema.BoolAttribute{
-													Computed: true,
-												},
-												"create": schema.BoolAttribute{
-													Computed: true,
-												},
-												"update": schema.BoolAttribute{
-													Computed: true,
-												},
-												"delete": schema.BoolAttribute{
-													Computed: true,
-												},
-											},
-										},
-									},
-									"peers": schema.MapNestedAttribute{
-										Computed: true,
-										NestedObject: schema.NestedAttributeObject{
-											Attributes: map[string]schema.Attribute{
-												"read": schema.BoolAttribute{
-													Computed: true,
-												},
-												"create": schema.BoolAttribute{
-													Computed: true,
-												},
-												"update": schema.BoolAttribute{
-													Computed: true,
-												},
-												"delete": schema.BoolAttribute{
-													Computed: true,
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 			},
 			"auto_groups": schema.ListAttribute{
 				MarkdownDescription: "Group IDs to auto-assign to peers registered by this user",
@@ -226,20 +165,6 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	data.Issued = types.StringValue(*user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
-	if user.Permissions != nil {
-		perms := struct {
-			IsRestricted bool `tfsdk:"is_restricted"`
-			Modules      map[string]map[string]bool
-		}{
-			IsRestricted: user.Permissions.IsRestricted,
-			Modules:      user.Permissions.Modules,
-		}
-		m, diag := types.MapValueFrom(ctx, types.DynamicType, perms)
-		ret.Append(diag...)
-		data.Permissions = m
-	} else {
-		data.Permissions = types.MapNull(types.DynamicType)
-	}
 	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)
 	ret.Append(diag...)
 	data.AutoGroups = l

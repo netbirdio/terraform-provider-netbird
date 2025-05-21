@@ -21,11 +21,9 @@ resource "netbird_peer" "example" {
   id                            = "d057h0jl0ubs73cftnp0"
   ssh_enabled                   = false
   name                          = "Production"
-  groups                        = [netbird_group.example.id]
   inactivity_expiration_enabled = false
   approval_required             = false
   login_expiration_enabled      = false
-  prevent_delete                = true
 }
 ```
 
@@ -39,11 +37,9 @@ resource "netbird_peer" "example" {
 ### Optional
 
 - `approval_required` (Boolean) Indicates whether peer needs approval
-- `groups` (List of String) Peer groups
 - `inactivity_expiration_enabled` (Boolean) Enable inactivity expiration for peer
 - `login_expiration_enabled` (Boolean) Indicates whether login expiration is enabled for peer
 - `name` (String) Peer Name
-- `prevent_delete` (Boolean) Prevent peer deletion through Terraform
 - `ssh_enabled` (Boolean) Enable SSH to Peer
 
 ### Read-Only
@@ -55,6 +51,7 @@ resource "netbird_peer" "example" {
 - `dns_label` (String) Peer DNS Label
 - `extra_dns_labels` (List of String) Peer extra DNS Labels
 - `geoname_id` (Number) Peer Location ID
+- `groups` (List of String) Peer groups
 - `hostname` (String) Peer's HOSTNAME
 - `ip` (String) Peer  IP
 - `kernel_version` (String) Peer Kernel Version

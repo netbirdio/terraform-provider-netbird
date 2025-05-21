@@ -6,6 +6,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -102,4 +103,14 @@ func matchListString(ctx context.Context, a []string, b types.List) (int, diag.D
 	}
 
 	return 1, d
+}
+
+func knownCount(vals ...attr.Value) int {
+	ret := 0
+	for _, v := range vals {
+		if !v.IsNull() && !v.IsUnknown() {
+			ret++
+		}
+	}
+	return ret
 }

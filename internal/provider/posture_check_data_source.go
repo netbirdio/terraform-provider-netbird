@@ -161,6 +161,11 @@ func (d *PostureCheckDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
+
 	postureChecks, err := d.client.PostureChecks.List(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing PostureChecks", err.Error())
@@ -186,6 +191,7 @@ func (d *PostureCheckDataSource) Read(ctx context.Context, req datasource.ReadRe
 
 	if postureCheck == nil {
 		resp.Diagnostics.AddError("No match", "Posture Check matching parameters not found")
+		return
 	}
 
 	resp.Diagnostics.Append(postureCheckAPIToTerraform(ctx, postureCheck, &data)...)

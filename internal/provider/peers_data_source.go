@@ -219,6 +219,29 @@ func (d *PeersDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
+	if knownCount(
+		data.Name,
+		data.Ip,
+		data.ConnectionIp,
+		data.DnsLabel,
+		data.UserId,
+		data.Hostname,
+		data.CountryCode,
+		data.CityName,
+		data.Os,
+		data.Connected,
+		data.SshEnabled,
+		data.InactivityExpirationEnabled,
+		data.ApprovalRequired,
+		data.LoginExpirationEnabled,
+		data.LoginExpired,
+		data.GeonameId,
+		data.Groups,
+	) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name, email, self)")
+		return
+	}
+
 	var filteredPeers []string
 	var err error
 	var peers []api.Peer
