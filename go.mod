@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/go-version v1.7.0
 	github.com/hashicorp/terraform-plugin-framework v1.14.1
 	github.com/hashicorp/terraform-plugin-framework-validators v0.17.0
-	github.com/netbirdio/netbird v0.44.0
+	github.com/netbirdio/netbird v0.45.1
 )
 
 require (
