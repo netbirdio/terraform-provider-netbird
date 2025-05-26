@@ -8,14 +8,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -37,13 +39,11 @@ type Group struct {
 
 // GroupModel describes the resource data model.
 type GroupModel struct {
-	Id             types.String `tfsdk:"id"`
-	Name           types.String `tfsdk:"name"`
-	Peers          types.List   `tfsdk:"peers"`
-	Resources      types.List   `tfsdk:"resources"`
-	PeersCount     types.Int32  `tfsdk:"peers_count"`
-	ResourcesCount types.Int32  `tfsdk:"resources_count"`
-	Issued         types.String `tfsdk:"issued"`
+	Id        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Peers     types.List   `tfsdk:"peers"`
+	Resources types.List   `tfsdk:"resources"`
+	Issued    types.String `tfsdk:"issued"`
 }
 
 func (r *Group) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -52,7 +52,7 @@ func (r *Group) Metadata(ctx context.Context, req resource.MetadataRequest, resp
 
 func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and assign Groups",
 		MarkdownDescription: "Create and assign Groups, see [NetBird Docs](https://docs.netbird.io/how-to/manage-network-access#groups) for more information.",
 
 		Attributes: map[string]schema.Attribute{
@@ -66,16 +66,6 @@ func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Group peers count",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
-			},
-			"resources_count": schema.Int32Attribute{
-				MarkdownDescription: "Group resources count",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
-			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Group issued by",
 				Computed:            true,
@@ -87,6 +77,7 @@ func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				Computed:            true,
 				Optional:            true,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 			"resources": schema.ListAttribute{
 				MarkdownDescription: "List of network resource ids",
@@ -94,6 +85,7 @@ func (r *Group) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				Computed:            true,
 				Optional:            true,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 		},
 	}
@@ -124,8 +116,6 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	data.Id = types.StringValue(group.Id)
 	data.Name = types.StringValue(group.Name)
 	data.Issued = types.StringValue(string(*group.Issued))
-	data.PeersCount = types.Int32Value(int32(group.PeersCount))
-	data.ResourcesCount = types.Int32Value(int32(group.ResourcesCount))
 	var peers []string
 	for _, v := range group.Peers {
 		peers = append(peers, v.Id)

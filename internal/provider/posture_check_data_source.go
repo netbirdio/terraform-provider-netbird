@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -31,15 +32,18 @@ func (d *PostureCheckDataSource) Metadata(ctx context.Context, req datasource.Me
 
 func (d *PostureCheckDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Posture Check settings",
 		MarkdownDescription: "Read Posture Check settings, see [NetBird Docs](https://docs.netbird.io/how-to/manage-posture-checks) for more information.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "PostureCheck ID",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "PostureCheck Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"description": schema.StringAttribute{
@@ -157,10 +161,36 @@ func (d *PostureCheckDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	postureCheck, err := d.client.PostureChecks.Get(ctx, data.Id.ValueString())
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
 
+	postureChecks, err := d.client.PostureChecks.List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting PostureCheck", err.Error())
+		resp.Diagnostics.AddError("Error listing PostureChecks", err.Error())
+		return
+	}
+
+	var postureCheck *api.PostureCheck
+	for _, p := range postureChecks {
+		match := 0
+		match += matchString(p.Id, data.Id)
+		match += matchString(p.Name, data.Name)
+		if match > 0 {
+			if postureCheck != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple posture checks")
+			}
+			postureCheck = &p
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if postureCheck == nil {
+		resp.Diagnostics.AddError("No match", "Posture Check matching parameters not found")
 		return
 	}
 

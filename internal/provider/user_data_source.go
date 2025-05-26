@@ -7,11 +7,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -32,18 +32,22 @@ func (d *UserDataSource) Metadata(ctx context.Context, req datasource.MetadataRe
 
 func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Existing Users metadata",
 		MarkdownDescription: "Read Existing Users metadata, see [NetBird Docs](https://docs.netbird.io/how-to/add-users-to-your-network) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "User ID",
-				Required:            true,
+				MarkdownDescription: "The unique identifier of a user",
+				Optional:            true,
+				Computed:            true,
 			},
 			"email": schema.StringAttribute{
 				MarkdownDescription: "User Email",
+				Optional:            true,
 				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "User Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"last_login": schema.StringAttribute{
@@ -51,36 +55,33 @@ func (d *UserDataSource) Schema(ctx context.Context, req datasource.SchemaReques
 				Computed:            true,
 			},
 			"role": schema.StringAttribute{
-				MarkdownDescription: "User role",
+				MarkdownDescription: "User's NetBird account role (owner|admin|user|billing_admin|auditor|network_admin).",
 				Computed:            true,
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User status (active or invited)",
 				Computed:            true,
 			},
 			"issued": schema.StringAttribute{
-				MarkdownDescription: "User status",
+				MarkdownDescription: "User issue method",
 				Computed:            true,
 			},
-			"permissions": schema.ObjectAttribute{
-				Computed: true,
-				AttributeTypes: map[string]attr.Type{
-					"dashboard_view": types.StringType,
-				},
-			},
 			"auto_groups": schema.ListAttribute{
-				MarkdownDescription: "User autogroups",
+				MarkdownDescription: "Group IDs to auto-assign to peers registered by this user",
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
 			"is_current": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "Set to true if the caller user is the same as the resource user",
+				Computed:            true,
 			},
 			"is_service_user": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "If set to true, user is a Service Account User",
+				Computed:            true,
 			},
 			"is_blocked": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "If set to true then user is blocked and can't use the system",
+				Computed:            true,
 			},
 		},
 	}
@@ -116,24 +117,43 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
+	if knownCount(data.Id, data.Name, data.Email) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name, email)")
+		return
+	}
+
 	users, err := d.client.Users.List(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing users", err.Error())
 		return
 	}
-	for _, user := range users {
-		if user.Id == data.Id.ValueString() {
-			resp.Diagnostics.Append(userAPIToTerraform(ctx, &user, &data)...)
 
-			if resp.Diagnostics.HasError() {
-				return
+	var user *api.User
+
+	for _, u := range users {
+		match := 0
+		match += matchString(u.Id, data.Id)
+		match += matchString(u.Name, data.Name)
+		match += matchString(u.Email, data.Email)
+		if match > 0 {
+			if user != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple users")
 			}
-
-			// Save data into Terraform state
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-			return
+			user = &u
 		}
 	}
 
-	data.Id = types.StringNull()
+	if user == nil {
+		resp.Diagnostics.AddError("No match", "User matching parameters not found")
+		return
+	}
+
+	resp.Diagnostics.Append(userAPIToTerraform(ctx, user, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Save data into Terraform state
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

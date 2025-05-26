@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/management/client/rest"
+	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -31,11 +32,13 @@ func (d *NetworkResourceDataSource) Metadata(ctx context.Context, req datasource
 
 func (d *NetworkResourceDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description:         "Read Network Resource settings and metadata",
 		MarkdownDescription: "Read Network Resource settings and metadata, see [NetBird Docs](https://docs.netbird.io/how-to/networks#resources) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier of a resource",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"network_id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier of a network",
@@ -43,6 +46,7 @@ func (d *NetworkResourceDataSource) Schema(ctx context.Context, req datasource.S
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "NetworkResource Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"description": schema.StringAttribute{
@@ -96,10 +100,36 @@ func (d *NetworkResourceDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
-	networkResource, err := d.client.Networks.Resources(data.NetworkId.ValueString()).Get(ctx, data.Id.ValueString())
+	if knownCount(data.Id, data.Name) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name)")
+		return
+	}
 
+	networks, err := d.client.Networks.Resources(data.NetworkId.ValueString()).List(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting NetworkResource", err.Error())
+		resp.Diagnostics.AddError("Error listing Network Resources", err.Error())
+		return
+	}
+
+	var networkResource *api.NetworkResource
+	for _, n := range networks {
+		match := 0
+		match += matchString(n.Id, data.Id)
+		match += matchString(n.Name, data.Name)
+		if match > 0 {
+			if networkResource != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "data source cannot match multiple network resources")
+			}
+			networkResource = &n
+		}
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if networkResource == nil {
+		resp.Diagnostics.AddError("No match", "Network Resource matching parameters not found")
 		return
 	}
 

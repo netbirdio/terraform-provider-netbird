@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -35,13 +37,12 @@ type Network struct {
 
 // NetworkModel describes the resource data model.
 type NetworkModel struct {
-	Id               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	RoutingPeerCount types.Int32  `tfsdk:"routing_peers_count"`
-	Resources        types.List   `tfsdk:"resources"`
-	Routers          types.List   `tfsdk:"routers"`
-	Policies         types.List   `tfsdk:"policies"`
+	Id          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Description types.String `tfsdk:"description"`
+	Resources   types.List   `tfsdk:"resources"`
+	Routers     types.List   `tfsdk:"routers"`
+	Policies    types.List   `tfsdk:"policies"`
 }
 
 func (r *Network) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -50,7 +51,7 @@ func (r *Network) Metadata(ctx context.Context, req resource.MetadataRequest, re
 
 func (r *Network) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and manage Networks",
 		MarkdownDescription: "Create and manage Networks, see [NetBird Docs](https://docs.netbird.io/how-to/networks) for more information.",
 
 		Attributes: map[string]schema.Attribute{
@@ -63,6 +64,7 @@ func (r *Network) Schema(ctx context.Context, req resource.SchemaRequest, resp *
 				MarkdownDescription: "Network Name",
 				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Network Description",
@@ -82,10 +84,6 @@ func (r *Network) Schema(ctx context.Context, req resource.SchemaRequest, resp *
 			"policies": schema.ListAttribute{
 				MarkdownDescription: "Policy IDs associated with resources inside this Network",
 				ElementType:         types.StringType,
-				Computed:            true,
-			},
-			"routing_peers_count": schema.Int32Attribute{
-				MarkdownDescription: "Total number of peers inside all Network Routers",
 				Computed:            true,
 			},
 		},
@@ -118,7 +116,6 @@ func networkAPIToTerraform(ctx context.Context, network *api.Network, data *Netw
 	data.Id = types.StringValue(network.Id)
 	data.Name = types.StringValue(network.Name)
 	data.Description = types.StringPointerValue(network.Description)
-	data.RoutingPeerCount = types.Int32Value(int32(network.RoutingPeersCount))
 	data.Resources, d = types.ListValueFrom(ctx, types.StringType, network.Resources)
 	ret.Append(d...)
 	data.Routers, d = types.ListValueFrom(ctx, types.StringType, network.Routers)

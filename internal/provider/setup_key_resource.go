@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -18,7 +20,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	netbird "github.com/netbirdio/netbird/management/client/rest"
@@ -40,17 +44,6 @@ type SetupKey struct {
 
 // SetupKeyModel describes the resource data model.
 type SetupKeyModel struct {
-	/*
-		"type": "reusable",
-		"usage_limit": 0,
-		"used_times": 2,
-		"state": "valid",
-		"auto_groups": ["ch8i4ug6lnn4g9hqv7m0"],
-		"ephemeral": true,
-		"allow_extra_dns_labels": true,
-		"valid": true,
-		"revoked": false,
-	*/
 	Id                  types.String `tfsdk:"id"`
 	Name                types.String `tfsdk:"name"`
 	Expires             types.String `tfsdk:"expires"`
@@ -75,92 +68,103 @@ func (r *SetupKey) Metadata(ctx context.Context, req resource.MetadataRequest, r
 
 func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
+		Description:         "Create and Manage Setup Keys",
 		MarkdownDescription: "Create and Manage Setup Keys, see [NetBird Docs](https://docs.netbird.io/how-to/register-machines-using-setup-keys) for more information.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "SetupKey ID",
+				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"name": schema.StringAttribute{
-				Required:            true,
 				MarkdownDescription: "SetupKey Name",
+				Required:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"expires": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "SetupKey Expiration Date",
+				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"expiry_seconds": schema.Int32Attribute{
-				Required:            true,
-				MarkdownDescription: "Expiry time in seconds",
+				MarkdownDescription: "Expiry time in seconds (0 is unlimited)",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(0),
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
 			},
 			"updated_at": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Creation timestamp",
+				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"last_used": schema.StringAttribute{
-				Computed:            true,
 				MarkdownDescription: "Last usage time",
+				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"key": schema.StringAttribute{
+				MarkdownDescription: "Plaintext setup key",
 				Computed:            true,
 				Sensitive:           true,
-				MarkdownDescription: "Plaintext setup key",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"type": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "",
+				MarkdownDescription: "Setup Key type (one-off or reusable)",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("one-off"),
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{stringvalidator.OneOf("one-off", "reusable")},
 			},
 			"usage_limit": schema.Int32Attribute{
+				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited)",
 				Computed:            true,
 				Optional:            true,
-				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 				Default:             int32default.StaticInt32(0),
 			},
 			"used_times": schema.Int32Attribute{
+				MarkdownDescription: "Number of times Setup Key was used",
 				Computed:            true,
-				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 			},
 			"state": schema.StringAttribute{
+				MarkdownDescription: "Setup key state (valid or expired)",
 				Computed:            true,
-				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"auto_groups": schema.ListAttribute{
+				MarkdownDescription: "List of groups to automatically assign to peers created through this setup key",
 				Computed:            true,
-				MarkdownDescription: "",
+				Optional:            true,
 				ElementType:         types.StringType,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 			"ephemeral": schema.BoolAttribute{
+				MarkdownDescription: "Indicate that the peer will be ephemeral or not, ephemeral peers are deleted after 10 minutes of inactivity",
 				Computed:            true,
-				MarkdownDescription: "",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Optional:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"allow_extra_dns_labels": schema.BoolAttribute{
+				MarkdownDescription: "Allow extra DNS labels to be added to the peer",
 				Computed:            true,
-				MarkdownDescription: "",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Optional:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"valid": schema.BoolAttribute{
+				MarkdownDescription: "True if setup key can be used to create more Peers",
 				Computed:            true,
-				MarkdownDescription: "",
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"revoked": schema.BoolAttribute{
+				MarkdownDescription: "Set to true to revoke setup key",
 				Computed:            true,
-				MarkdownDescription: "",
+				Optional:            true,
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 		},
@@ -313,7 +317,7 @@ func (r *SetupKey) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	})
 
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating User", err.Error())
+		resp.Diagnostics.AddError("Error updating Setup Key", err.Error())
 		return
 	}
 
