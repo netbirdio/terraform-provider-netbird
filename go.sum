@@ -217,8 +217,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20250330143713-7901e0a82203 h1:uxxbLPXQgC9VO15epNPtrD6zazyd5rZeqC5hQSmCdZU=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20250330143713-7901e0a82203/go.mod h1:2ZE6/tBBCKHQggPfO2UOQjyjXI7k+JDVl2ymorTOVQs=
-github.com/netbirdio/netbird v0.44.0 h1:kgea6nfAmLLVVOC2K2gK49yom9uhcW/Tct+zI5xIVpw=
-github.com/netbirdio/netbird v0.44.0/go.mod h1:Pj9ZrcttU+K/cXJWfNzi4PtwxwyDR+sWihjtAE3nmA0=
+github.com/netbirdio/netbird v0.45.1 h1:oxFRL3hY8OA+BOkhmJet8E6mmwKuM8IskEpRSrFX17U=
+github.com/netbirdio/netbird v0.45.1/go.mod h1:YDHTPrpUjb7OyVDiuP0kr9bByhf7kHC25zZiX+KgAtA=
 github.com/oklog/run v1.0.0 h1:Ru7dDtJNOyC66gQ5dQmaCa0qIsAUFY3sFpK1Xk8igrw=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/okta/okta-sdk-golang/v2 v2.18.0 h1:cfDasMb7CShbZvOrF6n+DnLevWwiHgedWMGJ8M8xKDc=
