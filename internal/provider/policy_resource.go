@@ -34,6 +34,8 @@ import (
 var _ resource.Resource = &Policy{}
 var _ resource.ResourceWithImportState = &Policy{}
 
+const portStringRegex = "^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+
 func NewPolicy() resource.Resource {
 	return &Policy{}
 }
@@ -171,7 +173,7 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 							ElementType:         types.StringType,
 							Optional:            true,
 							Computed:            true,
-							Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_ranges")), listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile("^([0-9]{,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"), "Port outside range 0 to 65535"))},
+							Validators:          []validator.List{listvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("port_ranges")), listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile(portStringRegex), "Port outside range 0 to 65535"))},
 						},
 						"port_ranges": schema.ListNestedAttribute{
 							MarkdownDescription: "Policy Rule Port Ranges (mutually exclusive with ports)",

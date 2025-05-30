@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"reflect"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -193,4 +195,26 @@ func Test_policyRulesTerraformToAPI(t *testing.T) {
 		}
 	}
 
+}
+
+func Test_portRegex(t *testing.T) {
+	r := regexp.MustCompile(portStringRegex)
+	for i := range 65536 {
+		str := strconv.FormatInt(int64(i), 10)
+		if !r.MatchString(str) {
+			t.Fatalf("Expected %d to match regex", i)
+		}
+	}
+
+	noMatchCases := []string{
+		"-1",
+		"65536",
+		"100000",
+		"65635",
+	}
+	for _, c := range noMatchCases {
+		if r.MatchString(c) {
+			t.Fatalf("Exepected %s not to match regex", c)
+		}
+	}
 }
