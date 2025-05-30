@@ -179,19 +179,41 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(account.Id)
 	data.JwtAllowGroups, ret = types.ListValueFrom(ctx, types.StringType, account.Settings.JwtAllowGroups)
-	data.JwtGroupsClaimName = types.StringValue(*account.Settings.JwtGroupsClaimName)
+	data.JwtGroupsClaimName = types.StringPointerValue(account.Settings.JwtGroupsClaimName)
 	data.PeerLoginExpiration = types.Int32Value(int32(account.Settings.PeerLoginExpiration))
 	data.PeerInactivityExpiration = types.Int32Value(int32(account.Settings.PeerInactivityExpiration))
 	data.PeerLoginExpirationEnabled = types.BoolValue(account.Settings.PeerLoginExpirationEnabled)
 	data.PeerInactivityExpirationEnabled = types.BoolValue(account.Settings.PeerInactivityExpirationEnabled)
 	data.RegularUsersViewBlocked = types.BoolValue(account.Settings.RegularUsersViewBlocked)
-	data.GroupsPropagationEnabled = types.BoolValue(*account.Settings.GroupsPropagationEnabled)
-	data.JwtGroupsEnabled = types.BoolValue(*account.Settings.JwtGroupsEnabled)
-	data.RoutingPeerDnsResolutionEnabled = types.BoolValue(*account.Settings.RoutingPeerDnsResolutionEnabled)
+	data.GroupsPropagationEnabled = types.BoolPointerValue(account.Settings.GroupsPropagationEnabled)
+	data.JwtGroupsEnabled = types.BoolPointerValue(account.Settings.JwtGroupsEnabled)
+	data.RoutingPeerDnsResolutionEnabled = types.BoolPointerValue(account.Settings.RoutingPeerDnsResolutionEnabled)
 	data.PeerApprovalEnabled = types.BoolValue(account.Settings.Extra.PeerApprovalEnabled)
 	data.NetworkTrafficLogsEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficLogsEnabled)
 	data.NetworkTrafficPacketCounterEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficPacketCounterEnabled)
 	return ret
+}
+
+func accountTerraformToAPI(ctx context.Context, account *api.Account, data AccountSettingsModel) api.AccountRequest {
+	return api.AccountRequest{
+		Settings: api.AccountSettings{
+			Extra: &api.AccountExtraSettings{
+				NetworkTrafficLogsEnabled:          boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled),
+				NetworkTrafficPacketCounterEnabled: boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled),
+				PeerApprovalEnabled:                boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled),
+			},
+			GroupsPropagationEnabled:        boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled),
+			JwtAllowGroups:                  stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups),
+			JwtGroupsClaimName:              stringDefaultPointer(data.JwtGroupsClaimName, account.Settings.JwtGroupsClaimName),
+			JwtGroupsEnabled:                boolDefaultPointer(data.JwtGroupsEnabled, account.Settings.JwtGroupsEnabled),
+			PeerInactivityExpiration:        int(int32Default(data.PeerInactivityExpiration, int32(account.Settings.PeerInactivityExpiration))),
+			PeerInactivityExpirationEnabled: boolDefault(data.PeerInactivityExpirationEnabled, account.Settings.PeerInactivityExpirationEnabled),
+			PeerLoginExpiration:             int(int32Default(data.PeerLoginExpiration, int32(account.Settings.PeerLoginExpiration))),
+			PeerLoginExpirationEnabled:      boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled),
+			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
+			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
+		},
+	}
 }
 
 func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -212,25 +234,7 @@ func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest
 
 	account := &accounts[0]
 
-	updateRequest := api.AccountRequest{
-		Settings: api.AccountSettings{
-			Extra: &api.AccountExtraSettings{
-				NetworkTrafficLogsEnabled:          boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled),
-				NetworkTrafficPacketCounterEnabled: boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled),
-				PeerApprovalEnabled:                boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled),
-			},
-			GroupsPropagationEnabled:        boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled),
-			JwtAllowGroups:                  stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups),
-			JwtGroupsClaimName:              stringDefaultPointer(data.JwtGroupsClaimName, account.Settings.JwtGroupsClaimName),
-			JwtGroupsEnabled:                boolDefaultPointer(data.JwtGroupsEnabled, account.Settings.JwtGroupsEnabled),
-			PeerInactivityExpiration:        int(int32Default(data.PeerInactivityExpiration, int32(account.Settings.PeerInactivityExpiration))),
-			PeerInactivityExpirationEnabled: boolDefault(data.PeerInactivityExpirationEnabled, account.Settings.PeerInactivityExpirationEnabled),
-			PeerLoginExpiration:             int(int32Default(data.PeerLoginExpiration, int32(account.Settings.PeerLoginExpiration))),
-			PeerLoginExpirationEnabled:      boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled),
-			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
-			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
-		},
-	}
+	updateRequest := accountTerraformToAPI(ctx, account, data)
 
 	account, err = r.client.Accounts.Update(ctx, account.Id, updateRequest)
 	if err != nil {
@@ -303,25 +307,7 @@ func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest
 	}
 	account := &accounts[0]
 
-	updateRequest := api.AccountRequest{
-		Settings: api.AccountSettings{
-			Extra: &api.AccountExtraSettings{
-				NetworkTrafficLogsEnabled:          boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled),
-				NetworkTrafficPacketCounterEnabled: boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled),
-				PeerApprovalEnabled:                boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled),
-			},
-			GroupsPropagationEnabled:        boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled),
-			JwtAllowGroups:                  stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups),
-			JwtGroupsClaimName:              stringDefaultPointer(data.JwtGroupsClaimName, account.Settings.JwtGroupsClaimName),
-			JwtGroupsEnabled:                boolDefaultPointer(data.JwtGroupsEnabled, account.Settings.JwtGroupsEnabled),
-			PeerInactivityExpiration:        int(int32Default(data.PeerInactivityExpiration, int32(account.Settings.PeerInactivityExpiration))),
-			PeerInactivityExpirationEnabled: boolDefault(data.PeerInactivityExpirationEnabled, account.Settings.PeerInactivityExpirationEnabled),
-			PeerLoginExpiration:             int(int32Default(data.PeerLoginExpiration, int32(account.Settings.PeerLoginExpiration))),
-			PeerLoginExpirationEnabled:      boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled),
-			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
-			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
-		},
-	}
+	updateRequest := accountTerraformToAPI(ctx, account, data)
 
 	account, err = r.client.Accounts.Update(ctx, data.Id.ValueString(), updateRequest)
 

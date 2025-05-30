@@ -318,6 +318,7 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 			Protocol:      types.StringValue(string(r.Protocol)),
 			Enabled:       types.BoolValue(r.Enabled),
 			Bidirectional: types.BoolValue(r.Bidirectional),
+			Description:   types.StringPointerValue(r.Description),
 		}
 		if r.Sources != nil {
 			var sources []string
@@ -418,17 +419,23 @@ func policyRulesTerraformToAPI(ctx context.Context, data *PolicyModel) ([]api.Po
 			ret.AddError("Unexpected Value", fmt.Sprintf("data.Rules[%d].protocol expected to be types.String, found %T", i, ruleObject.Attributes()["protocol"]))
 			return nil, ret
 		}
+		ruleID, ok := ruleObject.Attributes()["id"].(types.String)
+		if !ok {
+			ret.AddError("Unexpected Value", fmt.Sprintf("data.Rules[%d].id expected to be types.String, found %T", i, ruleObject.Attributes()["id"]))
+			return nil, ret
+		}
 		rule := api.PolicyRuleUpdate{
+			Id:            ruleID.ValueStringPointer(),
 			Action:        api.PolicyRuleUpdateAction(ruleAction.ValueString()),
 			Bidirectional: ruleBidirectional.ValueBool(),
 			Enabled:       ruleEnabled.ValueBool(),
 			Name:          ruleName.ValueString(),
 			Protocol:      api.PolicyRuleUpdateProtocol(ruleProtocol.ValueString()),
 		}
-		if v, ok := ruleObject.Attributes()["description"].(types.String); ok {
+		if v, ok := ruleObject.Attributes()["description"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
 			rule.Description = v.ValueStringPointer()
 		}
-		if v, ok := ruleObject.Attributes()["destination_resource"].(types.Object); ok {
+		if v, ok := ruleObject.Attributes()["destination_resource"].(types.Object); ok && !v.IsNull() && !v.IsUnknown() {
 			if _, ok := v.Attributes()["id"]; ok {
 				rID, ok := v.Attributes()["id"].(types.String)
 				if !ok {
@@ -446,7 +453,7 @@ func policyRulesTerraformToAPI(ctx context.Context, data *PolicyModel) ([]api.Po
 				}
 			}
 		}
-		if v, ok := ruleObject.Attributes()["source_resource"].(types.Object); ok {
+		if v, ok := ruleObject.Attributes()["source_resource"].(types.Object); ok && !v.IsNull() && !v.IsUnknown() {
 			if _, ok := v.Attributes()["id"]; ok {
 				rID, ok := v.Attributes()["id"].(types.String)
 				if !ok {
@@ -464,16 +471,16 @@ func policyRulesTerraformToAPI(ctx context.Context, data *PolicyModel) ([]api.Po
 				}
 			}
 		}
-		if v, ok := ruleObject.Attributes()["sources"].(types.List); ok {
+		if v, ok := ruleObject.Attributes()["sources"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
 			rule.Sources = stringListDefaultPointer(ctx, v, nil)
 		}
-		if v, ok := ruleObject.Attributes()["destinations"].(types.List); ok {
+		if v, ok := ruleObject.Attributes()["destinations"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
 			rule.Destinations = stringListDefaultPointer(ctx, v, nil)
 		}
-		if v, ok := ruleObject.Attributes()["ports"].(types.List); ok {
+		if v, ok := ruleObject.Attributes()["ports"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
 			rule.Ports = stringListDefaultPointer(ctx, v, nil)
 		}
-		if v, ok := ruleObject.Attributes()["port_ranges"].(types.List); ok {
+		if v, ok := ruleObject.Attributes()["port_ranges"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
 			portRanges := []api.RulePortRange{}
 			for j, k := range v.Elements() {
 				portRange, ok := k.(types.Object)
