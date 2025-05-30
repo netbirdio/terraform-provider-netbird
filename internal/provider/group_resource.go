@@ -115,10 +115,10 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(group.Id)
 	data.Name = types.StringValue(group.Name)
-	data.Issued = types.StringValue(string(*group.Issued))
-	var peers []string
-	for _, v := range group.Peers {
-		peers = append(peers, v.Id)
+	data.Issued = types.StringPointerValue((*string)(group.Issued))
+	peers := make([]string, len(group.Peers))
+	for i, v := range group.Peers {
+		peers[i] = v.Id
 	}
 	l, diag := types.ListValueFrom(ctx, types.StringType, peers)
 	ret.Append(diag...)

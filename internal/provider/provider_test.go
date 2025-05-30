@@ -23,3 +23,7 @@ package provider
 // about the appropriate environment variables being set are common to see in a pre-check
 // function.
 // }
+
+func valPtr[T any](s T) *T {
+	return &s
+}

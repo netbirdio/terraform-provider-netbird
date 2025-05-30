@@ -209,6 +209,52 @@ func (d *PeersDataSource) Configure(ctx context.Context, req datasource.Configur
 	d.client = client
 }
 
+func filterPeers(ctx context.Context, peers []api.Peer, data PeersModel) ([]string, diag.Diagnostics) {
+	var d diag.Diagnostics
+	var filteredPeers []string
+	for _, p := range peers {
+		match := 0
+		match += matchString(p.Name, data.Name)
+		match += matchString(p.Ip, data.Ip)
+		match += matchString(p.ConnectionIp, data.ConnectionIp)
+		match += matchString(p.DnsLabel, data.DnsLabel)
+		match += matchString(p.UserId, data.UserId)
+		match += matchString(p.Hostname, data.Hostname)
+		match += matchString(p.CountryCode, data.CountryCode)
+		match += matchString(p.CityName, data.CityName)
+		match += matchString(p.Os, data.Os)
+		match += matchBool(p.Connected, data.Connected)
+		match += matchBool(p.SshEnabled, data.SshEnabled)
+		match += matchBool(p.InactivityExpirationEnabled, data.InactivityExpirationEnabled)
+		match += matchBool(p.ApprovalRequired, data.ApprovalRequired)
+		match += matchBool(p.LoginExpirationEnabled, data.LoginExpirationEnabled)
+		match += matchBool(p.LoginExpired, data.LoginExpired)
+		match += matchInt32(int32(p.GeonameId), data.GeonameId)
+		m, di := matchListString(ctx, p.ExtraDnsLabels, data.ExtraDnsLabels)
+		d.Append(di...)
+		if d.HasError() {
+			return filteredPeers, d
+		}
+		match += m
+		groups := make([]string, len(p.Groups))
+		for i, j := range p.Groups {
+			groups[i] = j.Id
+		}
+		m, di = matchListString(ctx, groups, data.Groups)
+		d.Append(di...)
+		if d.HasError() {
+			return filteredPeers, d
+		}
+		match += m
+
+		if match > 0 {
+			filteredPeers = append(filteredPeers, p.Id)
+		}
+	}
+
+	return filteredPeers, d
+}
+
 func (d *PeersDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data PeersModel
 
@@ -238,70 +284,30 @@ func (d *PeersDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		data.GeonameId,
 		data.Groups,
 	) == 0 {
-		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name, email, self)")
+		resp.Diagnostics.AddError(
+			"No selector",
+			`Must add at least one of (name, ip, connection_ip, dns_label, user_id, hostname, country_code, city_name, os,`+
+				` connected, ssh_enabled, inactivity_expiration_enabled, approval_required, login_expiration_enabled,`+
+				` login_expired, geoname_id, groups)`,
+		)
 		return
 	}
 
-	var filteredPeers []string
 	var err error
 	var peers []api.Peer
 	peers, err = d.client.Peers.List(ctx)
-	if err == nil {
-		for _, p := range peers {
-			match := 0
-			match += matchString(p.Name, data.Name)
-			match += matchString(p.Ip, data.Ip)
-			match += matchString(p.ConnectionIp, data.ConnectionIp)
-			match += matchString(p.DnsLabel, data.DnsLabel)
-			match += matchString(p.UserId, data.UserId)
-			match += matchString(p.Hostname, data.Hostname)
-			match += matchString(p.CountryCode, data.CountryCode)
-			match += matchString(p.CityName, data.CityName)
-			match += matchString(p.Os, data.Os)
-			match += matchBool(p.Connected, data.Connected)
-			match += matchBool(p.SshEnabled, data.SshEnabled)
-			match += matchBool(p.InactivityExpirationEnabled, data.InactivityExpirationEnabled)
-			match += matchBool(p.ApprovalRequired, data.ApprovalRequired)
-			match += matchBool(p.LoginExpirationEnabled, data.LoginExpirationEnabled)
-			match += matchBool(p.LoginExpired, data.LoginExpired)
-			match += matchInt32(int32(p.GeonameId), data.GeonameId)
-			m, di := matchListString(ctx, p.ExtraDnsLabels, data.ExtraDnsLabels)
-			resp.Diagnostics.Append(di...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			match += m
-			groups := make([]string, len(p.Groups))
-			for i, j := range p.Groups {
-				groups[i] = j.Id
-			}
-			m, di = matchListString(ctx, groups, data.Groups)
-			resp.Diagnostics.Append(di...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			match += m
-
-			if match > 0 {
-				filteredPeers = append(filteredPeers, p.Id)
-			}
-		}
-	}
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Peers", err.Error())
 		return
 	}
 
+	filteredPeers, di := filterPeers(ctx, peers, data)
+	resp.Diagnostics.Append(di...)
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var di diag.Diagnostics
 	data.Ids, di = types.ListValueFrom(ctx, types.StringType, filteredPeers)
 	resp.Diagnostics.Append(di...)
 	if resp.Diagnostics.HasError() {
