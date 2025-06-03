@@ -12,28 +12,28 @@ import (
 )
 
 func boolDefault(a types.Bool, b bool) bool {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	return a.ValueBool()
 }
 
 func boolDefaultPointer(a types.Bool, b *bool) *bool {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	return a.ValueBoolPointer()
 }
 
 func stringDefaultPointer(a types.String, b *string) *string {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	return a.ValueStringPointer()
 }
 
 func stringListDefault(ctx context.Context, a types.List, b []string) []string {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	var ret []string
@@ -42,14 +42,14 @@ func stringListDefault(ctx context.Context, a types.List, b []string) []string {
 }
 
 func int32Default(a types.Int32, b int32) int32 {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	return a.ValueInt32()
 }
 
 func stringListDefaultPointer(ctx context.Context, a types.List, b *[]string) *[]string {
-	if a.IsUnknown() {
+	if a.IsUnknown() || a.IsNull() {
 		return b
 	}
 	var ret []string
