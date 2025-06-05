@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -14,8 +15,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -90,48 +89,39 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			"ip": schema.StringAttribute{
 				MarkdownDescription: "Peer  IP",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"connection_ip": schema.StringAttribute{
 				MarkdownDescription: "Peer Public IP",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"connected": schema.BoolAttribute{
 				MarkdownDescription: "Peer Connection Status",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"last_seen": schema.StringAttribute{
 				MarkdownDescription: "Peer Last Seen timedate",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"os": schema.StringAttribute{
 				MarkdownDescription: "Peer OS",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"kernel_version": schema.StringAttribute{
 				MarkdownDescription: "Peer Kernel Version",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"geoname_id": schema.Int32Attribute{
 				MarkdownDescription: "Peer Location ID",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
 			},
 			"version": schema.StringAttribute{
 				MarkdownDescription: "Peer  Version",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"groups": schema.ListAttribute{
 				MarkdownDescription: "Peer groups",
 				ElementType:         types.StringType,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
 			"ssh_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Enable SSH to Peer",
@@ -154,22 +144,18 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			"dns_label": schema.StringAttribute{
 				MarkdownDescription: "Peer DNS Label",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"user_id": schema.StringAttribute{
 				MarkdownDescription: "User ID of peer",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"hostname": schema.StringAttribute{
 				MarkdownDescription: "Peer's HOSTNAME",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"ui_version": schema.StringAttribute{
 				MarkdownDescription: "Peer  UI Version",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"login_expiration_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether login expiration is enabled for peer",
@@ -180,33 +166,27 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			"login_expired": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether peer login is expired",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"last_login": schema.StringAttribute{
 				MarkdownDescription: "Time of peer last login",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"country_code": schema.StringAttribute{
 				MarkdownDescription: "Peer country code",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"city_name": schema.StringAttribute{
 				MarkdownDescription: "Peer city name",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"serial_number": schema.StringAttribute{
 				MarkdownDescription: "Peer device serial number",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"extra_dns_labels": schema.ListAttribute{
 				MarkdownDescription: "Peer extra DNS Labels",
 				Computed:            true,
 				ElementType:         types.StringType,
-				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
 		},
 	}
@@ -420,9 +400,12 @@ func (r *Peer) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 		return
 	}
 
-	err := r.client.Peers.Delete(ctx, data.Id.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Error deleting Peer", err.Error())
+	// Do not delete actual peers in acceptance tests to make running locally easier
+	if _, ok := os.LookupEnv("TF_ACC"); !ok {
+		err := r.client.Peers.Delete(ctx, data.Id.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Error deleting Peer", err.Error())
+		}
 	}
 }
 

@@ -2,12 +2,16 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
@@ -135,4 +139,80 @@ func Test_peerAPIToTerraform(t *testing.T) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
 		}
 	}
+}
+
+func Test_Peer_Create(t *testing.T) {
+	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_peer." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testPeerResource(rName, `peer2`, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					func(s *terraform.State) error {
+						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						peer, err := testClient().Peers.Get(context.Background(), pID)
+						if err != nil {
+							return err
+						}
+
+						if peer.Name != rName {
+							return fmt.Errorf("Peer name mismatch, expected %s, found %s on management server", rName, peer.Name)
+						}
+
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func Test_Peer_Update(t *testing.T) {
+	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_peer." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testPeerResource(rName, `peer3`, "meow"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testPeerResource(rName, `peer3`, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					func(s *terraform.State) error {
+						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						peer, err := testClient().Peers.Get(context.Background(), pID)
+						if err != nil {
+							return err
+						}
+						if peer.Name != rName {
+							return fmt.Errorf("Peer name mismatch, expected %s, found %s on management server", rName, peer.Name)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func testPeerResource(rName, id, name string) string {
+	return fmt.Sprintf(`resource "netbird_peer" "%s" {
+	id = "%s"
+	name = "%s"
+}`, rName, id, name)
 }

@@ -112,7 +112,7 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 					},
 					"action": schema.StringAttribute{
 						Optional:   true,
-						Validators: []validator.String{stringvalidator.OneOf("allow", "block")},
+						Validators: []validator.String{stringvalidator.OneOf("allow", "deny")},
 					},
 				},
 			},
@@ -125,7 +125,7 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 					},
 					"action": schema.StringAttribute{
 						Optional:   true,
-						Validators: []validator.String{stringvalidator.OneOf("allow", "block")},
+						Validators: []validator.String{stringvalidator.OneOf("allow", "deny")},
 					},
 				},
 			},
