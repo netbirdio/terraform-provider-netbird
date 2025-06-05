@@ -325,16 +325,7 @@ func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest
 }
 
 func (r *AccountSettings) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data AccountSettingsModel
-
-	// Read Terraform prior state data into the model
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.AddError("Not Implemented", "For account safety reasons, account deletion through Terraform is disabled, you can remove the resource from Terraform using 'terraform state rm netbird_account...'")
+	// Do nothing
 }
 
 func (r *AccountSettings) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

@@ -2,11 +2,15 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/netbirdio/netbird/management/server/http/api"
 )
 
@@ -170,4 +174,120 @@ func Test_nameserverGroupTerraformToAPI(t *testing.T) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
 		}
 	}
+}
+
+func Test_NameserverGroup_Create(t *testing.T) {
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_nameserver_group." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `udp`, `53`, `["group-all"]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					func(s *terraform.State) error {
+						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						nsGroup, err := testClient().DNS.GetNameserverGroup(context.Background(), gID)
+						if err != nil {
+							return err
+						}
+						if nsGroup.Name != rName {
+							return fmt.Errorf("NameserverGroup name mismatch, expected %s, found %s on management server", rName, nsGroup.Name)
+						}
+						if len(nsGroup.Nameservers) != 1 {
+							return fmt.Errorf("NameserverGroup Nameservers mismatch, expected 1, found %d", len(nsGroup.Nameservers))
+						}
+						if nsGroup.Nameservers[0].Ip != `1.1.1.1` {
+							return fmt.Errorf("NameserverGroup Nameservers.0.Ip mismatch, expected 1.1.1.1, found %s", nsGroup.Nameservers[0].Ip)
+						}
+						if nsGroup.Nameservers[0].NsType != `udp` {
+							return fmt.Errorf("NameserverGroup Nameservers.0.NsType mismatch, expected udp, found %s", nsGroup.Nameservers[0].NsType)
+						}
+						if nsGroup.Nameservers[0].Port != 53 {
+							return fmt.Errorf("NameserverGroup Nameservers.0.Port mismatch, expected 53, found %d", nsGroup.Nameservers[0].Port)
+						}
+						if len(nsGroup.Groups) != 1 {
+							return fmt.Errorf("NameserverGroup Groups mismatch, expected 1, found %d", len(nsGroup.Groups))
+						}
+						if nsGroup.Groups[0] != "group-all" {
+							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected group-all, found %s", nsGroup.Groups[0])
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func Test_NameserverGroup_Update(t *testing.T) {
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_nameserver_group." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `udp`, `53`, `["group-all"]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testNameserverGroupResource(rName, `8.8.8.8`, `udp`, `5353`, `["group-notall"]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					func(s *terraform.State) error {
+						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						nsGroup, err := testClient().DNS.GetNameserverGroup(context.Background(), gID)
+						if err != nil {
+							return err
+						}
+						if nsGroup.Name != rName {
+							return fmt.Errorf("NameserverGroup name mismatch, expected %s, found %s on management server", rName, nsGroup.Name)
+						}
+						if len(nsGroup.Nameservers) != 1 {
+							return fmt.Errorf("NameserverGroup Nameservers mismatch, expected 1, found %d", len(nsGroup.Nameservers))
+						}
+						if nsGroup.Nameservers[0].Ip != `8.8.8.8` {
+							return fmt.Errorf("NameserverGroup Nameservers.0.Ip mismatch, expected 8.8.8.8, found %s", nsGroup.Nameservers[0].Ip)
+						}
+						if nsGroup.Nameservers[0].NsType != `udp` {
+							return fmt.Errorf("NameserverGroup Nameservers.0.NsType mismatch, expected udp, found %s", nsGroup.Nameservers[0].NsType)
+						}
+						if nsGroup.Nameservers[0].Port != 5353 {
+							return fmt.Errorf("NameserverGroup Nameservers.0.Port mismatch, expected 5353, found %d", nsGroup.Nameservers[0].Port)
+						}
+						if len(nsGroup.Groups) != 1 {
+							return fmt.Errorf("NameserverGroup Groups mismatch, expected 1, found %d", len(nsGroup.Groups))
+						}
+						if nsGroup.Groups[0] != "group-notall" {
+							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected group-notall, found %s", nsGroup.Groups[0])
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func testNameserverGroupResource(rName, ip, nsType, port, groups string) string {
+	return fmt.Sprintf(`resource "netbird_nameserver_group" "%s" {
+	name = "%s"
+	nameservers = [
+		{
+			ip = "%s"
+			ns_type = "%s"
+			port = %s
+		}
+	]
+	groups = %s
+}`, rName, rName, ip, nsType, port, groups)
 }

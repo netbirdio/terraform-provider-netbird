@@ -74,9 +74,8 @@ func (r *Route) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"network_type": schema.StringAttribute{
-				MarkdownDescription: "",
+				MarkdownDescription: "Domain or IPv4",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Route description",
@@ -312,7 +311,7 @@ func (r *Route) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 		Masquerade:          data.Masquerade.ValueBool(),
 		Metric:              int(data.Metric.ValueInt32()),
 		Network:             data.Network.ValueStringPointer(),
-		NetworkId:           data.NetworkType.ValueString(),
+		NetworkId:           data.NetworkId.ValueString(),
 		Peer:                data.Peer.ValueStringPointer(),
 		PeerGroups:          stringListDefaultPointer(ctx, data.PeerGroups, nil),
 	}

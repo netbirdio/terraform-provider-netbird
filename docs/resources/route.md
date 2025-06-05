@@ -56,7 +56,7 @@ resource "netbird_route" "example" {
 ### Read-Only
 
 - `id` (String) Route ID
-- `network_type` (String)
+- `network_type` (String) Domain or IPv4
 
 ## Import
 
