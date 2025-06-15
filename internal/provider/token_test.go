@@ -20,14 +20,13 @@ func Test_tokenAPIToTerraform(t *testing.T) {
 			resource: &api.PersonalAccessToken{
 				Id:             "r1",
 				CreatedAt:      timeNow,
-				CreatedBy:      "me",
 				ExpirationDate: timeNow,
 				LastUsed:       &timeNow,
 				Name:           "test",
 			},
 			expected: TokenModel{
 				Id:             types.StringValue("r1"),
-				UserID:         types.StringValue("me"),
+				UserID:         types.StringNull(),
 				Name:           types.StringValue("test"),
 				CreatedAt:      types.StringValue(timeNow.Format(time.RFC3339)),
 				ExpirationDate: types.StringValue(timeNow.Format(time.RFC3339)),
