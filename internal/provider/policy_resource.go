@@ -152,7 +152,6 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 						"description": schema.StringAttribute{
 							MarkdownDescription: "Policy description",
 							Optional:            true,
-							Computed:            true,
 						},
 						"action": schema.StringAttribute{
 							MarkdownDescription: "Policy Rule Action (accept|drop)",
@@ -303,7 +302,7 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 	var diag diag.Diagnostics
 	data.Id = types.StringValue(*policy.Id)
 	data.Name = types.StringValue(policy.Name)
-	if policy.Description == nil {
+	if policy.Description == nil || *policy.Description == "" {
 		data.Description = types.StringNull()
 	} else {
 		data.Description = types.StringValue(*policy.Description)
@@ -321,6 +320,9 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 			Enabled:       types.BoolValue(r.Enabled),
 			Bidirectional: types.BoolValue(r.Bidirectional),
 			Description:   types.StringPointerValue(r.Description),
+		}
+		if r.Description == nil || *r.Description == "" {
+			ruleModel.Description = types.StringNull()
 		}
 		if r.Sources != nil {
 			var sources []string
