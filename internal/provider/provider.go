@@ -4,6 +4,7 @@ package provider
 
 import (
 	"context"
+	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
@@ -48,7 +49,7 @@ func (p *NetBirdProvider) Schema(ctx context.Context, req provider.SchemaRequest
 			},
 			"token": schema.StringAttribute{
 				MarkdownDescription: "Admin PAT for NetBird Management Server",
-				Required:            true,
+				Optional:            true,
 				Sensitive:           true,
 			},
 		},
@@ -65,10 +66,23 @@ func (p *NetBirdProvider) Configure(ctx context.Context, req provider.ConfigureR
 	}
 
 	managementURL := "https://api.netbird.io"
-	if data.ManagementURL.ValueString() != "" {
+	if !data.ManagementURL.IsUnknown() && !data.ManagementURL.IsNull() {
 		managementURL = data.ManagementURL.ValueString()
+	} else if v, ok := os.LookupEnv("NB_MANAGEMENT_URL"); ok {
+		managementURL = v
 	}
-	client := netbird.New(managementURL, data.Token.ValueString())
+	token := data.Token.ValueString()
+	if data.Token.IsNull() || data.Token.IsUnknown() {
+		if v, ok := os.LookupEnv("NB_PAT"); ok {
+			token = v
+		} else {
+			resp.Diagnostics.AddError("Missing required argument", `The argument "token" is required, but was not set.`)
+		}
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	client := netbird.New(managementURL, token)
 	resp.DataSourceData = client
 	resp.ResourceData = client
 }
