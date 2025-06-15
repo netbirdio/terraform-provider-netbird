@@ -39,5 +39,6 @@ provider "netbird" {
 
 ### Optional
 
-- `management_url` (String) NetBird Management API URL
-- `token` (String, Sensitive) Admin PAT for NetBird Management Server
+- `management_url` (String) NetBird Management API URL, can be also set through NB_MANAGEMENT_URL Environment Variable, value defined in Terraform files takes precedence
+- `tenant_account` (String) Account ID to impersonate, can be also set through NB_ACCOUNT Environment Variable, value defined in Terraform files takes precedence
+- `token` (String, Sensitive) Admin PAT for NetBird Management Server, can be also set through NB_PAT Environment Variable, value defined in Terraform files takes precedence
