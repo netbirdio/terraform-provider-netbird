@@ -131,7 +131,6 @@ func tokenAPIToTerraform(token *api.PersonalAccessToken, data *TokenModel) {
 	data.Id = types.StringValue(token.Id)
 	data.Name = types.StringValue(token.Name)
 	data.ExpirationDate = types.StringValue(token.ExpirationDate.Format(time.RFC3339))
-	data.UserID = types.StringValue(token.CreatedBy)
 	data.CreatedAt = types.StringValue(token.CreatedAt.Format(time.RFC3339))
 	if token.LastUsed == nil {
 		data.LastUsed = types.StringNull()
