@@ -86,7 +86,6 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			"expires": schema.StringAttribute{
 				MarkdownDescription: "SetupKey Expiration Date",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"expiry_seconds": schema.Int32Attribute{
 				MarkdownDescription: "Expiry time in seconds (0 is unlimited)",
@@ -98,7 +97,6 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			"updated_at": schema.StringAttribute{
 				MarkdownDescription: "Creation timestamp",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"last_used": schema.StringAttribute{
 				MarkdownDescription: "Last usage time",
@@ -123,7 +121,7 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited)",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
 				Default:             int32default.StaticInt32(0),
 			},
 			"used_times": schema.Int32Attribute{
@@ -134,7 +132,6 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			"state": schema.StringAttribute{
 				MarkdownDescription: "Setup key state (valid or expired)",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"auto_groups": schema.ListAttribute{
 				MarkdownDescription: "List of groups to automatically assign to peers created through this setup key",
@@ -159,7 +156,6 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			"valid": schema.BoolAttribute{
 				MarkdownDescription: "True if setup key can be used to create more Peers",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"revoked": schema.BoolAttribute{
 				MarkdownDescription: "Set to true to revoke setup key",
