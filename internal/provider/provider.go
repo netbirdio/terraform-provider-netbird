@@ -32,6 +32,7 @@ type NetBirdProvider struct {
 type NetBirdProviderModel struct {
 	ManagementURL types.String `tfsdk:"management_url"`
 	Token         types.String `tfsdk:"token"`
+	TenantAccount types.String `tfsdk:"tenant_account"`
 }
 
 func (p *NetBirdProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -44,13 +45,17 @@ func (p *NetBirdProvider) Schema(ctx context.Context, req provider.SchemaRequest
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"management_url": schema.StringAttribute{
-				MarkdownDescription: "NetBird Management API URL",
+				MarkdownDescription: "NetBird Management API URL, can be also set through NB_MANAGEMENT_URL Environment Variable, value defined in Terraform files takes precedence",
 				Optional:            true,
 			},
 			"token": schema.StringAttribute{
-				MarkdownDescription: "Admin PAT for NetBird Management Server",
+				MarkdownDescription: "Admin PAT for NetBird Management Server, can be also set through NB_PAT Environment Variable, value defined in Terraform files takes precedence",
 				Optional:            true,
 				Sensitive:           true,
+			},
+			"tenant_account": schema.StringAttribute{
+				MarkdownDescription: "Account ID to impersonate, can be also set through NB_ACCOUNT Environment Variable, value defined in Terraform files takes precedence",
+				Optional:            true,
 			},
 		},
 	}
@@ -83,6 +88,11 @@ func (p *NetBirdProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 	client := netbird.New(managementURL, token)
+	if !data.TenantAccount.IsNull() && !data.TenantAccount.IsUnknown() {
+		client = client.Impersonate(data.TenantAccount.ValueString())
+	} else if v, ok := os.LookupEnv("NB_ACCOUNT"); ok {
+		client = client.Impersonate(v)
+	}
 	resp.DataSourceData = client
 	resp.ResourceData = client
 }
