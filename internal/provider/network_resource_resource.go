@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -134,6 +135,7 @@ func networkResourceAPIToTerraform(ctx context.Context, networkResource *api.Net
 	for i, k := range networkResource.Groups {
 		groups[i] = k.Id
 	}
+	sort.Strings(groups)
 	data.Groups, d = types.ListValueFrom(ctx, types.StringType, groups)
 	ret.Append(d...)
 	return ret
