@@ -130,7 +130,8 @@ func (d *AccountSettingsDataSource) Read(ctx context.Context, req datasource.Rea
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		}

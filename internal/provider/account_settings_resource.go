@@ -267,8 +267,8 @@ func (r *AccountSettings) Read(ctx context.Context, req resource.ReadRequest, re
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		}

@@ -185,8 +185,8 @@ func (r *Token) Read(ctx context.Context, req resource.ReadRequest, resp *resour
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting Token", err.Error())
 		}
