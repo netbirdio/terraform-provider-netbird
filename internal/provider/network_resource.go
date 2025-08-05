@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -69,6 +70,8 @@ func (r *Network) Schema(ctx context.Context, req resource.SchemaRequest, resp *
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Network Description",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"routers": schema.ListAttribute{
