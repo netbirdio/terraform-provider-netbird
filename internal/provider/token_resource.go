@@ -233,6 +233,10 @@ func (r *Token) Delete(ctx context.Context, req resource.DeleteRequest, resp *re
 
 func (r *Token) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	splitID := strings.Split(req.ID, "/")
+	if len(splitID) != 2 {
+		resp.Diagnostics.AddError("Error importing Token", "Invalid import ID, must be in format `userID/tokenID`")
+		return
+	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("user_id"), splitID[0])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }
