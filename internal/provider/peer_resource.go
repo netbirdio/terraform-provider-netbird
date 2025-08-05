@@ -327,8 +327,8 @@ func (r *Peer) Read(ctx context.Context, req resource.ReadRequest, resp *resourc
 
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting Peer", err.Error())
 		}

@@ -301,8 +301,8 @@ func (r *NameserverGroup) Read(ctx context.Context, req resource.ReadRequest, re
 	nameserverGroup, err := r.client.DNS.GetNameserverGroup(ctx, data.Id.ValueString())
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting NameserverGroup", err.Error())
 		}

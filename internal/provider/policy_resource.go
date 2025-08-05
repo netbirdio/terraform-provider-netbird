@@ -573,8 +573,8 @@ func (r *Policy) Read(ctx context.Context, req resource.ReadRequest, resp *resou
 	policy, err := r.client.Policies.Get(ctx, data.Id.ValueString())
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			data.Id = types.StringNull()
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			resp.State.RemoveResource(ctx)
+			return
 		} else {
 			resp.Diagnostics.AddError("Error getting Policy", err.Error())
 		}
