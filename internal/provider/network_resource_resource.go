@@ -260,6 +260,10 @@ func (r *NetworkResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 func (r *NetworkResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	splitID := strings.Split(req.ID, "/")
+	if len(splitID) != 2 {
+		resp.Diagnostics.AddError("Error importing NetworkResource", "Invalid import ID, must be in format `networkID/networkResourceID`")
+		return
+	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("network_id"), splitID[0])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }

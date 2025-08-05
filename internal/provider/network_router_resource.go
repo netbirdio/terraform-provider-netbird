@@ -265,6 +265,10 @@ func (r *NetworkRouter) Delete(ctx context.Context, req resource.DeleteRequest, 
 
 func (r *NetworkRouter) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	splitID := strings.Split(req.ID, "/")
+	if len(splitID) != 2 {
+		resp.Diagnostics.AddError("Error importing NetworkRouter", "Invalid import ID, must be in format `networkID/networkRouterID`")
+		return
+	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("network_id"), splitID[0])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), splitID[1])...)
 }
