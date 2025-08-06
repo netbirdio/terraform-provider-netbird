@@ -7,10 +7,10 @@ INSERT INTO users (id, account_id, role, is_service_user, non_deletable, blocked
 VALUES ('user1', 'account1', 'owner', 0, 0, 0, '2024-08-12 00:00:00', 'api');
 
 -- Seed Groups table
-INSERT INTO groups (id, account_id, name, issued, peers, integration_ref_id, integration_ref_integration_type)
-VALUES ('group-all', 'account1', 'All', 'api', '[]', 0, NULL);
-INSERT INTO groups (id, account_id, name, issued, peers, integration_ref_id, integration_ref_integration_type)
-VALUES ('group-notall', 'account1', 'NotAll', 'api', '[]', 0, NULL);
+INSERT INTO groups (id, account_id, name, issued, integration_ref_id, integration_ref_integration_type)
+VALUES ('group-all', 'account1', 'All', 'api',  0, NULL);
+INSERT INTO groups (id, account_id, name, issued, integration_ref_id, integration_ref_integration_type)
+VALUES ('group-notall', 'account1', 'NotAll', 'api',  0, NULL);
 
 -- Seed Personal Access Tokens (API Keys) table
 INSERT INTO personal_access_tokens (id, user_id, name, hashed_token, expiration_date, created_by, created_at, last_used)
