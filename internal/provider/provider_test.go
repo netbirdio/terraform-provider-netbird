@@ -15,7 +15,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
-	netbird "github.com/netbirdio/netbird/management/client/rest"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 )
 
 const apiToken = "nbp_apTmlmUXHSC4PKmHwtIZNaGr8eqcVI2gMURp"
