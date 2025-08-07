@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	netbird "github.com/netbirdio/netbird/management/client/rest"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.

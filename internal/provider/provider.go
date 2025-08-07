@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	netbird "github.com/netbirdio/netbird/management/client/rest"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 )
 
 // Ensure NetBirdProvider satisfies various provider interfaces.
