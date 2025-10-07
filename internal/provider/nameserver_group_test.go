@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -172,6 +173,48 @@ func Test_nameserverGroupTerraformToAPI(t *testing.T) {
 
 		if !reflect.DeepEqual(out, c.expected) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
+		}
+	}
+}
+
+func Test_fqdnRegex(t *testing.T) {
+	cases := []struct {
+		fqdn     string
+		expected bool
+	}{
+		{
+			fqdn:     "example.com",
+			expected: true,
+		},
+		{
+			fqdn:     "test-example.com",
+			expected: true,
+		},
+		{
+			fqdn:     "test-example.com.",
+			expected: true,
+		},
+		{
+			fqdn:     "test",
+			expected: false,
+		},
+		{
+			fqdn:     "company.internal",
+			expected: true,
+		},
+		{
+			fqdn:     "company.internal-dns",
+			expected: true,
+		},
+		{
+			fqdn:     "company,name.internal-dns",
+			expected: false,
+		},
+	}
+
+	for _, c := range cases {
+		if regexp.MustCompile(fqdnRegex).MatchString(c.fqdn) != c.expected {
+			t.Fatalf("Expected %t for fqdn %s", c.expected, c.fqdn)
 		}
 	}
 }

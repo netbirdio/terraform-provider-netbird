@@ -29,6 +29,10 @@ import (
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
+const (
+	fqdnRegex = `^(?:[_a-z0-9](?:[_a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)?$`
+)
+
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &NameserverGroup{}
 var _ resource.ResourceWithImportState = &NameserverGroup{}
@@ -93,7 +97,7 @@ func (r *NameserverGroup) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Computed:            true,
 				Default:             listdefault.StaticValue(types.ListValueMust(types.StringType, []attr.Value{})),
-				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile(`^(?i)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$`), "Invalid domain name"))},
+				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.RegexMatches(regexp.MustCompile(fqdnRegex), "Invalid domain name"))},
 			},
 			"nameservers": schema.ListNestedAttribute{
 				MarkdownDescription: "Nameserver list",
