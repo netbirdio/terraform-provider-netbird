@@ -35,7 +35,7 @@ func Test_networkResourceAPIToTerraform(t *testing.T) {
 				Description: types.StringNull(),
 				Address:     types.StringValue("1.1.1.1/32"),
 				Enabled:     types.BoolValue(false),
-				Groups:      types.ListValueMust(types.StringType, []attr.Value{}),
+				Groups:      types.SetValueMust(types.StringType, []attr.Value{}),
 			},
 		},
 		{
@@ -62,7 +62,41 @@ func Test_networkResourceAPIToTerraform(t *testing.T) {
 				Description: types.StringValue("Test"),
 				Address:     types.StringValue("example.com"),
 				Enabled:     types.BoolValue(true),
-				Groups:      types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+				Groups:      types.SetValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+			},
+		},
+		{
+			resource: &api.NetworkResource{
+				Address:     "example.com",
+				Description: valPtr("Test"),
+				Enabled:     true,
+				Groups: []api.GroupMinimum{
+					{
+						Id:             "g1",
+						Name:           "not important",
+						Issued:         nil,
+						PeersCount:     0,
+						ResourcesCount: 0,
+					},
+					{
+						Id:             "g2",
+						Name:           "doesn't matter",
+						Issued:         nil,
+						PeersCount:     0,
+						ResourcesCount: 0,
+					},
+				},
+				Id:   "r2",
+				Name: "test2",
+				Type: api.NetworkResourceTypeDomain,
+			},
+			expected: NetworkResourceModel{
+				Id:          types.StringValue("r2"),
+				Name:        types.StringValue("test2"),
+				Description: types.StringValue("Test"),
+				Address:     types.StringValue("example.com"),
+				Enabled:     types.BoolValue(true),
+				Groups:      types.SetValueMust(types.StringType, []attr.Value{types.StringValue("g1"), types.StringValue("g2")}),
 			},
 		},
 	}
@@ -89,12 +123,11 @@ func Test_NetworkResource_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall"]`, rName),
+				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall", "group-all"]`, rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "address", "example.com"),
-					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "groups.0", "group-notall"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "2"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					func(s *terraform.State) error {
 						nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
@@ -107,8 +140,8 @@ func Test_NetworkResource_Create(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected example.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 1 || resource.Groups[0].Id != "group-notall" {
-							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall], found %#v on management server", resource.Groups)
+						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
+							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
 						}
 
 						if resource.Name != rName {
@@ -139,11 +172,10 @@ func Test_NetworkResource_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `google.com`, `["group-all"]`, rName+"Updated"),
+				Config:       testNetworkResourceResource(rName, "network1", `google.com`, `["group-all", "group-notall"]`, rName+"Updated"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "address", "google.com"),
-					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "groups.0", "group-all"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "2"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName+"Updated"),
 					func(s *terraform.State) error {
 						nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
@@ -156,8 +188,8 @@ func Test_NetworkResource_Update(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected google.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 1 || resource.Groups[0].Id != "group-all" {
-							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-all], found %#v on management server", resource.Groups)
+						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
+							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
 						}
 
 						if resource.Name != rName+"Updated" {

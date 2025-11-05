@@ -6,10 +6,9 @@ package provider
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -47,7 +46,7 @@ type NetworkResourceModel struct {
 	Description types.String `tfsdk:"description"`
 	Address     types.String `tfsdk:"address"`
 	Enabled     types.Bool   `tfsdk:"enabled"`
-	Groups      types.List   `tfsdk:"groups"`
+	Groups      types.Set    `tfsdk:"groups"`
 }
 
 func (r *NetworkResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -93,11 +92,11 @@ func (r *NetworkResource) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				Default:             booldefault.StaticBool(true),
 			},
-			"groups": schema.ListAttribute{
+			"groups": schema.SetAttribute{
 				MarkdownDescription: "Group IDs containing the resource",
 				Required:            true,
 				ElementType:         types.StringType,
-				Validators:          []validator.List{listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)), listvalidator.SizeAtLeast(1)},
+				Validators:          []validator.Set{setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)), setvalidator.SizeAtLeast(1)},
 			},
 		},
 	}
@@ -135,8 +134,7 @@ func networkResourceAPIToTerraform(ctx context.Context, networkResource *api.Net
 	for i, k := range networkResource.Groups {
 		groups[i] = k.Id
 	}
-	sort.Strings(groups)
-	data.Groups, d = types.ListValueFrom(ctx, types.StringType, groups)
+	data.Groups, d = types.SetValueFrom(ctx, types.StringType, groups)
 	ret.Append(d...)
 	return ret
 }
@@ -156,7 +154,7 @@ func (r *NetworkResource) Create(ctx context.Context, req resource.CreateRequest
 		Description: data.Description.ValueStringPointer(),
 		Address:     data.Address.ValueString(),
 		Enabled:     data.Enabled.ValueBool(),
-		Groups:      stringListDefault(ctx, data.Groups, []string{}),
+		Groups:      stringSetDefault(ctx, data.Groups, []string{}),
 	}
 
 	networkResource, err := r.client.Networks.Resources(data.NetworkId.ValueString()).Create(ctx, networkResourceReq)
@@ -226,7 +224,7 @@ func (r *NetworkResource) Update(ctx context.Context, req resource.UpdateRequest
 		Description: data.Description.ValueStringPointer(),
 		Address:     data.Address.ValueString(),
 		Enabled:     data.Enabled.ValueBool(),
-		Groups:      stringListDefault(ctx, data.Groups, []string{}),
+		Groups:      stringSetDefault(ctx, data.Groups, []string{}),
 	}
 
 	networkResource, err := r.client.Networks.Resources(data.NetworkId.ValueString()).Update(ctx, data.Id.ValueString(), networkResourceReq)
