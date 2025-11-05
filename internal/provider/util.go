@@ -41,6 +41,15 @@ func stringListDefault(ctx context.Context, a types.List, b []string) []string {
 	return ret
 }
 
+func stringSetDefault(ctx context.Context, a types.Set, b []string) []string {
+	if a.IsUnknown() || a.IsNull() {
+		return b
+	}
+	var ret []string
+	a.ElementsAs(ctx, &ret, false)
+	return ret
+}
+
 func int32Default(a types.Int32, b int32) int32 {
 	if a.IsUnknown() || a.IsNull() {
 		return b
