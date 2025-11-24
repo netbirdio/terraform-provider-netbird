@@ -40,4 +40,4 @@ data "netbird_network_resource" "example" {
 - `address` (String) Network resource address (either a direct host like 1.1.1.1 or 1.1.1.1/32, or a subnet like 192.168.178.0/24, or domains like example.com and *.example.com)
 - `description` (String) NetworkResource Description
 - `enabled` (Boolean) NetworkResource status
-- `groups` (List of String) Group IDs containing the resource
+- `groups` (Set of String) Group IDs containing the resource

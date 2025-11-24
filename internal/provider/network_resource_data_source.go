@@ -61,7 +61,7 @@ func (d *NetworkResourceDataSource) Schema(ctx context.Context, req datasource.S
 				MarkdownDescription: "NetworkResource status",
 				Computed:            true,
 			},
-			"groups": schema.ListAttribute{
+			"groups": schema.SetAttribute{
 				MarkdownDescription: "Group IDs containing the resource",
 				Computed:            true,
 				ElementType:         types.StringType,
