@@ -22,7 +22,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 		{
 			resource: &api.DNSRecord{
 				Id:      "rec123",
-				Name:    "www",
+				Name:    "www.netbird.io",
 				Type:    api.DNSRecordTypeA,
 				Content: "192.168.1.1",
 				Ttl:     300,
@@ -31,7 +31,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 			expected: DNSRecordModel{
 				Id:      types.StringValue("rec123"),
 				ZoneId:  types.StringValue("zone123"),
-				Name:    types.StringValue("www"),
+				Name:    types.StringValue("www.netbird.io"),
 				Type:    types.StringValue("A"),
 				Content: types.StringValue("192.168.1.1"),
 				Ttl:     types.Int64Value(300),
@@ -40,7 +40,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 		{
 			resource: &api.DNSRecord{
 				Id:      "rec456",
-				Name:    "api",
+				Name:    "api.netbird.io",
 				Type:    api.DNSRecordTypeAAAA,
 				Content: "2001:db8::1",
 				Ttl:     600,
@@ -49,7 +49,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 			expected: DNSRecordModel{
 				Id:      types.StringValue("rec456"),
 				ZoneId:  types.StringValue("zone456"),
-				Name:    types.StringValue("api"),
+				Name:    types.StringValue("api.netbird.io"),
 				Type:    types.StringValue("AAAA"),
 				Content: types.StringValue("2001:db8::1"),
 				Ttl:     types.Int64Value(600),
@@ -58,7 +58,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 		{
 			resource: &api.DNSRecord{
 				Id:      "rec789",
-				Name:    "mail",
+				Name:    "mail.netbird.io",
 				Type:    api.DNSRecordTypeCNAME,
 				Content: "mail.example.com",
 				Ttl:     3600,
@@ -67,7 +67,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 			expected: DNSRecordModel{
 				Id:      types.StringValue("rec789"),
 				ZoneId:  types.StringValue("zone789"),
-				Name:    types.StringValue("mail"),
+				Name:    types.StringValue("mail.netbird.io"),
 				Type:    types.StringValue("CNAME"),
 				Content: types.StringValue("mail.example.com"),
 				Ttl:     types.Int64Value(3600),
@@ -101,7 +101,7 @@ func Test_DNSRecord_Create(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "zone_id"),
-					resource.TestCheckResourceAttr(rNameFull, "name", "www"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "www.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "type", "A"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "192.168.1.1"),
 					resource.TestCheckResourceAttr(rNameFull, "ttl", "300"),
@@ -128,7 +128,7 @@ func Test_DNSRecord_Update(t *testing.T) {
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "www", "A", "192.168.1.1", 300),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "name", "www"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "www.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "192.168.1.1"),
 					resource.TestCheckResourceAttr(rNameFull, "ttl", "300"),
 				),
@@ -136,7 +136,7 @@ func Test_DNSRecord_Update(t *testing.T) {
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "api", "A", "192.168.1.2", 600),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "name", "api"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "api.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "192.168.1.2"),
 					resource.TestCheckResourceAttr(rNameFull, "ttl", "600"),
 				),
@@ -156,7 +156,7 @@ func Test_DNSRecord_CNAME(t *testing.T) {
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "mail", "CNAME", "mail.example.com", 300),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "name", "mail"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "mail.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "type", "CNAME"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "mail.example.com"),
 				),
@@ -178,7 +178,7 @@ func Test_DNSRecord_DataSource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(dsNameFull, "id"),
 					resource.TestCheckResourceAttrSet(dsNameFull, "zone_id"),
-					resource.TestCheckResourceAttr(dsNameFull, "name", "test"),
+					resource.TestCheckResourceAttr(dsNameFull, "name", "test.datasource.local"),
 					resource.TestCheckResourceAttr(dsNameFull, "type", "A"),
 					resource.TestCheckResourceAttr(dsNameFull, "content", "10.0.0.1"),
 				),
@@ -229,24 +229,5 @@ func testDNSRecordImportStateIdFunc(resourceName string) resource.ImportStateIdF
 		}
 
 		return fmt.Sprintf("%s:%s", zoneId, id), nil
-	}
-}
-
-func testAccCheckDNSRecordExists(resourceName string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[resourceName]
-		if !ok {
-			return fmt.Errorf("not found: %s", resourceName)
-		}
-
-		if rs.Primary.ID == "" {
-			return fmt.Errorf("no DNS Record ID is set")
-		}
-
-		if rs.Primary.Attributes["zone_id"] == "" {
-			return fmt.Errorf("no DNS Zone ID is set")
-		}
-
-		return nil
 	}
 }

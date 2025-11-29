@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
@@ -34,7 +33,7 @@ func Test_dnsZoneAPIToTerraform(t *testing.T) {
 				Domain:             types.StringValue("example.com"),
 				Enabled:            types.BoolValue(true),
 				EnableSearchDomain: types.BoolValue(false),
-				DistributionGroups: types.ListValueMust(types.StringType, []attr.Value{}),
+				DistributionGroups: types.SetValueMust(types.StringType, []attr.Value{}),
 			},
 		},
 		{
@@ -52,7 +51,7 @@ func Test_dnsZoneAPIToTerraform(t *testing.T) {
 				Domain:             types.StringValue("internal.local"),
 				Enabled:            types.BoolValue(false),
 				EnableSearchDomain: types.BoolValue(true),
-				DistributionGroups: types.ListValueMust(types.StringType, []attr.Value{
+				DistributionGroups: types.SetValueMust(types.StringType, []attr.Value{
 					types.StringValue("grp1"),
 					types.StringValue("grp2"),
 				}),
@@ -172,19 +171,4 @@ data "netbird_dns_zone" "%s" {
   name = netbird_dns_zone.%s.name
 }
 `, name, name)
-}
-
-func testAccCheckDNSZoneExists(resourceName string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[resourceName]
-		if !ok {
-			return fmt.Errorf("not found: %s", resourceName)
-		}
-
-		if rs.Primary.ID == "" {
-			return fmt.Errorf("no DNS Zone ID is set")
-		}
-
-		return nil
-	}
 }
