@@ -101,6 +101,8 @@ func (p *NetBirdProvider) Resources(ctx context.Context) []func() resource.Resou
 	return []func() resource.Resource{
 		NewAccountSettings,
 		NewDNSSettings,
+		NewDNSZone,
+		NewDNSRecord,
 		NewGroup,
 		NewNameserverGroup,
 		NewNetwork,
@@ -124,6 +126,8 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 	return []func() datasource.DataSource{
 		NewAccountSettingsDataSource,
 		NewDNSSettingsDataSource,
+		NewDNSZoneDataSource,
+		NewDNSRecordDataSource,
 		NewGroupDataSource,
 		NewNameserverGroupDataSource,
 		NewNetworkDataSource,
