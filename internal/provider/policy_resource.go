@@ -161,11 +161,11 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 							Validators:          []validator.String{stringvalidator.OneOf("accept", "drop")},
 						},
 						"protocol": schema.StringAttribute{
-							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all)",
+							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all|netbird-ssh)",
 							Optional:            true,
 							Computed:            true,
 							Default:             stringdefault.StaticString("all"),
-							Validators:          []validator.String{stringvalidator.OneOf("tcp", "udp", "icmp", "all")},
+							Validators:          []validator.String{stringvalidator.OneOf("tcp", "udp", "icmp", "all", "netbird-ssh")},
 						},
 						"ports": schema.ListAttribute{
 							MarkdownDescription: "Policy Rule Ports (mutually exclusive with port_ranges)",

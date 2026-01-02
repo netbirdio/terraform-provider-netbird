@@ -68,7 +68,7 @@ Optional:
 - `enabled` (Boolean) Policy Rule Enabled
 - `port_ranges` (Attributes List) Policy Rule Port Ranges (mutually exclusive with ports) (see [below for nested schema](#nestedatt--rule--port_ranges))
 - `ports` (List of String) Policy Rule Ports (mutually exclusive with port_ranges)
-- `protocol` (String) Policy Rule Protocol (tcp|udp|icmp|all)
+- `protocol` (String) Policy Rule Protocol (tcp|udp|icmp|all|netbird-ssh)
 - `source_resource` (Object) Policy Rule Source Resource (mutually exclusive with sources) (see [below for nested schema](#nestedatt--rule--source_resource))
 - `sources` (List of String) Policy Rule Source Groups (mutually exclusive with source_resource)
 
