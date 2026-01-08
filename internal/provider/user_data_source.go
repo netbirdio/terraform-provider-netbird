@@ -14,7 +14,7 @@ import (
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
+// Ensure provider defined typesF fully satisfy framework interfaces.
 var _ datasource.DataSource = &UserDataSource{}
 
 func NewUserDataSource() datasource.DataSource {
