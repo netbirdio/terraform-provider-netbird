@@ -117,7 +117,7 @@ func matchPairs(pairs map[string][]any) error {
 	return nil
 }
 
-// TestProviderUserAgent verifies that the provider sends the correct User-Agent header
+// TestProviderUserAgent verifies that the provider sends the correct User-Agent header.
 func TestProviderUserAgent(t *testing.T) {
 	var capturedUserAgent string
 	expectedVersion := "1.2.3"
@@ -136,7 +136,10 @@ func TestProviderUserAgent(t *testing.T) {
 	t.Setenv("NB_MANAGEMENT_URL", server.URL)
 	t.Setenv("NB_PAT", "test-token")
 
-	p := New(expectedVersion)().(*NetBirdProvider)
+	p, ok := New(expectedVersion)().(*NetBirdProvider)
+	if !ok {
+		t.Fatal("failed to cast to *NetBirdProvider")
+	}
 
 	schemaReq := provider.SchemaRequest{}
 	schemaResp := provider.SchemaResponse{}
