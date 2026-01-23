@@ -118,7 +118,7 @@ func (r *DNSRecord) Configure(ctx context.Context, req resource.ConfigureRequest
 	r.client = client
 }
 
-func dnsRecordAPIToTerraform(ctx context.Context, record *api.DNSRecord, zoneId string, data *DNSRecordModel) diag.Diagnostics {
+func dnsRecordAPIToTerraform(_ context.Context, record *api.DNSRecord, zoneId string, data *DNSRecordModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(record.Id)
 	data.ZoneId = types.StringValue(zoneId)
