@@ -3,12 +3,12 @@
 page_title: "netbird_dns_zone Resource - netbird"
 subcategory: ""
 description: |-
-  Create and manage custom DNS zones. See NetBird Docs https://docs.netbird.io/how-to/manage-dns-in-your-network for more information.
+  Create and manage custom DNS zones. See NetBird Docs https://docs.netbird.io/manage/dns/custom-zones for more information.
 ---
 
 # netbird_dns_zone (Resource)
 
-Create and manage custom DNS zones. See [NetBird Docs](https://docs.netbird.io/how-to/manage-dns-in-your-network) for more information.
+Create and manage custom DNS zones. See [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.
 
 ## Example Usage
 
@@ -18,7 +18,7 @@ resource "netbird_dns_zone" "internal" {
   domain               = "internal.company.com"
   enabled              = true
   enable_search_domain = true
-  distribution_groups  = [netbird_group.dev.id, netbird_group.ops.id]
+  distribution_groups  = [netbird_group.example.id]
 }
 ```
 
@@ -39,3 +39,15 @@ resource "netbird_dns_zone" "internal" {
 ### Read-Only
 
 - `id` (String) DNS Zone ID
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_group.example group_id
+
+# For example
+
+terraform import netbird_group.example cvi609bl0ubs73ask10g
+```

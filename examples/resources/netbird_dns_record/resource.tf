@@ -22,5 +22,14 @@ resource "netbird_dns_record" "mail" {
   name    = "mail.example.local"
   type    = "CNAME"
   content = "mail.external.com"
-  ttl     = 3600
+  ttl     = 300
+}
+
+# Wildcard Record example
+resource "netbird_dns_record" "wildcard" {
+  zone_id = netbird_dns_zone.example.id
+  name    = "*.example.local"
+  type    = "A"
+  content = "10.10.1.2"
+  ttl     = 300
 }

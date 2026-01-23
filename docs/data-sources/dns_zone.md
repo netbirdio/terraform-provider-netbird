@@ -3,23 +3,23 @@
 page_title: "netbird_dns_zone Data Source - netbird"
 subcategory: ""
 description: |-
-  Read DNS Zone information.
+  Read DNS Zone metadata, see NetBird Docs https://docs.netbird.io/manage/dns/custom-zones for more information.
 ---
 
 # netbird_dns_zone (Data Source)
 
-Read DNS Zone information.
+Read DNS Zone metadata, see [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.
 
 ## Example Usage
 
 ```terraform
-data "netbird_dns_zone" "example" {
-  name = "example-zone"
+data "netbird_dns_zone" "by_name" {
+  name = "example.local"
 }
 
 # Query by ID
 data "netbird_dns_zone" "by_id" {
-  id = "zone-id-here"
+  id = "d50ltp59q2cs73ea7ss0"
 }
 
 # Query by domain

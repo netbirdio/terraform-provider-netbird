@@ -55,7 +55,7 @@ func (r *DNSRecord) Metadata(ctx context.Context, req resource.MetadataRequest, 
 func (r *DNSRecord) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description:         "Create and manage DNS records within DNS zones",
-		MarkdownDescription: "Create and manage DNS records within DNS zones. See [NetBird Docs](https://docs.netbird.io/how-to/manage-dns-in-your-network) for more information.",
+		MarkdownDescription: "Create and manage DNS records within DNS zones. See [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

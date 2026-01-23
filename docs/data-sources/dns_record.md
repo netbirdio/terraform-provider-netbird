@@ -3,12 +3,12 @@
 page_title: "netbird_dns_record Data Source - netbird"
 subcategory: ""
 description: |-
-  Read DNS Record information.
+  Read DNS Record metadata, see NetBird Docs https://docs.netbird.io/manage/dns/custom-zones for more information.
 ---
 
 # netbird_dns_record (Data Source)
 
-Read DNS Record information.
+Read DNS Record metadata, see [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.
 
 ## Example Usage
 
@@ -16,18 +16,18 @@ Read DNS Record information.
 # Query by ID
 data "netbird_dns_record" "by_id" {
   zone_id = netbird_dns_zone.example.id
-  id      = "record-id-here"
+  id      = "d50moeqtvgfc7398k38g"
 }
 
 # Query by name and type
-data "netbird_dns_record" "www" {
+data "netbird_dns_record" "by_name_and_type" {
   zone_id = netbird_dns_zone.example.id
   name    = "www.example.local"
   type    = "A"
 }
 
 # Query by name only
-data "netbird_dns_record" "api" {
+data "netbird_dns_record" "by_name" {
   zone_id = netbird_dns_zone.example.id
   name    = "api.example.local"
 }

@@ -3,12 +3,12 @@
 page_title: "netbird_dns_record Resource - netbird"
 subcategory: ""
 description: |-
-  Create and manage DNS records within DNS zones. See NetBird Docs https://docs.netbird.io/how-to/manage-dns-in-your-network for more information.
+  Create and manage DNS records within DNS zones. See NetBird Docs https://docs.netbird.io/manage/dns/custom-zones for more information.
 ---
 
 # netbird_dns_record (Resource)
 
-Create and manage DNS records within DNS zones. See [NetBird Docs](https://docs.netbird.io/how-to/manage-dns-in-your-network) for more information.
+Create and manage DNS records within DNS zones. See [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.
 
 ## Example Usage
 
@@ -37,7 +37,16 @@ resource "netbird_dns_record" "mail" {
   name    = "mail.example.local"
   type    = "CNAME"
   content = "mail.external.com"
-  ttl     = 3600
+  ttl     = 300
+}
+
+# Wildcard Record example
+resource "netbird_dns_record" "wildcard" {
+  zone_id = netbird_dns_zone.example.id
+  name    = "*.example.local"
+  type    = "A"
+  content = "10.10.1.2"
+  ttl     = 300
 }
 ```
 
@@ -58,3 +67,15 @@ resource "netbird_dns_record" "mail" {
 ### Read-Only
 
 - `id` (String) DNS Record ID
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import netbird_dns_zone.example dns_zone_id
+
+# For example
+
+terraform import netbird_dns_zone.example d50lthitvgfc7398k370
+```

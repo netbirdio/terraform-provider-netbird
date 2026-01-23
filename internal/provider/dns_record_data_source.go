@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -31,7 +32,8 @@ func (d *DNSRecordDataSource) Metadata(ctx context.Context, req datasource.Metad
 
 func (d *DNSRecordDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Read DNS Record information.",
+		Description:         "Read DNS Record metadata.",
+		MarkdownDescription: "Read DNS Record metadata, see [NetBird Docs](https://docs.netbird.io/manage/dns/custom-zones) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "DNS Record ID",
