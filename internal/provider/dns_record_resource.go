@@ -10,7 +10,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -118,16 +117,13 @@ func (r *DNSRecord) Configure(ctx context.Context, req resource.ConfigureRequest
 	r.client = client
 }
 
-func dnsRecordAPIToTerraform(_ context.Context, record *api.DNSRecord, zoneId string, data *DNSRecordModel) diag.Diagnostics {
-	var ret diag.Diagnostics
+func dnsRecordAPIToTerraform(record *api.DNSRecord, zoneId string, data *DNSRecordModel) {
 	data.Id = types.StringValue(record.Id)
 	data.ZoneId = types.StringValue(zoneId)
 	data.Name = types.StringValue(record.Name)
 	data.Type = types.StringValue(string(record.Type))
 	data.Content = types.StringValue(record.Content)
 	data.Ttl = types.Int64Value(int64(record.Ttl))
-
-	return ret
 }
 
 func (r *DNSRecord) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -153,11 +149,7 @@ func (r *DNSRecord) Create(ctx context.Context, req resource.CreateRequest, resp
 		return
 	}
 
-	resp.Diagnostics.Append(dnsRecordAPIToTerraform(ctx, record, data.ZoneId.ValueString(), &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	dnsRecordAPIToTerraform(record, data.ZoneId.ValueString(), &data)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -184,11 +176,7 @@ func (r *DNSRecord) Read(ctx context.Context, req resource.ReadRequest, resp *re
 		return
 	}
 
-	resp.Diagnostics.Append(dnsRecordAPIToTerraform(ctx, record, data.ZoneId.ValueString(), &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	dnsRecordAPIToTerraform(record, data.ZoneId.ValueString(), &data)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -222,10 +210,7 @@ func (r *DNSRecord) Update(ctx context.Context, req resource.UpdateRequest, resp
 		return
 	}
 
-	resp.Diagnostics.Append(dnsRecordAPIToTerraform(ctx, record, data.ZoneId.ValueString(), &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	dnsRecordAPIToTerraform(record, data.ZoneId.ValueString(), &data)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

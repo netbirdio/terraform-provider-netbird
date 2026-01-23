@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -77,10 +76,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 
 	for _, c := range cases {
 		var out DNSRecordModel
-		outDiag := dnsRecordAPIToTerraform(context.Background(), c.resource, c.zoneId, &out)
-		if outDiag.HasError() {
-			t.Fatalf("Expected no error diagnostics, found %d errors", outDiag.ErrorsCount())
-		}
+		dnsRecordAPIToTerraform(c.resource, c.zoneId, &out)
 
 		if !reflect.DeepEqual(out, c.expected) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)

@@ -125,11 +125,7 @@ func (d *DNSRecordDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	resp.Diagnostics.Append(dnsRecordAPIToTerraform(ctx, record, data.ZoneId.ValueString(), &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	dnsRecordAPIToTerraform(record, data.ZoneId.ValueString(), &data)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
