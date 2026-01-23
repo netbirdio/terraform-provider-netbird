@@ -13,15 +13,6 @@ Create and manage custom DNS zones. See [NetBird Docs](https://docs.netbird.io/h
 ## Example Usage
 
 ```terraform
-resource "netbird_dns_zone" "example" {
-  name                 = "example-zone"
-  domain               = "example.local"
-  enabled              = true
-  enable_search_domain = false
-  distribution_groups  = []
-}
-
-# DNS Zone with distribution groups
 resource "netbird_dns_zone" "internal" {
   name                 = "internal-zone"
   domain               = "internal.company.com"
