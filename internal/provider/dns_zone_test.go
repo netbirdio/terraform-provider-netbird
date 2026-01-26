@@ -81,7 +81,7 @@ func Test_DNSZone_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "test.local", true, false, `[]`),
+				Config:       testDNSZoneResource(rName, "test.local", true, false, `["group-all"]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -108,7 +108,7 @@ func Test_DNSZone_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "test.local", true, false, `[]`),
+				Config:       testDNSZoneResource(rName, "test.local", true, false, `["group-all"]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -119,11 +119,11 @@ func Test_DNSZone_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "updated.local", false, true, `[]`),
+				Config:       testDNSZoneResource(rName, "test.local", false, true, `["group-all"]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
-					resource.TestCheckResourceAttr(rNameFull, "domain", "updated.local"),
+					resource.TestCheckResourceAttr(rNameFull, "domain", "test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "enabled", "false"),
 					resource.TestCheckResourceAttr(rNameFull, "enable_search_domain", "true"),
 				),
@@ -140,7 +140,7 @@ func Test_DNSZone_DataSource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testDNSZoneResourceAndDataSource(rName, "datasource.local", true, false, `[]`),
+				Config: testDNSZoneResourceAndDataSource(rName, "datasource.local", true, false, `["group-all"]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(dsNameFull, "id"),
 					resource.TestCheckResourceAttr(dsNameFull, "name", rName),

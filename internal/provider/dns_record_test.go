@@ -186,18 +186,19 @@ func Test_DNSRecord_DataSource(t *testing.T) {
 func testDNSRecordResource(zoneName, domain, recordName, recordSubdomain, recordType, recordContent string, ttl int) string {
 	return fmt.Sprintf(`
 resource "netbird_dns_zone" "%s" {
-  name   = "%s"
-  domain = "%s"
+  name                = "%s"
+  domain              = "%s"
+  distribution_groups = ["group-all"]
 }
 
 resource "netbird_dns_record" "%s" {
   zone_id = netbird_dns_zone.%s.id
-  name    = "%s"
+  name    = "%s.%s"
   type    = "%s"
   content = "%s"
   ttl     = %d
 }
-`, zoneName, zoneName, domain, recordName, zoneName, recordSubdomain, recordType, recordContent, ttl)
+`, zoneName, zoneName, domain, recordName, zoneName, recordSubdomain, domain, recordType, recordContent, ttl)
 }
 
 func testDNSRecordResourceAndDataSource(zoneName, domain, recordName, recordSubdomain, recordType, recordContent string, ttl int) string {
