@@ -57,7 +57,7 @@ func (d *PolicyDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 							Computed:            true,
 						},
 						"protocol": schema.StringAttribute{
-							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all)",
+							MarkdownDescription: "Policy Rule Protocol (tcp|udp|icmp|all|netbird-ssh)",
 							Computed:            true,
 						},
 						"ports": schema.ListAttribute{
