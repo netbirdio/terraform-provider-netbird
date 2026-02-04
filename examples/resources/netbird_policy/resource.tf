@@ -16,3 +16,22 @@ resource "netbird_policy" "example" {
     destinations  = [netbird_group.example.id]
   }
 }
+
+resource "netbird_policy" "ssh_example" {
+  name    = "SSH Access"
+  enabled = true
+
+  rule {
+    action        = "accept"
+    bidirectional = true
+    enabled       = true
+    protocol      = "netbird-ssh"
+    name          = "SSH Rule"
+    sources       = [netbird_group.example.id]
+    destinations  = [netbird_group.example.id]
+
+    authorized_groups = {
+      (netbird_group.example.id) = ["example"]
+    }
+  }
+}
