@@ -56,6 +56,7 @@ type RouteModel struct {
 	Groups              types.List   `tfsdk:"groups"`
 	KeepRoute           types.Bool   `tfsdk:"keep_route"`
 	AccessControlGroups types.List   `tfsdk:"access_control_groups"`
+	SkipAutoApply       types.Bool   `tfsdk:"skip_auto_apply"`
 }
 
 func (r *Route) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -146,6 +147,11 @@ func (r *Route) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 				ElementType:         types.StringType,
 				Optional:            true,
 			},
+			"skip_auto_apply": schema.BoolAttribute{
+				MarkdownDescription: "Indicate if this exit node route (0.0.0.0/0) should skip auto-application for client routing",
+				Optional:            true,
+				Computed:            true,
+			},
 		},
 	}
 }
@@ -211,6 +217,7 @@ func routeAPIToTerraform(ctx context.Context, route *api.Route, data *RouteModel
 		data.AccessControlGroups, d = types.ListValueFrom(ctx, types.StringType, route.AccessControlGroups)
 		ret.Append(d...)
 	}
+	data.SkipAutoApply = types.BoolPointerValue(route.SkipAutoApply)
 	return ret
 }
 
@@ -237,6 +244,7 @@ func (r *Route) Create(ctx context.Context, req resource.CreateRequest, resp *re
 		NetworkId:           data.NetworkId.ValueString(),
 		Peer:                data.Peer.ValueStringPointer(),
 		PeerGroups:          stringListDefaultPointer(ctx, data.PeerGroups, nil),
+		SkipAutoApply:       boolDefaultPointer(data.SkipAutoApply, nil),
 	}
 
 	route, err := r.client.Routes.Create(ctx, routeReq)
@@ -314,6 +322,7 @@ func (r *Route) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 		NetworkId:           data.NetworkId.ValueString(),
 		Peer:                data.Peer.ValueStringPointer(),
 		PeerGroups:          stringListDefaultPointer(ctx, data.PeerGroups, nil),
+		SkipAutoApply:       boolDefaultPointer(data.SkipAutoApply, nil),
 	}
 
 	route, err := r.client.Routes.Update(ctx, data.Id.ValueString(), routeReq)

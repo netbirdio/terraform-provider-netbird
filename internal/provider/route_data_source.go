@@ -97,6 +97,10 @@ func (d *RouteDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
+			"skip_auto_apply": schema.BoolAttribute{
+				MarkdownDescription: "Indicate if this exit node route (0.0.0.0/0) should skip auto-application for client routing",
+				Computed:            true,
+			},
 		},
 	}
 }
