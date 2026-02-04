@@ -54,6 +54,12 @@ type AccountSettingsModel struct {
 	PeerApprovalEnabled                types.Bool   `tfsdk:"peer_approval_enabled"`
 	NetworkTrafficLogsEnabled          types.Bool   `tfsdk:"network_traffic_logs_enabled"`
 	NetworkTrafficPacketCounterEnabled types.Bool   `tfsdk:"network_traffic_packet_counter_enabled"`
+	AutoUpdateVersion                  types.String `tfsdk:"auto_update_version"`
+	DnsDomain                          types.String `tfsdk:"dns_domain"`
+	NetworkRange                       types.String `tfsdk:"network_range"`
+	LazyConnectionEnabled              types.Bool   `tfsdk:"lazy_connection_enabled"`
+	UserApprovalRequired               types.Bool   `tfsdk:"user_approval_required"`
+	NetworkTrafficLogsGroups           types.List   `tfsdk:"network_traffic_logs_groups"`
 }
 
 func (r *AccountSettings) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -151,6 +157,43 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
+			"auto_update_version": schema.StringAttribute{
+				MarkdownDescription: "Set Clients auto-update version. \"latest\", \"disabled\", or a specific version (e.g \"0.64.5\")",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"dns_domain": schema.StringAttribute{
+				MarkdownDescription: "Allows to define a custom DNS domain for the account",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"network_range": schema.StringAttribute{
+				MarkdownDescription: "Allows to define a custom network range for the account in CIDR format",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"lazy_connection_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables experimental lazy connection",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"user_approval_required": schema.BoolAttribute{
+				MarkdownDescription: "Enables manual approval for new users joining via domain matching. When enabled, users are blocked with pending approval status until explicitly approved by an admin.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"network_traffic_logs_groups": schema.ListAttribute{
+				MarkdownDescription: "Limits traffic logging to these groups. If unset all peers are enabled.",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -191,6 +234,14 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	data.PeerApprovalEnabled = types.BoolValue(account.Settings.Extra.PeerApprovalEnabled)
 	data.NetworkTrafficLogsEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficLogsEnabled)
 	data.NetworkTrafficPacketCounterEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficPacketCounterEnabled)
+	data.AutoUpdateVersion = types.StringPointerValue(account.Settings.AutoUpdateVersion)
+	data.DnsDomain = types.StringPointerValue(account.Settings.DnsDomain)
+	data.NetworkRange = types.StringPointerValue(account.Settings.NetworkRange)
+	data.LazyConnectionEnabled = types.BoolPointerValue(account.Settings.LazyConnectionEnabled)
+	data.UserApprovalRequired = types.BoolValue(account.Settings.Extra.UserApprovalRequired)
+	logsGroups, d := types.ListValueFrom(ctx, types.StringType, account.Settings.Extra.NetworkTrafficLogsGroups)
+	ret.Append(d...)
+	data.NetworkTrafficLogsGroups = logsGroups
 	return ret
 }
 
@@ -201,6 +252,8 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 				NetworkTrafficLogsEnabled:          boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled),
 				NetworkTrafficPacketCounterEnabled: boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled),
 				PeerApprovalEnabled:                boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled),
+				UserApprovalRequired:               boolDefault(data.UserApprovalRequired, account.Settings.Extra.UserApprovalRequired),
+				NetworkTrafficLogsGroups:           stringListDefault(ctx, data.NetworkTrafficLogsGroups, account.Settings.Extra.NetworkTrafficLogsGroups),
 			},
 			GroupsPropagationEnabled:        boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled),
 			JwtAllowGroups:                  stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups),
@@ -212,6 +265,10 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 			PeerLoginExpirationEnabled:      boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled),
 			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
 			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
+			AutoUpdateVersion:               stringDefaultPointer(data.AutoUpdateVersion, account.Settings.AutoUpdateVersion),
+			DnsDomain:                       stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain),
+			NetworkRange:                    stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange),
+			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),
 		},
 	}
 }
