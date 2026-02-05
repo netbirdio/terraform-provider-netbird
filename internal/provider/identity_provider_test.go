@@ -168,14 +168,14 @@ func Test_IdentityProvider_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testIdentityProviderResource(rName, "google-workspace", "google", "new-client-id", "new-secret", "https://accounts.google.com"),
+				Config:       testIdentityProviderResource(rName, "updated-jumpcloud", "oidc", "new-client-id", "new-secret", "https://oauth.id.jumpcloud.com/"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
-					resource.TestCheckResourceAttr(rNameFull, "name", "google-workspace"),
-					resource.TestCheckResourceAttr(rNameFull, "type", "google"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "updated-jumpcloud"),
+					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
 					resource.TestCheckResourceAttr(rNameFull, "client_id", "new-client-id"),
 					resource.TestCheckResourceAttr(rNameFull, "client_secret", "new-secret"),
-					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://accounts.google.com"),
+					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://oauth.id.jumpcloud.com/"),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						idp, err := testClient().IdentityProviders.Get(context.Background(), pID)
@@ -183,10 +183,10 @@ func Test_IdentityProvider_Update(t *testing.T) {
 							return err
 						}
 						return matchPairs(map[string][]any{
-							"name":      {"google-workspace", idp.Name},
-							"type":      {api.IdentityProviderTypeGoogle, idp.Type},
+							"name":      {"updated-jumpcloud", idp.Name},
+							"type":      {api.IdentityProviderTypeOidc, idp.Type},
 							"client_id": {"new-client-id", idp.ClientId},
-							"issuer":    {"https://accounts.google.com", idp.Issuer},
+							"issuer":    {"https://oauth.id.jumpcloud.com/", idp.Issuer},
 						})
 					},
 				),
