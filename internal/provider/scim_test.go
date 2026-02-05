@@ -89,7 +89,7 @@ func Test_scimAPIToTerraform(t *testing.T) {
 }
 
 func Test_Scim_Create(t *testing.T) {
-	t.Skip("skipping until cloud test environment is available")
+	t.Skip("skipping cloud test")
 	rName := "scim" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_scim." + rName
 	resource.Test(t, resource.TestCase{
