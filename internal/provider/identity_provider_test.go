@@ -2,10 +2,14 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -109,4 +113,95 @@ func Test_identityProviderTerraformToAPI(t *testing.T) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
 		}
 	}
+}
+
+func Test_IdentityProvider_Create(t *testing.T) {
+	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_identity_provider." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testIdentityProviderResource(rName, "OIDC Provider", "oidc", "client-id", "client-secret", "https://auth.example.com"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "OIDC Provider"),
+					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
+					resource.TestCheckResourceAttr(rNameFull, "client_id", "client-id"),
+					resource.TestCheckResourceAttr(rNameFull, "client_secret", "client-secret"),
+					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://auth.example.com"),
+					func(s *terraform.State) error {
+						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						idp, err := testClient().IdentityProviders.Get(context.Background(), pID)
+						if err != nil {
+							return err
+						}
+
+						return matchPairs(map[string][]any{
+							"name":      {"OIDC Provider", idp.Name},
+							"type":      {api.IdentityProviderTypeOidc, idp.Type},
+							"client_id": {"client-id", idp.ClientId},
+							"issuer":    {"https://auth.example.com", idp.Issuer},
+						})
+					},
+				),
+			},
+		},
+	})
+}
+
+func Test_IdentityProvider_Update(t *testing.T) {
+	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_identity_provider." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testIdentityProviderResource(rName, "OIDC Provider", "oidc", "client-id", "client-secret", "https://auth.example.com"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testIdentityProviderResource(rName, "Updated Provider", "oidc", "new-client-id", "new-secret", "https://auth2.example.com"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "Updated Provider"),
+					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
+					resource.TestCheckResourceAttr(rNameFull, "client_id", "new-client-id"),
+					resource.TestCheckResourceAttr(rNameFull, "client_secret", "new-secret"),
+					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://auth2.example.com"),
+					func(s *terraform.State) error {
+						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						idp, err := testClient().IdentityProviders.Get(context.Background(), pID)
+						if err != nil {
+							return err
+						}
+						return matchPairs(map[string][]any{
+							"name":      {"Updated Provider", idp.Name},
+							"type":      {api.IdentityProviderTypeOidc, idp.Type},
+							"client_id": {"new-client-id", idp.ClientId},
+							"issuer":    {"https://auth2.example.com", idp.Issuer},
+						})
+					},
+				),
+			},
+		},
+	})
+}
+
+func testIdentityProviderResource(rName, name, idpType, clientID, clientSecret, issuer string) string {
+	return fmt.Sprintf(`resource "netbird_identity_provider" "%s" {
+  name          = "%s"
+  type          = "%s"
+  client_id     = "%s"
+  client_secret = "%s"
+  issuer        = "%s"
+}
+`, rName, name, idpType, clientID, clientSecret, issuer)
 }
