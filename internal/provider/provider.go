@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 )
 
@@ -108,6 +109,7 @@ func (p *NetBirdProvider) Resources(ctx context.Context) []func() resource.Resou
 		NewDNSZone,
 		NewDNSRecord,
 		NewGroup,
+		NewIdentityProvider,
 		NewNameserverGroup,
 		NewNetwork,
 		NewNetworkResource,
@@ -133,6 +135,7 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 		NewDNSZoneDataSource,
 		NewDNSRecordDataSource,
 		NewGroupDataSource,
+		NewIdentityProviderDataSource,
 		NewNameserverGroupDataSource,
 		NewNetworkDataSource,
 		NewNetworkResourceDataSource,
