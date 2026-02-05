@@ -124,14 +124,14 @@ func Test_IdentityProvider_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testIdentityProviderResource(rName, "OIDC Provider", "oidc", "client-id", "client-secret", "https://auth.example.com"),
+				Config:       testIdentityProviderResource(rName, "jumpcloud", "oidc", "client-id", "client-secret", "https://oauth.id.jumpcloud.com/"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
-					resource.TestCheckResourceAttr(rNameFull, "name", "OIDC Provider"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "jumpcloud"),
 					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
 					resource.TestCheckResourceAttr(rNameFull, "client_id", "client-id"),
 					resource.TestCheckResourceAttr(rNameFull, "client_secret", "client-secret"),
-					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://auth.example.com"),
+					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://oauth.id.jumpcloud.com/"),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						idp, err := testClient().IdentityProviders.Get(context.Background(), pID)
@@ -140,10 +140,10 @@ func Test_IdentityProvider_Create(t *testing.T) {
 						}
 
 						return matchPairs(map[string][]any{
-							"name":      {"OIDC Provider", idp.Name},
+							"name":      {"jumpcloud", idp.Name},
 							"type":      {api.IdentityProviderTypeOidc, idp.Type},
 							"client_id": {"client-id", idp.ClientId},
-							"issuer":    {"https://auth.example.com", idp.Issuer},
+							"issuer":    {"https://oauth.id.jumpcloud.com/", idp.Issuer},
 						})
 					},
 				),
@@ -161,21 +161,21 @@ func Test_IdentityProvider_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testIdentityProviderResource(rName, "OIDC Provider", "oidc", "client-id", "client-secret", "https://auth.example.com"),
+				Config:       testIdentityProviderResource(rName, "jumpcloud", "oidc", "client-id", "client-secret", "https://oauth.id.jumpcloud.com/"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testIdentityProviderResource(rName, "Updated Provider", "oidc", "new-client-id", "new-secret", "https://auth2.example.com"),
+				Config:       testIdentityProviderResource(rName, "google-workspace", "google", "new-client-id", "new-secret", "https://accounts.google.com"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
-					resource.TestCheckResourceAttr(rNameFull, "name", "Updated Provider"),
-					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
+					resource.TestCheckResourceAttr(rNameFull, "name", "google-workspace"),
+					resource.TestCheckResourceAttr(rNameFull, "type", "google"),
 					resource.TestCheckResourceAttr(rNameFull, "client_id", "new-client-id"),
 					resource.TestCheckResourceAttr(rNameFull, "client_secret", "new-secret"),
-					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://auth2.example.com"),
+					resource.TestCheckResourceAttr(rNameFull, "issuer", "https://accounts.google.com"),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						idp, err := testClient().IdentityProviders.Get(context.Background(), pID)
@@ -183,10 +183,10 @@ func Test_IdentityProvider_Update(t *testing.T) {
 							return err
 						}
 						return matchPairs(map[string][]any{
-							"name":      {"Updated Provider", idp.Name},
-							"type":      {api.IdentityProviderTypeOidc, idp.Type},
+							"name":      {"google-workspace", idp.Name},
+							"type":      {api.IdentityProviderTypeGoogle, idp.Type},
 							"client_id": {"new-client-id", idp.ClientId},
-							"issuer":    {"https://auth2.example.com", idp.Issuer},
+							"issuer":    {"https://accounts.google.com", idp.Issuer},
 						})
 					},
 				),
