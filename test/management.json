@@ -18,10 +18,6 @@
   "DataStoreEncryptionKey": "Qb/a9fEuGOUQQqu3EZW80btl9ig5csuDUfa31RIJ/8M=",
   "EmbeddedIdP": {
     "Enabled": true,
-    "Issuer": "http://localhost:8080/oauth2",
-    "DashboardRedirectURIs": [
-      "http://localhost/nb-auth",
-      "http://localhost/nb-silent-auth"
-    ]
+    "Issuer": "http://localhost:8080/oauth2"
   }
 }
