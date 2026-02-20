@@ -16,52 +16,8 @@
   },
   "Datadir": "/var/lib/netbird",
   "DataStoreEncryptionKey": "Qb/a9fEuGOUQQqu3EZW80btl9ig5csuDUfa31RIJ/8M=",
-  "HttpConfig": {
-    "AuthIssuer": "http://192.168.1.11:8080",
-    "AuthAudience": "mock-audience",
-    "AuthUserIDClaim": "sub",
-    "AuthKeysLocation": "http://192.168.1.11:8080/.well-known/jwks.json",
-    "IdpSignKeyRefreshEnabled": false
-  },
-  "IdpManagerConfig": {
-    "ManagerType": "",
-    "ClientConfig": {
-      "Issuer": "",
-      "TokenEndpoint": "",
-      "ClientID": "",
-      "ClientSecret": "",
-      "GrantType": ""
-    },
-    "ExtraConfig": {
-      "Audience": ""
-    },
-    "Auth0ClientCredentials": null,
-    "AzureClientCredentials": null,
-    "KeycloakClientCredentials": null,
-    "ZitadelClientCredentials": null
-  },
-  "DeviceAuthorizationFlow": {
-    "Provider": "",
-    "ProviderConfig": {
-      "ClientID": "",
-      "ClientSecret": "",
-      "Domain": "",
-      "Audience": "",
-      "TokenEndpoint": "",
-      "DeviceAuthEndpoint": "",
-      "AuthorizationEndpoint": "",
-      "Scope": "",
-      "UseIDToken": false,
-      "RedirectURLs": null
-    }
-  },
-  "PKCEAuthorizationFlow": null,
-  "StoreConfig": {
-    "Engine": ""
-  },
-  "ReverseProxy": {
-    "TrustedHTTPProxies": null,
-    "TrustedHTTPProxiesCount": 0,
-    "TrustedPeers": null
+  "EmbeddedIdP": {
+    "Enabled": true,
+    "Issuer": "http://localhost:8080/oauth2"
   }
 }

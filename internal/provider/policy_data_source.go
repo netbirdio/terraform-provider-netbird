@@ -113,6 +113,11 @@ func (d *PolicyDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 							},
 							Computed: true,
 						},
+						"authorized_groups": schema.MapAttribute{
+							MarkdownDescription: "Map of source group IDs to a list of local users authorized for SSH access. Keys must be group IDs present in `sources`. If not set, all local users are permitted. Only applicable when protocol is `netbird-ssh`.",
+							ElementType:         types.ListType{ElemType: types.StringType},
+							Computed:            true,
+						},
 					},
 				},
 			},

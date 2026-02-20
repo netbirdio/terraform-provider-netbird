@@ -71,6 +71,7 @@ func Test_policyAPIToTerraform(t *testing.T) {
 					"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
 					"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
 					"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+					"authorized_groups":    types.MapNull(types.ListType{ElemType: types.StringType}),
 				})}),
 			},
 		},
@@ -128,6 +129,60 @@ func Test_policyAPIToTerraform(t *testing.T) {
 						"id":   types.StringValue("r2"),
 						"type": types.StringValue("domain"),
 					}),
+					"authorized_groups": types.MapNull(types.ListType{ElemType: types.StringType}),
+				})}),
+			},
+		},
+		{
+			resource: &api.Policy{
+				Id:                  valPtr("p3"),
+				Name:                "sshPolicy",
+				Description:         valPtr("SSH with authorized groups"),
+				Enabled:             true,
+				SourcePostureChecks: []string{},
+				Rules: []api.PolicyRule{
+					{
+						Action:        api.PolicyRuleActionAccept,
+						Bidirectional: true,
+						Sources: &[]api.GroupMinimum{
+							{Id: "g1"},
+						},
+						Destinations: &[]api.GroupMinimum{
+							{Id: "g2"},
+						},
+						Enabled:  true,
+						Id:       valPtr("r3"),
+						Name:     "ssh-rule",
+						Protocol: api.PolicyRuleProtocolNetbirdSsh,
+						AuthorizedGroups: &map[string][]string{
+							"g1": {"root", "admin"},
+						},
+					},
+				},
+			},
+			expected: PolicyModel{
+				Id:                  types.StringValue("p3"),
+				Name:                types.StringValue("sshPolicy"),
+				Description:         types.StringValue("SSH with authorized groups"),
+				Enabled:             types.BoolValue(true),
+				SourcePostureChecks: types.ListValueMust(types.StringType, []attr.Value{}),
+				Rules: types.ListValueMust(PolicyRuleModel{}.TFType(), []attr.Value{types.ObjectValueMust(PolicyRuleModel{}.TFType().AttrTypes, map[string]attr.Value{
+					"id":                   types.StringValue("r3"),
+					"action":               types.StringValue("accept"),
+					"bidirectional":        types.BoolValue(true),
+					"description":          types.StringNull(),
+					"sources":              types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+					"destinations":         types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g2")}),
+					"enabled":              types.BoolValue(true),
+					"name":                 types.StringValue("ssh-rule"),
+					"ports":                types.ListNull(types.StringType),
+					"protocol":             types.StringValue("netbird-ssh"),
+					"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
+					"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+					"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+					"authorized_groups": types.MapValueMust(types.ListType{ElemType: types.StringType}, map[string]attr.Value{
+						"g1": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("root"), types.StringValue("admin")}),
+					}),
 				})}),
 			},
 		},
@@ -168,6 +223,7 @@ func Test_policyRulesTerraformToAPI(t *testing.T) {
 						"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
 						"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
 						"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+						"authorized_groups":    types.MapNull(types.ListType{ElemType: types.StringType}),
 					}),
 				}),
 			},
@@ -186,6 +242,45 @@ func Test_policyRulesTerraformToAPI(t *testing.T) {
 				},
 			},
 		},
+		{
+			resource: &PolicyModel{
+				Rules: types.ListValueMust(PolicyRuleModel{}.TFType(), []attr.Value{
+					types.ObjectValueMust(PolicyRuleModel{}.TFType().AttrTypes, map[string]attr.Value{
+						"id":                   types.StringValue("r2"),
+						"action":               types.StringValue("accept"),
+						"bidirectional":        types.BoolValue(true),
+						"description":          types.StringNull(),
+						"sources":              types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+						"destinations":         types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g2")}),
+						"enabled":              types.BoolValue(true),
+						"name":                 types.StringValue("ssh-rule"),
+						"ports":                types.ListNull(types.StringType),
+						"protocol":             types.StringValue("netbird-ssh"),
+						"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
+						"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+						"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+						"authorized_groups": types.MapValueMust(types.ListType{ElemType: types.StringType}, map[string]attr.Value{
+							"g1": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("root")}),
+						}),
+					}),
+				}),
+			},
+			expected: []api.PolicyRuleUpdate{
+				{
+					Action:        api.PolicyRuleUpdateActionAccept,
+					Bidirectional: true,
+					Sources:       &[]string{"g1"},
+					Destinations:  &[]string{"g2"},
+					Enabled:       true,
+					Id:            valPtr("r2"),
+					Name:          "ssh-rule",
+					Protocol:      api.PolicyRuleUpdateProtocolNetbirdSsh,
+					AuthorizedGroups: &map[string][]string{
+						"g1": {"root"},
+					},
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -199,6 +294,67 @@ func Test_policyRulesTerraformToAPI(t *testing.T) {
 		}
 	}
 
+}
+
+func Test_policyRulesAuthorizedGroupsValidation(t *testing.T) {
+	// authorized_groups should be rejected for non netbird-ssh protocols
+	protocols := []string{"all", "tcp", "udp", "icmp"}
+	for _, proto := range protocols {
+		model := &PolicyModel{
+			Rules: types.ListValueMust(PolicyRuleModel{}.TFType(), []attr.Value{
+				types.ObjectValueMust(PolicyRuleModel{}.TFType().AttrTypes, map[string]attr.Value{
+					"id":                   types.StringValue("r1"),
+					"action":               types.StringValue("accept"),
+					"bidirectional":        types.BoolValue(true),
+					"description":          types.StringNull(),
+					"sources":              types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+					"destinations":         types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g2")}),
+					"enabled":              types.BoolValue(true),
+					"name":                 types.StringValue("test"),
+					"ports":                types.ListNull(types.StringType),
+					"protocol":             types.StringValue(proto),
+					"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
+					"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+					"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+					"authorized_groups": types.MapValueMust(types.ListType{ElemType: types.StringType}, map[string]attr.Value{
+						"g1": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("root")}),
+					}),
+				}),
+			}),
+		}
+		_, diag := policyRulesTerraformToAPI(context.Background(), model)
+		if !diag.HasError() {
+			t.Fatalf("Expected validation error for protocol %q with authorized_groups set, but got none", proto)
+		}
+	}
+
+	// authorized_groups keys must be present in sources
+	model := &PolicyModel{
+		Rules: types.ListValueMust(PolicyRuleModel{}.TFType(), []attr.Value{
+			types.ObjectValueMust(PolicyRuleModel{}.TFType().AttrTypes, map[string]attr.Value{
+				"id":                   types.StringValue("r1"),
+				"action":               types.StringValue("accept"),
+				"bidirectional":        types.BoolValue(true),
+				"description":          types.StringNull(),
+				"sources":              types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+				"destinations":         types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g2")}),
+				"enabled":              types.BoolValue(true),
+				"name":                 types.StringValue("test"),
+				"ports":                types.ListNull(types.StringType),
+				"protocol":             types.StringValue("netbird-ssh"),
+				"port_ranges":          types.ListNull(PolicyRulePortRangeModel{}.TFType()),
+				"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+				"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
+				"authorized_groups": types.MapValueMust(types.ListType{ElemType: types.StringType}, map[string]attr.Value{
+					"not-in-sources": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("root")}),
+				}),
+			}),
+		}),
+	}
+	_, diag := policyRulesTerraformToAPI(context.Background(), model)
+	if !diag.HasError() {
+		t.Fatal("Expected validation error for authorized_groups key not in sources, but got none")
+	}
 }
 
 func Test_portRegex(t *testing.T) {

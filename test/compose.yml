@@ -1,18 +1,4 @@
 services:
-  mock-jwt-provider:
-    image: nginx:alpine
-    configs:
-      - source: nginx_conf
-        target: /etc/nginx/nginx.conf
-    networks:
-      transfer_net:
-        ipv4_address: 192.168.1.11
-    healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/.well-known/jwks.json" ]
-      interval: 3s
-      timeout: 1s
-      retries: 15
-
   netbird-mgmt:
     image: netbirdio/management:latest
     environment:
@@ -33,9 +19,6 @@ services:
     networks:
       transfer_net:
         ipv4_address: 192.168.1.10
-    depends_on:
-      mock-jwt-provider:
-        condition: service_healthy
     healthcheck:
       test: [ "CMD", "sh", "-c", "grep -q '0:0050' /proc/net/tcp*" ]
       interval: 3s
@@ -59,27 +42,3 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
-
-configs:
-  nginx_conf:
-    content: |
-      user  nginx;
-      worker_processes  auto;
-      pid        /var/run/nginx.pid;
-      events {}
-      http {
-          include       /etc/nginx/mime.types;
-          default_type  application/octet-stream;
-
-          sendfile        on;
-
-          server {
-              listen       8080;
-              listen  [::]:8080;
-              server_name  localhost;
-
-              location /.well-known/jwks.json {
-                  return 200 '{"keys":[{"kid":"mockKid","kty":"RSA","alg":"RS256","use":"sig","n":"mockModulus","e":"AQAB"}]}';
-              }
-          }
-      }

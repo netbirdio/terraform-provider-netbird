@@ -52,6 +52,7 @@ resource "netbird_route" "example" {
 - `network` (String) Network range in CIDR format, Conflicts with domains
 - `peer` (String) Peer Identifier associated with route. This property can not be set together with peer_groups
 - `peer_groups` (List of String) Peers Group Identifier associated with route. This property can not be set together with peer
+- `skip_auto_apply` (Boolean) Indicate if this exit node route (0.0.0.0/0) should skip auto-application for client routing
 
 ### Read-Only
 

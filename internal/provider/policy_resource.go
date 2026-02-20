@@ -69,6 +69,7 @@ type PolicyRuleModel struct {
 	SourceResource      types.Object `tfsdk:"source_resource"`
 	Destinations        types.List   `tfsdk:"destinations"`
 	DestinationResource types.Object `tfsdk:"destination_resource"`
+	AuthorizedGroups    types.Map    `tfsdk:"authorized_groups"`
 }
 
 func (p PolicyRuleModel) TFType() types.ObjectType {
@@ -95,6 +96,9 @@ func (p PolicyRuleModel) TFType() types.ObjectType {
 				ElemType: types.StringType,
 			},
 			"destination_resource": PolicyRuleResourceModel{}.TFType(),
+			"authorized_groups": types.MapType{
+				ElemType: types.ListType{ElemType: types.StringType},
+			},
 		},
 	}
 }
@@ -237,6 +241,12 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 							Optional:   true,
 							Computed:   true,
 							Validators: []validator.Object{objectvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("destinations"))},
+						},
+						"authorized_groups": schema.MapAttribute{
+							MarkdownDescription: "Map of source group IDs to a list of local users authorized for SSH access. Keys must be group IDs present in `sources`. If not set, all local users are permitted. Only applicable when protocol is `netbird-ssh`.",
+							ElementType:         types.ListType{ElemType: types.StringType},
+							Optional:            true,
+							Computed:            true,
 						},
 					},
 				},
@@ -381,6 +391,19 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 		} else {
 			ruleModel.DestinationResource = types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes)
 		}
+		mapElemType := types.ListType{ElemType: types.StringType}
+		if r.AuthorizedGroups != nil && len(*r.AuthorizedGroups) > 0 {
+			mapValues := map[string]attr.Value{}
+			for k, v := range *r.AuthorizedGroups {
+				listVal, d := types.ListValueFrom(ctx, types.StringType, v)
+				ret.Append(d...)
+				mapValues[k] = listVal
+			}
+			ruleModel.AuthorizedGroups, diag = types.MapValue(mapElemType, mapValues)
+			ret.Append(diag...)
+		} else {
+			ruleModel.AuthorizedGroups = types.MapNull(mapElemType)
+		}
 		rulesList = append(rulesList, ruleModel)
 	}
 
@@ -508,6 +531,34 @@ func policyRulesTerraformToAPI(ctx context.Context, data *PolicyModel) ([]api.Po
 				})
 			}
 			rule.PortRanges = &portRanges
+		}
+		if v, ok := ruleObject.Attributes()["authorized_groups"].(types.Map); ok && !v.IsNull() && !v.IsUnknown() {
+			if ruleProtocol.ValueString() != "netbird-ssh" {
+				ret.AddError("Invalid Configuration", fmt.Sprintf(`rule[%d]: "authorized_groups" can only be set when protocol is "netbird-ssh"`, i))
+				return nil, ret
+			}
+			sourceIDs := make(map[string]bool)
+			if rule.Sources != nil {
+				for _, s := range *rule.Sources {
+					sourceIDs[s] = true
+				}
+			}
+			ag := make(map[string][]string)
+			for k, val := range v.Elements() {
+				if !sourceIDs[k] {
+					ret.AddError("Invalid Configuration", fmt.Sprintf(`rule[%d]: authorized_groups key %q must be one of the group IDs in "sources"`, i, k))
+					return nil, ret
+				}
+				listVal, ok := val.(types.List)
+				if !ok {
+					ret.AddError("Unexpected Value", fmt.Sprintf("data.Rules[%d].authorized_groups[%s] expected to be types.List, found %T", i, k, val))
+					return nil, ret
+				}
+				var users []string
+				listVal.ElementsAs(ctx, &users, false)
+				ag[k] = users
+			}
+			rule.AuthorizedGroups = &ag
 		}
 
 		rules = append(rules, rule)

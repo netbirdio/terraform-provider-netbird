@@ -45,6 +45,7 @@ data "netbird_policy" "example" {
 Read-Only:
 
 - `action` (String) Policy Rule Action (accept|drop)
+- `authorized_groups` (Map of List of String) Map of source group IDs to a list of local users authorized for SSH access. Keys must be group IDs present in `sources`. If not set, all local users are permitted. Only applicable when protocol is `netbird-ssh`.
 - `bidirectional` (Boolean) Policy Rule Bidirectional
 - `description` (String) Policy description
 - `destination_resource` (Object) Policy Rule Destination Resource (mutually exclusive with destinations) (see [below for nested schema](#nestedatt--rule--destination_resource))

@@ -91,6 +91,31 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				MarkdownDescription: "Enables or disables network traffic packet counter. If enabled, network packets and their size will be counted and reported. (This can have an slight impact on performance)",
 				Computed:            true,
 			},
+			"auto_update_version": schema.StringAttribute{
+				MarkdownDescription: "Set Clients auto-update version. \"latest\", \"disabled\", or a specific version (e.g \"0.64.5\")",
+				Computed:            true,
+			},
+			"dns_domain": schema.StringAttribute{
+				MarkdownDescription: "Allows to define a custom DNS domain for the account",
+				Computed:            true,
+			},
+			"network_range": schema.StringAttribute{
+				MarkdownDescription: "Allows to define a custom network range for the account in CIDR format",
+				Computed:            true,
+			},
+			"lazy_connection_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables experimental lazy connection",
+				Computed:            true,
+			},
+			"user_approval_required": schema.BoolAttribute{
+				MarkdownDescription: "Enables manual approval for new users joining via domain matching. When enabled, users are blocked with pending approval status until explicitly approved by an admin.",
+				Computed:            true,
+			},
+			"network_traffic_logs_groups": schema.ListAttribute{
+				MarkdownDescription: "Limits traffic logging to these groups. If unset all peers are enabled.",
+				ElementType:         types.StringType,
+				Computed:            true,
+			},
 		},
 	}
 }
