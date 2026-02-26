@@ -36,6 +36,8 @@ func Test_accountAPIToTerraform(t *testing.T) {
 					PeerLoginExpirationEnabled:      false,
 					RegularUsersViewBlocked:         false,
 					RoutingPeerDnsResolutionEnabled: nil,
+					PeerExposeEnabled:               false,
+					PeerExposeGroups:                nil,
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          false,
 						NetworkTrafficPacketCounterEnabled: false,
@@ -66,6 +68,8 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				LazyConnectionEnabled:              types.BoolNull(),
 				UserApprovalRequired:               types.BoolValue(false),
 				NetworkTrafficLogsGroups:           types.ListNull(types.StringType),
+				PeerExposeEnabled:                  types.BoolValue(false),
+				PeerExposeGroups:                   types.ListNull(types.StringType),
 			},
 		},
 		{
@@ -86,6 +90,8 @@ func Test_accountAPIToTerraform(t *testing.T) {
 					PeerLoginExpirationEnabled:      true,
 					RegularUsersViewBlocked:         true,
 					RoutingPeerDnsResolutionEnabled: valPtr(true),
+					PeerExposeEnabled:               true,
+					PeerExposeGroups:                []string{"group1"},
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          true,
 						NetworkTrafficPacketCounterEnabled: true,
@@ -116,6 +122,8 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				LazyConnectionEnabled:              types.BoolValue(true),
 				UserApprovalRequired:               types.BoolValue(true),
 				NetworkTrafficLogsGroups:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("group1")}),
+				PeerExposeEnabled:                  types.BoolValue(true),
+				PeerExposeGroups:                   types.ListValueMust(types.StringType, []attr.Value{types.StringValue("group1")}),
 			},
 		},
 	}
@@ -157,6 +165,8 @@ func Test_accountTerraformToAPI(t *testing.T) {
 					PeerLoginExpirationEnabled:      false,
 					RegularUsersViewBlocked:         false,
 					RoutingPeerDnsResolutionEnabled: nil,
+					PeerExposeEnabled:               false,
+					PeerExposeGroups:                nil,
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          false,
 						NetworkTrafficPacketCounterEnabled: false,
@@ -186,6 +196,8 @@ func Test_accountTerraformToAPI(t *testing.T) {
 					PeerLoginExpirationEnabled:      false,
 					RegularUsersViewBlocked:         false,
 					RoutingPeerDnsResolutionEnabled: nil,
+					PeerExposeEnabled:               false,
+					PeerExposeGroups:                nil,
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          false,
 						NetworkTrafficPacketCounterEnabled: false,
@@ -214,6 +226,8 @@ func Test_accountTerraformToAPI(t *testing.T) {
 					PeerLoginExpirationEnabled:      false,
 					RegularUsersViewBlocked:         false,
 					RoutingPeerDnsResolutionEnabled: nil,
+					PeerExposeEnabled:               false,
+					PeerExposeGroups:                nil,
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          false,
 						NetworkTrafficPacketCounterEnabled: false,
@@ -244,6 +258,8 @@ func Test_accountTerraformToAPI(t *testing.T) {
 				LazyConnectionEnabled:              types.BoolValue(true),
 				UserApprovalRequired:               types.BoolValue(true),
 				NetworkTrafficLogsGroups:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("group1")}),
+				PeerExposeEnabled:                  types.BoolValue(true),
+				PeerExposeGroups:                   types.ListValueMust(types.StringType, []attr.Value{types.StringValue("group1")}),
 			},
 			expected: api.AccountRequest{
 				Settings: api.AccountSettings{
@@ -261,6 +277,8 @@ func Test_accountTerraformToAPI(t *testing.T) {
 					PeerLoginExpirationEnabled:      true,
 					RegularUsersViewBlocked:         true,
 					RoutingPeerDnsResolutionEnabled: valPtr(true),
+					PeerExposeEnabled:               true,
+					PeerExposeGroups:                []string{"group1"},
 					Extra: &api.AccountExtraSettings{
 						NetworkTrafficLogsEnabled:          true,
 						NetworkTrafficPacketCounterEnabled: true,

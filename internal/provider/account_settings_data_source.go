@@ -116,6 +116,15 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
+			"peer_expose_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables peer expose. If enabled, peers can expose local services through the reverse proxy using the CLI.",
+				Computed:            true,
+			},
+			"peer_expose_groups": schema.ListAttribute{
+				MarkdownDescription: "Limits which peer groups are allowed to expose services. If empty, all peers are allowed when peer expose is enabled.",
+				ElementType:         types.StringType,
+				Computed:            true,
+			},
 		},
 	}
 }

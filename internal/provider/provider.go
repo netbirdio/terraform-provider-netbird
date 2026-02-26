@@ -120,6 +120,8 @@ func (p *NetBirdProvider) Resources(ctx context.Context) []func() resource.Resou
 		NewRoute,
 		NewScim,
 		NewSetupKey,
+		NewReverseProxyDomain,
+		NewReverseProxyService,
 		NewToken,
 		NewUser,
 	}
@@ -148,6 +150,8 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 		NewRouteDataSource,
 		NewScimDataSource,
 		NewSetupKeyDataSource,
+		NewReverseProxyClustersDataSource,
+		NewReverseProxyDomainDataSource,
 		NewTokenDataSource,
 		NewUserDataSource,
 	}
