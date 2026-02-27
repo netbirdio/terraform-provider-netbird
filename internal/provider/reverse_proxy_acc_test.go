@@ -12,7 +12,13 @@ import (
 
 func Test_ReverseProxyClusters_DataSource(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			_, err := testClient().ReverseProxyClusters.List(context.Background())
+			if err != nil {
+				t.Skip("reverse proxy clusters endpoint not available")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -104,7 +110,7 @@ func Test_ReverseProxyService_PasswordAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "d26j5q0l3is53ife49sg" // debian2
+	peerID := "peer1"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -185,7 +191,7 @@ func Test_ReverseProxyService_PinAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "d26j5q0l3is53ife49sg"
+	peerID := "peer1"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -218,8 +224,8 @@ func Test_ReverseProxyService_BearerAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "d26j5q0l3is53ife49sg"
-	groupID := "d13do18l3isemtoq22kg" // "client" group
+	peerID := "peer1"
+	groupID := "group-all"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -256,8 +262,8 @@ func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID1 := "d26j5q0l3is53ife49sg" // debian2
-	peerID2 := "d5mtrb0l3is7kpai46dg" // debian3
+	peerID1 := "peer1"
+	peerID2 := "peer2"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -286,7 +292,7 @@ func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
 }
 
 func Test_AccountSettings_PeerExpose(t *testing.T) {
-	groupID := "d13do18l3isemtoq22kg" // "client" group
+	groupID := "group-all"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },

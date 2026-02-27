@@ -16,6 +16,23 @@ do
             echo "Seeding the database..."
             sqlite3 /var/lib/netbird/store.db < /app/seed_database.sql
             echo "Database seeded successfully."
+
+            # Create proxy access token
+            echo "Creating proxy access token..."
+            TOKEN=$(/go/bin/netbird-mgmt token create \
+                --config /etc/netbird/management.json \
+                --name test-proxy \
+                --log-file console 2>/dev/null \
+                | grep "^Token:" | awk '{print $2}')
+
+            if [ -n "$TOKEN" ]; then
+                echo "NB_PROXY_TOKEN=$TOKEN" > /var/lib/netbird/proxy.env
+                echo "Proxy token created successfully."
+            else
+                echo "ERROR: Failed to create proxy token"
+                exit 1
+            fi
+
             exit 0
         else
             echo "Database already contains data, skipping seeding."
