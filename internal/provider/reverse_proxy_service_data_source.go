@@ -121,6 +121,10 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 							"enabled": schema.BoolAttribute{
 								Computed: true,
 							},
+							"password": schema.StringAttribute{
+								Computed:  true,
+								Sensitive: true,
+							},
 						},
 					},
 					"pin_auth": schema.SingleNestedAttribute{
@@ -129,6 +133,10 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 						Attributes: map[string]schema.Attribute{
 							"enabled": schema.BoolAttribute{
 								Computed: true,
+							},
+							"pin": schema.StringAttribute{
+								Computed:  true,
+								Sensitive: true,
 							},
 						},
 					},

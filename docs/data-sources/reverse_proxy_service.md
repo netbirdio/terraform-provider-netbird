@@ -80,6 +80,7 @@ Read-Only:
 Read-Only:
 
 - `enabled` (Boolean)
+- `password` (String, Sensitive)
 
 
 <a id="nestedatt--auth--pin_auth"></a>
@@ -88,6 +89,7 @@ Read-Only:
 Read-Only:
 
 - `enabled` (Boolean)
+- `pin` (String, Sensitive)
 
 
 
