@@ -106,6 +106,33 @@ func Test_ReverseProxyDomain_CRUD(t *testing.T) {
 	})
 }
 
+func Test_ReverseProxyService_DataSource(t *testing.T) {
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + ".external.test"
+	dsNameFull := "data.netbird_reverse_proxy_service.lookup"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Create a service, then look it up by name via the data source
+				Config: testReverseProxyServiceWithDataSource(rName, domain, "peer1"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(dsNameFull, "name", rName),
+					resource.TestCheckResourceAttr(dsNameFull, "domain", domain),
+					resource.TestCheckResourceAttr(dsNameFull, "enabled", "true"),
+					resource.TestCheckResourceAttr(dsNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(dsNameFull, "targets.0.port", "8080"),
+					resource.TestCheckResourceAttr(dsNameFull, "targets.0.protocol", "http"),
+					resource.TestCheckResourceAttrSet(dsNameFull, "id"),
+					resource.TestCheckResourceAttrSet(dsNameFull, "auth.%"),
+				),
+			},
+		},
+	})
+}
+
 func Test_ReverseProxyService_PasswordAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
@@ -456,6 +483,31 @@ resource "netbird_reverse_proxy_service" "%s" {
     }
   }
 }`, rName, rName, domain, peerID1, peerID2)
+}
+
+func testReverseProxyServiceWithDataSource(rName, domain, peerID string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "test" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8080
+    protocol    = "http"
+  }]
+
+  auth = {
+    link_auth = {
+      enabled = true
+    }
+  }
+}
+
+data "netbird_reverse_proxy_service" "lookup" {
+  name = netbird_reverse_proxy_service.test.name
+}`, rName, domain, peerID)
 }
 
 func testAccountSettingsPeerExpose(enabled bool, groupID string) string {

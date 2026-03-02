@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -966,6 +967,32 @@ func Test_reverseProxyServiceRoundtrip_bearerAuth(t *testing.T) {
 	if req.Auth.PinAuth != nil {
 		t.Error("PinAuth should be nil")
 	}
+}
+
+func Test_reverseProxyServiceDataSourceSchema(t *testing.T) {
+	d := &ReverseProxyServiceDataSource{}
+
+	var metaResp datasource.MetadataResponse
+	d.Metadata(context.Background(), datasource.MetadataRequest{ProviderTypeName: "netbird"}, &metaResp)
+	if metaResp.TypeName != "netbird_reverse_proxy_service" {
+		t.Errorf("Expected type name netbird_reverse_proxy_service, got %s", metaResp.TypeName)
+	}
+
+	var schemaResp datasource.SchemaResponse
+	d.Schema(context.Background(), datasource.SchemaRequest{}, &schemaResp)
+	if schemaResp.Diagnostics.HasError() {
+		t.Fatalf("Schema returned errors")
+	}
+
+	attrs := schemaResp.Schema.Attributes
+	expectedAttrs := []string{"id", "name", "domain", "enabled", "pass_host_header", "rewrite_redirects", "proxy_cluster", "targets", "auth"}
+	for _, attr := range expectedAttrs {
+		if _, ok := attrs[attr]; !ok {
+			t.Errorf("Expected attribute %s in schema", attr)
+		}
+	}
+
+	var _ datasource.DataSource = &ReverseProxyServiceDataSource{}
 }
 
 func mustObjectValue(ctx context.Context, attrTypes map[string]attr.Type, val any) types.Object {

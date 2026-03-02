@@ -152,6 +152,7 @@ func (p *NetBirdProvider) DataSources(ctx context.Context) []func() datasource.D
 		NewSetupKeyDataSource,
 		NewReverseProxyClustersDataSource,
 		NewReverseProxyDomainDataSource,
+		NewReverseProxyServiceDataSource,
 		NewTokenDataSource,
 		NewUserDataSource,
 	}
