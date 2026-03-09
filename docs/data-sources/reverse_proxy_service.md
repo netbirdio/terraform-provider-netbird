@@ -42,7 +42,10 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
+- `listen_port` (Number) Port the proxy listens on (L4/TLS only)
+- `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
 - `pass_host_header` (Boolean) When true, the original client Host header is passed through to the backend
+- `port_auto_assigned` (Boolean) Whether the listen port was auto-assigned by the server
 - `proxy_cluster` (String) The proxy cluster handling this service
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 - `targets` (Attributes List) List of target backends for this service (see [below for nested schema](#nestedatt--targets))
@@ -100,8 +103,21 @@ Read-Only:
 
 - `enabled` (Boolean) Whether this target is enabled
 - `host` (String) Backend IP or domain for this target
+- `options` (Attributes) Per-target options (see [below for nested schema](#nestedatt--targets--options))
 - `path` (String) URL path prefix for this target
 - `port` (Number) Backend port for this target
-- `protocol` (String) Protocol to use when connecting to the backend (http, https)
+- `protocol` (String) Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)
 - `target_id` (String) Target ID (resource or peer ID)
 - `target_type` (String) Target type (peer, host, domain, subnet)
+
+<a id="nestedatt--targets--options"></a>
+### Nested Schema for `targets.options`
+
+Read-Only:
+
+- `custom_headers` (Map of String) Extra headers sent to the backend (HTTP only)
+- `path_rewrite` (String) Controls how the request path is rewritten before forwarding (HTTP only)
+- `proxy_protocol` (Boolean) Send PROXY Protocol v2 header to this backend (TCP/TLS only)
+- `request_timeout` (String) Per-target response timeout as a Go duration string
+- `session_idle_timeout` (String) Idle timeout before a UDP session is reaped (UDP only)
+- `skip_tls_verify` (Boolean) Skip TLS certificate verification for this backend (HTTPS targets only)
