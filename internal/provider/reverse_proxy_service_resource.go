@@ -404,6 +404,13 @@ func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOpt
 		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
 	}
 
+	// If all fields are at zero/nil, treat as no options set.
+	if opts.SkipTlsVerify == nil && opts.RequestTimeout == nil && opts.PathRewrite == nil &&
+		opts.CustomHeaders == nil && opts.SessionIdleTimeout == nil &&
+		(opts.ProxyProtocol == nil || !*opts.ProxyProtocol) {
+		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
+	}
+
 	model := ReverseProxyTargetOptionsModel{
 		SkipTLSVerify:  types.BoolPointerValue(opts.SkipTlsVerify),
 		RequestTimeout: types.StringPointerValue(opts.RequestTimeout),
