@@ -116,6 +116,36 @@ func Test_reverseProxyServiceAPIToTerraform(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "service with target options",
+			service: &api.Service{
+				Id:      "svc5",
+				Name:    "options-service",
+				Domain:  "opts.example.com",
+				Enabled: true,
+				Targets: []api.ServiceTarget{
+					{
+						TargetId:   "peer1",
+						TargetType: api.ServiceTargetTargetTypePeer,
+						Port:       8080,
+						Protocol:   api.ServiceTargetProtocolHttps,
+						Enabled:    true,
+						Options: &api.ServiceTargetOptions{
+							SkipTlsVerify:  valPtr(true),
+							RequestTimeout: valPtr("30s"),
+							PathRewrite:    valPtr(api.ServiceTargetOptionsPathRewritePreserve),
+							CustomHeaders:  &map[string]string{"X-Custom": "value"},
+						},
+					},
+				},
+				Auth: api.ServiceAuthConfig{
+					PasswordAuth: &api.PasswordAuthConfig{
+						Enabled:  true,
+						Password: "secret",
+					},
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -216,11 +246,11 @@ func Test_reverseProxyServiceRoundtrip(t *testing.T) {
 	if req.RewriteRedirects == nil || *req.RewriteRedirects != *original.RewriteRedirects {
 		t.Errorf("RewriteRedirects mismatch")
 	}
-	if len(req.Targets) != 1 {
-		t.Fatalf("Expected 1 target, got %d", len(req.Targets))
+	if req.Targets == nil || len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target, got %v", req.Targets)
 	}
 
-	target := req.Targets[0]
+	target := (*req.Targets)[0]
 	origTarget := original.Targets[0]
 	if target.TargetId != origTarget.TargetId {
 		t.Errorf("Target.TargetId mismatch: expected %s, got %s", origTarget.TargetId, target.TargetId)
@@ -252,9 +282,147 @@ func Test_reverseProxyServiceRoundtrip(t *testing.T) {
 	}
 }
 
+func Test_reverseProxyServiceRoundtrip_withOptions(t *testing.T) {
+	ctx := context.Background()
+
+	preserve := api.ServiceTargetOptionsPathRewritePreserve
+	original := &api.Service{
+		Id:      "svc-opts-rt",
+		Name:    "options-roundtrip",
+		Domain:  "opts-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       8443,
+				Protocol:   api.ServiceTargetProtocolHttps,
+				Enabled:    true,
+				Options: &api.ServiceTargetOptions{
+					SkipTlsVerify:  valPtr(true),
+					RequestTimeout: valPtr("45s"),
+					PathRewrite:    &preserve,
+					CustomHeaders:  &map[string]string{"X-Env": "prod"},
+				},
+			},
+		},
+		Auth: api.ServiceAuthConfig{
+			PasswordAuth: &api.PasswordAuthConfig{
+				Enabled:  true,
+				Password: "test",
+			},
+		},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+
+	if req.Targets == nil || len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target")
+	}
+	target := (*req.Targets)[0]
+	if target.Options == nil {
+		t.Fatal("Expected Options to be set")
+	}
+	if target.Options.SkipTlsVerify == nil || !*target.Options.SkipTlsVerify {
+		t.Error("SkipTlsVerify should be true")
+	}
+	if target.Options.RequestTimeout == nil || *target.Options.RequestTimeout != "45s" {
+		t.Errorf("RequestTimeout mismatch: got %v", target.Options.RequestTimeout)
+	}
+	if target.Options.PathRewrite == nil || *target.Options.PathRewrite != preserve {
+		t.Error("PathRewrite should be preserve")
+	}
+	if target.Options.CustomHeaders == nil || (*target.Options.CustomHeaders)["X-Env"] != "prod" {
+		t.Error("CustomHeaders mismatch")
+	}
+}
+
+func Test_reverseProxyServiceRoundtrip_l4Options(t *testing.T) {
+	ctx := context.Background()
+
+	original := &api.Service{
+		Id:      "svc-l4-rt",
+		Name:    "l4-roundtrip",
+		Domain:  "l4-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "res1",
+				TargetType: api.ServiceTargetTargetType("subnet"),
+				Port:       5432,
+				Protocol:   api.ServiceTargetProtocolTcp,
+				Enabled:    true,
+				Options: &api.ServiceTargetOptions{
+					ProxyProtocol:  valPtr(true),
+					RequestTimeout: valPtr("60s"),
+				},
+			},
+			{
+				TargetId:   "res2",
+				TargetType: api.ServiceTargetTargetType("subnet"),
+				Port:       53,
+				Protocol:   api.ServiceTargetProtocolUdp,
+				Enabled:    true,
+				Options: &api.ServiceTargetOptions{
+					SessionIdleTimeout: valPtr("2m"),
+				},
+			},
+		},
+		Auth: api.ServiceAuthConfig{
+			PasswordAuth: &api.PasswordAuthConfig{
+				Enabled:  true,
+				Password: "test",
+			},
+		},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+
+	if req.Targets == nil || len(*req.Targets) != 2 {
+		t.Fatalf("Expected 2 targets")
+	}
+
+	tcp := (*req.Targets)[0]
+	if tcp.Options == nil {
+		t.Fatal("Expected TCP target options")
+	}
+	if tcp.Options.ProxyProtocol == nil || !*tcp.Options.ProxyProtocol {
+		t.Error("TCP ProxyProtocol should be true")
+	}
+	if tcp.Options.RequestTimeout == nil || *tcp.Options.RequestTimeout != "60s" {
+		t.Error("TCP RequestTimeout mismatch")
+	}
+
+	udp := (*req.Targets)[1]
+	if udp.Options == nil {
+		t.Fatal("Expected UDP target options")
+	}
+	if udp.Options.SessionIdleTimeout == nil || *udp.Options.SessionIdleTimeout != "2m" {
+		t.Error("UDP SessionIdleTimeout mismatch")
+	}
+}
+
 func Test_reverseProxyServiceTargetModelTFType(t *testing.T) {
 	tfType := ReverseProxyServiceTargetModel{}.TFType()
-	expectedKeys := []string{"target_id", "target_type", "host", "port", "protocol", "path", "enabled"}
+	expectedKeys := []string{"target_id", "target_type", "host", "port", "protocol", "path", "enabled", "options"}
 	for _, key := range expectedKeys {
 		if _, ok := tfType.AttrTypes[key]; !ok {
 			t.Errorf("Expected key %s in TFType, not found", key)
@@ -272,6 +440,19 @@ func Test_reverseProxyServiceAuthModelTFType(t *testing.T) {
 		if _, ok := tfType.AttrTypes[key]; !ok {
 			t.Errorf("Expected key %s in TFType, not found", key)
 		}
+	}
+}
+
+func Test_reverseProxyTargetOptionsModelTFType(t *testing.T) {
+	tfType := ReverseProxyTargetOptionsModel{}.TFType()
+	expectedKeys := []string{"skip_tls_verify", "request_timeout", "path_rewrite", "custom_headers", "proxy_protocol", "session_idle_timeout"}
+	for _, key := range expectedKeys {
+		if _, ok := tfType.AttrTypes[key]; !ok {
+			t.Errorf("Expected key %s in TFType, not found", key)
+		}
+	}
+	if len(tfType.AttrTypes) != len(expectedKeys) {
+		t.Errorf("Expected %d keys in TFType, got %d", len(expectedKeys), len(tfType.AttrTypes))
 	}
 }
 
@@ -320,6 +501,45 @@ func Test_reverseProxyServiceAPIToTerraform_nullAuth(t *testing.T) {
 	linkObj, ok := authAttrs["link_auth"].(types.Object)
 	if !ok || !linkObj.IsNull() {
 		t.Error("link_auth should be null when not set in API")
+	}
+}
+
+func Test_reverseProxyServiceAPIToTerraform_nullOptions(t *testing.T) {
+	ctx := context.Background()
+	svc := &api.Service{
+		Id:      "svc-no-opts",
+		Name:    "no-options",
+		Domain:  "noopts.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       80,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+				Options:    nil,
+			},
+		},
+		Auth: api.ServiceAuthConfig{},
+	}
+
+	var out ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, svc, &out)
+	if d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+
+	var targets []ReverseProxyServiceTargetModel
+	d = out.Targets.ElementsAs(ctx, &targets, false)
+	if d.HasError() {
+		t.Fatal("Failed to extract targets")
+	}
+	if len(targets) != 1 {
+		t.Fatalf("Expected 1 target, got %d", len(targets))
+	}
+	if !targets[0].Options.IsNull() {
+		t.Error("Options should be null when not set in API")
 	}
 }
 
@@ -448,6 +668,7 @@ func Test_reverseProxyServiceTerraformToAPI_targets(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringNull(),
 			Path:       types.StringNull(),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 
@@ -494,19 +715,22 @@ func Test_reverseProxyServiceTerraformToAPI_targets(t *testing.T) {
 	if req.Name != "test" {
 		t.Errorf("Name mismatch: expected test, got %s", req.Name)
 	}
-	if len(req.Targets) != 1 {
-		t.Fatalf("Expected 1 target, got %d", len(req.Targets))
+	if req.Targets == nil || len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target, got %v", req.Targets)
 	}
-	if req.Targets[0].TargetId != "peer1" {
+	if (*req.Targets)[0].TargetId != "peer1" {
 		t.Errorf("Target ID mismatch")
 	}
-	if req.Targets[0].Host != nil {
+	if (*req.Targets)[0].Host != nil {
 		t.Errorf("Target Host should be nil for null input")
 	}
-	if req.Targets[0].Path != nil {
+	if (*req.Targets)[0].Path != nil {
 		t.Errorf("Target Path should be nil for null input")
 	}
-	if req.Auth.PasswordAuth == nil {
+	if (*req.Targets)[0].Options != nil {
+		t.Errorf("Target Options should be nil for null input")
+	}
+	if req.Auth == nil || req.Auth.PasswordAuth == nil {
 		t.Fatal("Expected PasswordAuth to be set")
 	}
 	if req.Auth.PinAuth != nil {
@@ -561,6 +785,7 @@ func Test_reverseProxyServiceTFTypeConsistency(t *testing.T) {
 	pinType := ReverseProxyPinAuthModel{}.TFType()
 	bearerType := ReverseProxyBearerAuthModel{}.TFType()
 	linkType := ReverseProxyLinkAuthModel{}.TFType()
+	optsType := ReverseProxyTargetOptionsModel{}.TFType()
 
 	if !reflect.DeepEqual(authType.AttrTypes["password_auth"], pwType) {
 		t.Error("Auth password_auth type doesn't match PasswordAuth TFType")
@@ -575,15 +800,18 @@ func Test_reverseProxyServiceTFTypeConsistency(t *testing.T) {
 		t.Error("Auth link_auth type doesn't match LinkAuth TFType")
 	}
 
-	if len(targetType.AttrTypes) != 7 {
-		t.Errorf("Expected 7 target attributes, got %d", len(targetType.AttrTypes))
+	if !reflect.DeepEqual(targetType.AttrTypes["options"], optsType) {
+		t.Error("Target options type doesn't match TargetOptions TFType")
+	}
+
+	if len(targetType.AttrTypes) != 8 {
+		t.Errorf("Expected 8 target attributes, got %d", len(targetType.AttrTypes))
 	}
 }
 
 func Test_preserveAuthSecrets(t *testing.T) {
 	ctx := context.Background()
 
-	// Build prior state with real password and pin
 	priorAuthModel := ReverseProxyServiceAuthModel{
 		PasswordAuth: mustObjectValue(ctx, ReverseProxyPasswordAuthModel{}.TFType().AttrTypes, ReverseProxyPasswordAuthModel{
 			Enabled:  types.BoolValue(true),
@@ -598,7 +826,6 @@ func Test_preserveAuthSecrets(t *testing.T) {
 	}
 	priorAuth := mustObjectValue(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, priorAuthModel)
 
-	// Build current state with redacted (empty) password and pin from API
 	currentAuthModel := ReverseProxyServiceAuthModel{
 		PasswordAuth: mustObjectValue(ctx, ReverseProxyPasswordAuthModel{}.TFType().AttrTypes, ReverseProxyPasswordAuthModel{
 			Enabled:  types.BoolValue(true),
@@ -687,7 +914,6 @@ func Test_preserveAuthSecrets_nullPrior(t *testing.T) {
 func Test_preserveTargetPlanValues(t *testing.T) {
 	ctx := context.Background()
 
-	// Plan has explicit host and path
 	planModels := []ReverseProxyServiceTargetModel{
 		{
 			TargetId:   types.StringValue("peer1"),
@@ -697,6 +923,7 @@ func Test_preserveTargetPlanValues(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("10.0.0.1"),
 			Path:       types.StringValue("/custom"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	planTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), planModels)
@@ -704,7 +931,6 @@ func Test_preserveTargetPlanValues(t *testing.T) {
 		t.Fatal("Failed to build plan targets")
 	}
 
-	// API returns different host (resolved from peer IP) and path
 	apiModels := []ReverseProxyServiceTargetModel{
 		{
 			TargetId:   types.StringValue("peer1"),
@@ -714,6 +940,7 @@ func Test_preserveTargetPlanValues(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("100.0.219.86"),
 			Path:       types.StringValue("/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
@@ -741,7 +968,6 @@ func Test_preserveTargetPlanValues(t *testing.T) {
 	if resultModels[0].Path.ValueString() != "/custom" {
 		t.Errorf("Expected path to be preserved as '/custom', got %q", resultModels[0].Path.ValueString())
 	}
-	// Non-preserved fields should come from API
 	if resultModels[0].Port.ValueInt64() != 8080 {
 		t.Errorf("Expected port 8080, got %d", resultModels[0].Port.ValueInt64())
 	}
@@ -750,7 +976,6 @@ func Test_preserveTargetPlanValues(t *testing.T) {
 func Test_preserveTargetPlanValues_nullPlanHost(t *testing.T) {
 	ctx := context.Background()
 
-	// Plan has null host — should accept API's value
 	planModels := []ReverseProxyServiceTargetModel{
 		{
 			TargetId:   types.StringValue("peer1"),
@@ -760,6 +985,7 @@ func Test_preserveTargetPlanValues_nullPlanHost(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringNull(),
 			Path:       types.StringNull(),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	planTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), planModels)
@@ -776,6 +1002,7 @@ func Test_preserveTargetPlanValues_nullPlanHost(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("100.0.219.86"),
 			Path:       types.StringValue("/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
@@ -814,6 +1041,7 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("10.0.0.1"),
 			Path:       types.StringNull(),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	planTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), planModels)
@@ -821,7 +1049,6 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 		t.Fatal("Failed to build plan targets")
 	}
 
-	// API returned 2 targets — peer1 matches plan, peer2 is new
 	apiModels := []ReverseProxyServiceTargetModel{
 		{
 			TargetId:   types.StringValue("peer1"),
@@ -831,6 +1058,7 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("100.0.219.86"),
 			Path:       types.StringValue("/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 		{
 			TargetId:   types.StringValue("peer2"),
@@ -840,6 +1068,7 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("100.0.34.47"),
 			Path:       types.StringValue("/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
@@ -861,11 +1090,9 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 	if len(resultModels) != 2 {
 		t.Fatalf("Expected 2 targets, got %d", len(resultModels))
 	}
-	// peer1 matched by ID — plan host preserved
 	if resultModels[0].Host.ValueString() != "10.0.0.1" {
 		t.Errorf("Expected peer1 host preserved as '10.0.0.1', got %q", resultModels[0].Host.ValueString())
 	}
-	// peer2 not in plan — API host kept
 	if resultModels[1].Host.ValueString() != "100.0.34.47" {
 		t.Errorf("Expected peer2 API host '100.0.34.47', got %q", resultModels[1].Host.ValueString())
 	}
@@ -883,6 +1110,7 @@ func Test_preserveTargetPlanValues_nullPlan(t *testing.T) {
 			Enabled:    types.BoolValue(true),
 			Host:       types.StringValue("100.0.219.86"),
 			Path:       types.StringValue("/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
 		},
 	}
 	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
@@ -895,7 +1123,6 @@ func Test_preserveTargetPlanValues_nullPlan(t *testing.T) {
 		t.Fatalf("preserveTargetPlanValues failed with %d errors", d.ErrorsCount())
 	}
 
-	// Should return API targets unmodified
 	var resultModels []ReverseProxyServiceTargetModel
 	d = result.ElementsAs(ctx, &resultModels, false)
 	if d.HasError() {
@@ -932,14 +1159,12 @@ func Test_reverseProxyServiceRoundtrip_bearerAuth(t *testing.T) {
 		},
 	}
 
-	// API -> Terraform
 	var model ReverseProxyServiceModel
 	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
 	if d.HasError() {
 		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
 	}
 
-	// Terraform -> API
 	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
 	if d.HasError() {
 		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
