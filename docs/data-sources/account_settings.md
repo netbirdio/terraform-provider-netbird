@@ -35,6 +35,8 @@ data "netbird_account_settings" "example" {}
 - `network_traffic_logs_groups` (List of String) Limits traffic logging to these groups. If unset all peers are enabled.
 - `network_traffic_packet_counter_enabled` (Boolean) Enables or disables network traffic packet counter. If enabled, network packets and their size will be counted and reported. (This can have an slight impact on performance)
 - `peer_approval_enabled` (Boolean) (Cloud only) Enables or disables peer approval globally. If enabled, all peers added will be in pending state until approved by an admin.
+- `peer_expose_enabled` (Boolean) Enables or disables peer expose. If enabled, peers can expose local services through the reverse proxy using the CLI.
+- `peer_expose_groups` (List of String) Limits which peer groups are allowed to expose services. If empty, all peers are allowed when peer expose is enabled.
 - `peer_inactivity_expiration` (Number) Period of time of inactivity after which peer session expires (seconds).
 - `peer_inactivity_expiration_enabled` (Boolean) Enables or disables peer inactivity expiration globally. After peer's session has expired the user has to log in (authenticate). Applies only to peers that were added by a user (interactive SSO login).
 - `peer_login_expiration` (Number) Period of time after which peer login expires (seconds).

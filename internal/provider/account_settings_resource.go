@@ -60,6 +60,8 @@ type AccountSettingsModel struct {
 	LazyConnectionEnabled              types.Bool   `tfsdk:"lazy_connection_enabled"`
 	UserApprovalRequired               types.Bool   `tfsdk:"user_approval_required"`
 	NetworkTrafficLogsGroups           types.List   `tfsdk:"network_traffic_logs_groups"`
+	PeerExposeEnabled                  types.Bool   `tfsdk:"peer_expose_enabled"`
+	PeerExposeGroups                   types.List   `tfsdk:"peer_expose_groups"`
 }
 
 func (r *AccountSettings) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -194,6 +196,19 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
+			"peer_expose_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables peer expose. If enabled, peers can expose local services through the reverse proxy using the CLI.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"peer_expose_groups": schema.ListAttribute{
+				MarkdownDescription: "Limits which peer groups are allowed to expose services. If empty, all peers are allowed when peer expose is enabled.",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -242,6 +257,9 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	logsGroups, d := types.ListValueFrom(ctx, types.StringType, account.Settings.Extra.NetworkTrafficLogsGroups)
 	ret.Append(d...)
 	data.NetworkTrafficLogsGroups = logsGroups
+	data.PeerExposeEnabled = types.BoolValue(account.Settings.PeerExposeEnabled)
+	data.PeerExposeGroups, d = types.ListValueFrom(ctx, types.StringType, account.Settings.PeerExposeGroups)
+	ret.Append(d...)
 	return ret
 }
 
@@ -269,6 +287,8 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 			DnsDomain:                       stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain),
 			NetworkRange:                    stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange),
 			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),
+			PeerExposeEnabled:               boolDefault(data.PeerExposeEnabled, account.Settings.PeerExposeEnabled),
+			PeerExposeGroups:                stringListDefault(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups),
 		},
 	}
 }
