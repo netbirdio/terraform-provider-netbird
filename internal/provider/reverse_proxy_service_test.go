@@ -435,7 +435,7 @@ func Test_reverseProxyServiceTargetModelTFType(t *testing.T) {
 
 func Test_reverseProxyServiceAuthModelTFType(t *testing.T) {
 	tfType := ReverseProxyServiceAuthModel{}.TFType()
-	expectedKeys := []string{"password_auth", "pin_auth", "bearer_auth", "link_auth"}
+	expectedKeys := []string{"password_auth", "pin_auth", "bearer_auth", "link_auth", "header_auths"}
 	for _, key := range expectedKeys {
 		if _, ok := tfType.AttrTypes[key]; !ok {
 			t.Errorf("Expected key %s in TFType, not found", key)
@@ -690,6 +690,7 @@ func Test_reverseProxyServiceTerraformToAPI_targets(t *testing.T) {
 		PinAuth:      types.ObjectNull(ReverseProxyPinAuthModel{}.TFType().AttrTypes),
 		BearerAuth:   types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
 		LinkAuth:     types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		HeaderAuths:  types.ListNull(ReverseProxyHeaderAuthModel{}.TFType()),
 	}
 	authObj, d := types.ObjectValueFrom(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, authModel)
 	if d.HasError() {
@@ -821,8 +822,9 @@ func Test_preserveAuthSecrets(t *testing.T) {
 			Enabled: types.BoolValue(true),
 			Pin:     types.StringValue("1234"),
 		}),
-		BearerAuth: types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
-		LinkAuth:   types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		BearerAuth:  types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
+		LinkAuth:    types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		HeaderAuths: types.ListNull(ReverseProxyHeaderAuthModel{}.TFType()),
 	}
 	priorAuth := mustObjectValue(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, priorAuthModel)
 
@@ -835,8 +837,9 @@ func Test_preserveAuthSecrets(t *testing.T) {
 			Enabled: types.BoolValue(true),
 			Pin:     types.StringValue(""),
 		}),
-		BearerAuth: types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
-		LinkAuth:   types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		BearerAuth:  types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
+		LinkAuth:    types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		HeaderAuths: types.ListNull(ReverseProxyHeaderAuthModel{}.TFType()),
 	}
 	currentAuth := mustObjectValue(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, currentAuthModel)
 
@@ -881,9 +884,10 @@ func Test_preserveAuthSecrets_nullPrior(t *testing.T) {
 			Enabled:  types.BoolValue(true),
 			Password: types.StringValue("new-password"),
 		}),
-		PinAuth:    types.ObjectNull(ReverseProxyPinAuthModel{}.TFType().AttrTypes),
-		BearerAuth: types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
-		LinkAuth:   types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		PinAuth:     types.ObjectNull(ReverseProxyPinAuthModel{}.TFType().AttrTypes),
+		BearerAuth:  types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
+		LinkAuth:    types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes),
+		HeaderAuths: types.ListNull(ReverseProxyHeaderAuthModel{}.TFType()),
 	}
 	currentAuth := mustObjectValue(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, currentAuthModel)
 
@@ -1218,6 +1222,151 @@ func Test_reverseProxyServiceDataSourceSchema(t *testing.T) {
 	}
 
 	var _ datasource.DataSource = &ReverseProxyServiceDataSource{}
+}
+
+func Test_reverseProxyServiceRoundtrip_headerAuth(t *testing.T) {
+	ctx := context.Background()
+
+	original := &api.Service{
+		Id:      "svc-header-rt",
+		Name:    "header-roundtrip",
+		Domain:  "header-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       8080,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+			},
+		},
+		Auth: api.ServiceAuthConfig{
+			HeaderAuths: &[]api.HeaderAuthConfig{
+				{Enabled: true, Header: "X-API-Key", Value: "secret-key"},
+				{Enabled: true, Header: "Authorization", Value: "Bearer token123"},
+			},
+		},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+
+	if req.Auth.HeaderAuths == nil {
+		t.Fatal("Expected HeaderAuths to be set")
+	}
+	headers := *req.Auth.HeaderAuths
+	if len(headers) != 2 {
+		t.Fatalf("Expected 2 header auths, got %d", len(headers))
+	}
+	if headers[0].Header != "X-API-Key" || headers[0].Value != "secret-key" {
+		t.Errorf("First header auth mismatch: got %+v", headers[0])
+	}
+	if headers[1].Header != "Authorization" || headers[1].Value != "Bearer token123" {
+		t.Errorf("Second header auth mismatch: got %+v", headers[1])
+	}
+}
+
+func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
+	ctx := context.Background()
+
+	original := &api.Service{
+		Id:      "svc-ar-rt",
+		Name:    "access-restrictions-roundtrip",
+		Domain:  "ar-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       8080,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+			},
+		},
+		Auth: api.ServiceAuthConfig{
+			PasswordAuth: &api.PasswordAuthConfig{
+				Enabled:  true,
+				Password: "test",
+			},
+		},
+		AccessRestrictions: &api.AccessRestrictions{
+			AllowedCountries: &[]string{"US", "DE"},
+			BlockedCidrs:     &[]string{"192.168.0.0/16", "10.0.0.0/8"},
+		},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	if model.AccessRestrictions.IsNull() {
+		t.Fatal("AccessRestrictions should not be null")
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+
+	if req.AccessRestrictions == nil {
+		t.Fatal("Expected AccessRestrictions to be set")
+	}
+	if req.AccessRestrictions.AllowedCountries == nil || len(*req.AccessRestrictions.AllowedCountries) != 2 {
+		t.Fatalf("Expected 2 allowed countries, got %v", req.AccessRestrictions.AllowedCountries)
+	}
+	countries := *req.AccessRestrictions.AllowedCountries
+	if countries[0] != "US" || countries[1] != "DE" {
+		t.Errorf("Allowed countries mismatch: got %v", countries)
+	}
+	if req.AccessRestrictions.BlockedCidrs == nil || len(*req.AccessRestrictions.BlockedCidrs) != 2 {
+		t.Fatalf("Expected 2 blocked CIDRs, got %v", req.AccessRestrictions.BlockedCidrs)
+	}
+	if req.AccessRestrictions.AllowedCidrs != nil {
+		t.Error("AllowedCidrs should be nil when not set")
+	}
+	if req.AccessRestrictions.BlockedCountries != nil {
+		t.Error("BlockedCountries should be nil when not set")
+	}
+}
+
+func Test_reverseProxyServiceAPIToTerraform_nullAccessRestrictions(t *testing.T) {
+	ctx := context.Background()
+	svc := &api.Service{
+		Id:      "svc-no-ar",
+		Name:    "no-access-restrictions",
+		Domain:  "noar.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       80,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+			},
+		},
+		Auth: api.ServiceAuthConfig{},
+	}
+
+	var out ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, svc, &out)
+	if d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if !out.AccessRestrictions.IsNull() {
+		t.Error("AccessRestrictions should be null when not set in API")
+	}
 }
 
 func mustObjectValue(ctx context.Context, attrTypes map[string]attr.Type, val any) types.Object {

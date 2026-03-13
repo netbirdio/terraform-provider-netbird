@@ -87,6 +87,32 @@ resource "netbird_reverse_proxy_service" "dns" {
   }]
 }
 
+# HTTP service with header auth and access restrictions
+resource "netbird_reverse_proxy_service" "api_gateway" {
+  name   = "api-gateway"
+  domain = "api.${data.netbird_reverse_proxy_domain.free.domain}"
+
+  targets = [{
+    target_id   = netbird_peer.api.id
+    target_type = "peer"
+    port        = 3000
+    protocol    = "http"
+  }]
+
+  auth = {
+    header_auths = [{
+      enabled = true
+      header  = "X-API-Key"
+      value   = var.api_key
+    }]
+  }
+
+  access_restrictions = {
+    allowed_countries = ["US", "DE", "GB"]
+    blocked_cidrs     = ["192.168.0.0/16"]
+  }
+}
+
 # TLS (SNI passthrough) proxy service
 resource "netbird_reverse_proxy_service" "tls_backend" {
   name        = "tls-backend"
@@ -120,6 +146,7 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
 
 ### Optional
 
+- `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
 - `enabled` (Boolean) Whether the service is enabled
 - `listen_port` (Number) Port the proxy listens on (L4/TLS only). Set to 0 for auto-assignment.
 - `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
@@ -138,6 +165,7 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
 Optional:
 
 - `bearer_auth` (Attributes) Bearer token authentication (see [below for nested schema](#nestedatt--auth--bearer_auth))
+- `header_auths` (Attributes List) Static header-value authentication rules (see [below for nested schema](#nestedatt--auth--header_auths))
 - `link_auth` (Attributes) Link authentication (see [below for nested schema](#nestedatt--auth--link_auth))
 - `password_auth` (Attributes) Password authentication (see [below for nested schema](#nestedatt--auth--password_auth))
 - `pin_auth` (Attributes) PIN authentication (see [below for nested schema](#nestedatt--auth--pin_auth))
@@ -152,6 +180,16 @@ Required:
 Optional:
 
 - `distribution_groups` (List of String) List of group IDs that can use bearer auth
+
+
+<a id="nestedatt--auth--header_auths"></a>
+### Nested Schema for `auth.header_auths`
+
+Required:
+
+- `enabled` (Boolean)
+- `header` (String) HTTP header name to check
+- `value` (String, Sensitive) Expected header value
 
 
 <a id="nestedatt--auth--link_auth"></a>
@@ -215,3 +253,15 @@ Optional:
 - `request_timeout` (String) Per-target response timeout as a Go duration string (e.g. "30s", "2m")
 - `session_idle_timeout` (String) Idle timeout before a UDP session is reaped, as a Go duration string (e.g. "30s", "2m"). Maximum 10m. (UDP only)
 - `skip_tls_verify` (Boolean) Skip TLS certificate verification for this backend (HTTPS targets only)
+
+
+
+<a id="nestedatt--access_restrictions"></a>
+### Nested Schema for `access_restrictions`
+
+Optional:
+
+- `allowed_cidrs` (List of String) CIDR allowlist
+- `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
+- `blocked_cidrs` (List of String) CIDR blocklist
+- `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
