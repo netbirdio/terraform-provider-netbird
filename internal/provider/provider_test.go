@@ -49,12 +49,16 @@ func testEnsureManagementRunning(t *testing.T) {
 		return
 	}
 
-	cmd := exec.Command("docker", "compose", "up", "-d")
+	cmd := exec.Command("docker", "compose", "up", "-d", "--pull", "always")
 	curDir, err := GetProjectDir()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmd.Dir = path.Join(curDir, "test")
+	cmd.Env = os.Environ()
+	if img := os.Getenv("NB_MANAGEMENT_IMAGE"); img != "" {
+		t.Logf("Using management image: %s", img)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Log(string(out))

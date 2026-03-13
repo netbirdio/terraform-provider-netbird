@@ -10,6 +10,16 @@ on:
   push:
     paths-ignore:
       - 'README.md'
+  workflow_dispatch:
+    inputs:
+      management_image:
+        description: 'NetBird management Docker image (e.g. netbirdio/management:main)'
+        required: false
+        default: 'netbirdio/management:latest'
+      proxy_image:
+        description: 'NetBird reverse proxy Docker image (e.g. netbirdio/reverse-proxy:main)'
+        required: false
+        default: 'netbirdio/reverse-proxy:latest'
 
 # Testing only needs permissions to read the repository contents.
 permissions:
@@ -82,5 +92,7 @@ jobs:
       - run: go mod download
       - env:
           TF_ACC: "1"
+          NB_MANAGEMENT_IMAGE: ${{ inputs.management_image || 'netbirdio/management:latest' }}
+          NB_PROXY_IMAGE: ${{ inputs.proxy_image || 'netbirdio/reverse-proxy:latest' }}
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10

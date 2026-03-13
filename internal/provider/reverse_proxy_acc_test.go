@@ -499,8 +499,9 @@ resource "netbird_reverse_proxy_service" "test" {
   }]
 
   auth = {
-    link_auth = {
-      enabled = true
+    password_auth = {
+      enabled  = true
+      password = "datasource-test"
     }
   }
 }
@@ -508,6 +509,102 @@ resource "netbird_reverse_proxy_service" "test" {
 data "netbird_reverse_proxy_service" "lookup" {
   name = netbird_reverse_proxy_service.test.name
 }`, rName, domain, peerID)
+}
+
+func Test_ReverseProxyService_TargetOptions(t *testing.T) {
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + ".external.test"
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := "peer1"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(s *terraform.State) error {
+			services, err := testClient().ReverseProxyServices.List(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, svc := range services {
+				if svc.Name == rName {
+					return fmt.Errorf("service %s still exists", rName)
+				}
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceTargetOptions(rName, domain, peerID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.protocol", "https"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.skip_tls_verify", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.request_timeout", "30s"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.path_rewrite", "preserve"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.custom_headers.X-Custom", "test-value"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if len(svc.Targets) != 1 {
+							return fmt.Errorf("expected 1 target, got %d", len(svc.Targets))
+						}
+						opts := svc.Targets[0].Options
+						if opts == nil {
+							return fmt.Errorf("expected target options to be set")
+						}
+						if opts.SkipTlsVerify == nil || !*opts.SkipTlsVerify {
+							return fmt.Errorf("expected skip_tls_verify to be true")
+						}
+						if opts.RequestTimeout == nil || *opts.RequestTimeout != "30s" {
+							return fmt.Errorf("expected request_timeout to be 30s")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.password_auth.password"},
+			},
+		},
+	})
+}
+
+func testReverseProxyServiceTargetOptions(rName, domain, peerID string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8443
+    protocol    = "https"
+
+    options = {
+      skip_tls_verify = true
+      request_timeout = "30s"
+      path_rewrite    = "preserve"
+      custom_headers = {
+        "X-Custom" = "test-value"
+      }
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = "options-test"
+    }
+  }
+}`, rName, rName, domain, peerID)
 }
 
 func testAccountSettingsPeerExpose(enabled bool, groupID string) string {

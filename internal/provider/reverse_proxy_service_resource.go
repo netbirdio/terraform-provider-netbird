@@ -36,6 +36,9 @@ type ReverseProxyServiceModel struct {
 	Id               types.String `tfsdk:"id"`
 	Name             types.String `tfsdk:"name"`
 	Domain           types.String `tfsdk:"domain"`
+	Mode             types.String `tfsdk:"mode"`
+	ListenPort       types.Int64  `tfsdk:"listen_port"`
+	PortAutoAssigned types.Bool   `tfsdk:"port_auto_assigned"`
 	Enabled          types.Bool   `tfsdk:"enabled"`
 	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
 	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
@@ -53,6 +56,7 @@ type ReverseProxyServiceTargetModel struct {
 	Protocol   types.String `tfsdk:"protocol"`
 	Path       types.String `tfsdk:"path"`
 	Enabled    types.Bool   `tfsdk:"enabled"`
+	Options    types.Object `tfsdk:"options"`
 }
 
 // TFType returns the Terraform object type for service targets.
@@ -66,6 +70,33 @@ func (m ReverseProxyServiceTargetModel) TFType() types.ObjectType {
 			"protocol":    types.StringType,
 			"path":        types.StringType,
 			"enabled":     types.BoolType,
+			"options":     ReverseProxyTargetOptionsModel{}.TFType(),
+		},
+	}
+}
+
+// ReverseProxyTargetOptionsModel describes per-target options.
+type ReverseProxyTargetOptionsModel struct {
+	SkipTLSVerify      types.Bool   `tfsdk:"skip_tls_verify"`
+	RequestTimeout     types.String `tfsdk:"request_timeout"`
+	PathRewrite        types.String `tfsdk:"path_rewrite"`
+	CustomHeaders      types.Map    `tfsdk:"custom_headers"`
+	ProxyProtocol      types.Bool   `tfsdk:"proxy_protocol"`
+	SessionIdleTimeout types.String `tfsdk:"session_idle_timeout"`
+}
+
+// TFType returns the Terraform object type for target options.
+func (m ReverseProxyTargetOptionsModel) TFType() types.ObjectType {
+	return types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"skip_tls_verify": types.BoolType,
+			"request_timeout": types.StringType,
+			"path_rewrite":    types.StringType,
+			"custom_headers": types.MapType{
+				ElemType: types.StringType,
+			},
+			"proxy_protocol":       types.BoolType,
+			"session_idle_timeout": types.StringType,
 		},
 	}
 }
@@ -179,6 +210,22 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 				Required:            true,
 				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
+			"mode": schema.StringAttribute{
+				MarkdownDescription: "Service mode: \"http\" for L7 reverse proxy, \"tcp\"/\"udp\"/\"tls\" for L4 passthrough",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.String{stringvalidator.OneOf("http", "tcp", "udp", "tls")},
+			},
+			"listen_port": schema.Int64Attribute{
+				MarkdownDescription: "Port the proxy listens on (L4/TLS only). Set to 0 for auto-assignment.",
+				Optional:            true,
+				Computed:            true,
+				Validators:          []validator.Int64{int64validator.Between(0, 65535)},
+			},
+			"port_auto_assigned": schema.BoolAttribute{
+				MarkdownDescription: "Whether the listen port was auto-assigned by the server",
+				Computed:            true,
+			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the service is enabled",
 				Optional:            true,
@@ -226,9 +273,9 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 							Validators:          []validator.Int64{int64validator.Between(0, 65535)},
 						},
 						"protocol": schema.StringAttribute{
-							MarkdownDescription: "Protocol to use when connecting to the backend (http, https)",
+							MarkdownDescription: "Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)",
 							Required:            true,
-							Validators:          []validator.String{stringvalidator.OneOf("http", "https")},
+							Validators:          []validator.String{stringvalidator.OneOf("http", "https", "tcp", "udp")},
 						},
 						"path": schema.StringAttribute{
 							MarkdownDescription: "URL path prefix for this target. Defaults to \"/\" if omitted.",
@@ -240,6 +287,38 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 							Optional:            true,
 							Computed:            true,
 							Default:             booldefault.StaticBool(true),
+						},
+						"options": schema.SingleNestedAttribute{
+							MarkdownDescription: "Per-target options",
+							Optional:            true,
+							Attributes: map[string]schema.Attribute{
+								"skip_tls_verify": schema.BoolAttribute{
+									MarkdownDescription: "Skip TLS certificate verification for this backend (HTTPS targets only)",
+									Optional:            true,
+								},
+								"request_timeout": schema.StringAttribute{
+									MarkdownDescription: "Per-target response timeout as a Go duration string (e.g. \"30s\", \"2m\")",
+									Optional:            true,
+								},
+								"path_rewrite": schema.StringAttribute{
+									MarkdownDescription: "Controls how the request path is rewritten before forwarding. Default strips the matched prefix. \"preserve\" keeps the full original path. (HTTP only)",
+									Optional:            true,
+									Validators:          []validator.String{stringvalidator.OneOf("preserve")},
+								},
+								"custom_headers": schema.MapAttribute{
+									MarkdownDescription: "Extra headers sent to the backend (HTTP only)",
+									Optional:            true,
+									ElementType:         types.StringType,
+								},
+								"proxy_protocol": schema.BoolAttribute{
+									MarkdownDescription: "Send PROXY Protocol v2 header to this backend (TCP/TLS only)",
+									Optional:            true,
+								},
+								"session_idle_timeout": schema.StringAttribute{
+									MarkdownDescription: "Idle timeout before a UDP session is reaped, as a Go duration string (e.g. \"30s\", \"2m\"). Maximum 10m. (UDP only)",
+									Optional:            true,
+								},
+							},
 						},
 					},
 				},
@@ -320,6 +399,96 @@ func (r *ReverseProxyService) Configure(ctx context.Context, req resource.Config
 	r.client = client
 }
 
+func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOptions) (types.Object, diag.Diagnostics) {
+	if opts == nil {
+		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
+	}
+
+	// If all fields are at zero/nil, treat as no options set.
+	if opts.SkipTlsVerify == nil && opts.RequestTimeout == nil && opts.PathRewrite == nil &&
+		opts.CustomHeaders == nil && opts.SessionIdleTimeout == nil &&
+		(opts.ProxyProtocol == nil || !*opts.ProxyProtocol) {
+		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
+	}
+
+	model := ReverseProxyTargetOptionsModel{
+		SkipTLSVerify:  types.BoolPointerValue(opts.SkipTlsVerify),
+		RequestTimeout: types.StringPointerValue(opts.RequestTimeout),
+		ProxyProtocol:  types.BoolPointerValue(opts.ProxyProtocol),
+	}
+
+	if opts.PathRewrite != nil {
+		model.PathRewrite = types.StringValue(string(*opts.PathRewrite))
+	} else {
+		model.PathRewrite = types.StringNull()
+	}
+
+	if opts.SessionIdleTimeout != nil {
+		model.SessionIdleTimeout = types.StringValue(*opts.SessionIdleTimeout)
+	} else {
+		model.SessionIdleTimeout = types.StringNull()
+	}
+
+	var d diag.Diagnostics
+	if opts.CustomHeaders != nil {
+		model.CustomHeaders, d = types.MapValueFrom(ctx, types.StringType, *opts.CustomHeaders)
+	} else {
+		model.CustomHeaders = types.MapNull(types.StringType)
+	}
+
+	obj, objD := types.ObjectValueFrom(ctx, ReverseProxyTargetOptionsModel{}.TFType().AttrTypes, model)
+	d.Append(objD...)
+	return obj, d
+}
+
+func targetOptionsTerraformToAPI(ctx context.Context, opts types.Object) (*api.ServiceTargetOptions, diag.Diagnostics) {
+	if opts.IsNull() || opts.IsUnknown() {
+		return nil, nil
+	}
+
+	var ret diag.Diagnostics
+	attrs := opts.Attributes()
+	result := &api.ServiceTargetOptions{}
+	hasValue := false
+
+	if v, ok := attrs["skip_tls_verify"].(types.Bool); ok && !v.IsNull() && !v.IsUnknown() {
+		b := v.ValueBool()
+		result.SkipTlsVerify = &b
+		hasValue = true
+	}
+	if v, ok := attrs["request_timeout"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+		s := v.ValueString()
+		result.RequestTimeout = &s
+		hasValue = true
+	}
+	if v, ok := attrs["path_rewrite"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+		pr := api.ServiceTargetOptionsPathRewrite(v.ValueString())
+		result.PathRewrite = &pr
+		hasValue = true
+	}
+	if v, ok := attrs["custom_headers"].(types.Map); ok && !v.IsNull() && !v.IsUnknown() {
+		var headers map[string]string
+		ret.Append(v.ElementsAs(ctx, &headers, false)...)
+		result.CustomHeaders = &headers
+		hasValue = true
+	}
+	if v, ok := attrs["proxy_protocol"].(types.Bool); ok && !v.IsNull() && !v.IsUnknown() {
+		b := v.ValueBool()
+		result.ProxyProtocol = &b
+		hasValue = true
+	}
+	if v, ok := attrs["session_idle_timeout"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+		s := v.ValueString()
+		result.SessionIdleTimeout = &s
+		hasValue = true
+	}
+
+	if !hasValue {
+		return nil, ret
+	}
+	return result, ret
+}
+
 func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, data *ReverseProxyServiceModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	var d diag.Diagnostics
@@ -328,6 +497,24 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 	data.Name = types.StringValue(svc.Name)
 	data.Domain = types.StringValue(svc.Domain)
 	data.Enabled = types.BoolValue(svc.Enabled)
+
+	if svc.Mode != nil {
+		data.Mode = types.StringValue(string(*svc.Mode))
+	} else {
+		data.Mode = types.StringValue("http")
+	}
+
+	if svc.ListenPort != nil {
+		data.ListenPort = types.Int64Value(int64(*svc.ListenPort))
+	} else {
+		data.ListenPort = types.Int64Null()
+	}
+
+	if svc.PortAutoAssigned != nil {
+		data.PortAutoAssigned = types.BoolValue(*svc.PortAutoAssigned)
+	} else {
+		data.PortAutoAssigned = types.BoolValue(false)
+	}
 
 	if svc.PassHostHeader != nil {
 		data.PassHostHeader = types.BoolValue(*svc.PassHostHeader)
@@ -345,6 +532,9 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 
 	var targets []ReverseProxyServiceTargetModel
 	for _, t := range svc.Targets {
+		opts, optsDiags := targetOptionsAPIToTerraform(ctx, t.Options)
+		ret.Append(optsDiags...)
+
 		target := ReverseProxyServiceTargetModel{
 			TargetId:   types.StringValue(t.TargetId),
 			TargetType: types.StringValue(string(t.TargetType)),
@@ -353,6 +543,7 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 			Enabled:    types.BoolValue(t.Enabled),
 			Host:       types.StringPointerValue(t.Host),
 			Path:       types.StringPointerValue(t.Path),
+			Options:    opts,
 		}
 		targets = append(targets, target)
 	}
@@ -468,8 +659,8 @@ func preserveAuthSecrets(priorAuth, currentAuth types.Object) (types.Object, dia
 	return result, ret
 }
 
-// preserveTargetPlanValues keeps the user's planned host/path values in targets since
-// the API may override them (e.g. resolving host from the peer's IP).
+// preserveTargetPlanValues keeps the user's planned host/path/options values in targets
+// since the API may override them (e.g. resolving host from the peer's IP).
 // Targets are matched by target_id to handle potential reordering by the API.
 func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types.List) (types.List, diag.Diagnostics) {
 	var ret diag.Diagnostics
@@ -501,6 +692,9 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 		if !planModel.Path.IsNull() && !planModel.Path.IsUnknown() {
 			apiModels[i].Path = planModel.Path
 		}
+		if !planModel.Options.IsNull() && !planModel.Options.IsUnknown() {
+			apiModels[i].Options = planModel.Options
+		}
 	}
 
 	result, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
@@ -515,6 +709,16 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		Name:    data.Name.ValueString(),
 		Domain:  data.Domain.ValueString(),
 		Enabled: data.Enabled.ValueBool(),
+	}
+
+	if !data.Mode.IsNull() && !data.Mode.IsUnknown() {
+		v := api.ServiceRequestMode(data.Mode.ValueString())
+		req.Mode = &v
+	}
+
+	if !data.ListenPort.IsNull() && !data.ListenPort.IsUnknown() {
+		v := int(data.ListenPort.ValueInt64())
+		req.ListenPort = &v
 	}
 
 	if !data.PassHostHeader.IsNull() && !data.PassHostHeader.IsUnknown() {
@@ -532,6 +736,7 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		return req, ret
 	}
 
+	var targets []api.ServiceTarget
 	for _, t := range targetModels {
 		target := api.ServiceTarget{
 			TargetId:   t.TargetId.ValueString(),
@@ -548,16 +753,24 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			v := t.Path.ValueString()
 			target.Path = &v
 		}
-		req.Targets = append(req.Targets, target)
+
+		opts, d := targetOptionsTerraformToAPI(ctx, t.Options)
+		ret.Append(d...)
+		target.Options = opts
+
+		targets = append(targets, target)
 	}
+	req.Targets = &targets
 
 	authAttrs := data.Auth.Attributes()
+
+	authCfg := &api.ServiceAuthConfig{}
 
 	if v, ok := authAttrs["password_auth"].(types.Object); ok && !v.IsNull() && !v.IsUnknown() {
 		pwAttrs := v.Attributes()
 		enabled, _ := pwAttrs["enabled"].(types.Bool)
 		password, _ := pwAttrs["password"].(types.String)
-		req.Auth.PasswordAuth = &api.PasswordAuthConfig{
+		authCfg.PasswordAuth = &api.PasswordAuthConfig{
 			Enabled:  enabled.ValueBool(),
 			Password: password.ValueString(),
 		}
@@ -567,7 +780,7 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		pinAttrs := v.Attributes()
 		enabled, _ := pinAttrs["enabled"].(types.Bool)
 		pin, _ := pinAttrs["pin"].(types.String)
-		req.Auth.PinAuth = &api.PINAuthConfig{
+		authCfg.PinAuth = &api.PINAuthConfig{
 			Enabled: enabled.ValueBool(),
 			Pin:     pin.ValueString(),
 		}
@@ -584,16 +797,18 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			ret.Append(groupsList.ElementsAs(ctx, &groups, false)...)
 			bearerAuth.DistributionGroups = &groups
 		}
-		req.Auth.BearerAuth = bearerAuth
+		authCfg.BearerAuth = bearerAuth
 	}
 
 	if v, ok := authAttrs["link_auth"].(types.Object); ok && !v.IsNull() && !v.IsUnknown() {
 		linkAttrs := v.Attributes()
 		enabled, _ := linkAttrs["enabled"].(types.Bool)
-		req.Auth.LinkAuth = &api.LinkAuthConfig{
+		authCfg.LinkAuth = &api.LinkAuthConfig{
 			Enabled: enabled.ValueBool(),
 		}
 	}
+
+	req.Auth = authCfg
 
 	return req, ret
 }

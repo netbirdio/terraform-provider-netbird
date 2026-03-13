@@ -17,22 +17,94 @@ data "netbird_reverse_proxy_domain" "free" {
   type = "free"
 }
 
-resource "netbird_reverse_proxy_service" "example" {
+# HTTP (L7) reverse proxy service with per-target options
+resource "netbird_reverse_proxy_service" "web_app" {
   name   = "web-app"
   domain = data.netbird_reverse_proxy_domain.free.domain
 
-  targets {
+  targets = [{
     target_id   = netbird_peer.web.id
     target_type = "peer"
     port        = 8080
-    protocol    = "http"
-  }
+    protocol    = "https"
 
-  auth {
-    link_auth {
-      enabled = true
+    options = {
+      skip_tls_verify = true
+      request_timeout = "30s"
+      path_rewrite    = "preserve"
+      custom_headers = {
+        "X-Forwarded-Proto" = "https"
+      }
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = var.web_app_password
     }
   }
+}
+
+# TCP (L4) proxy service with proxy protocol
+resource "netbird_reverse_proxy_service" "postgres" {
+  name        = "postgres"
+  domain      = "pg.${data.netbird_reverse_proxy_domain.free.domain}"
+  mode        = "tcp"
+  listen_port = 15432
+
+  targets = [{
+    target_id   = netbird_network_resource.db.id
+    target_type = "subnet"
+    host        = "10.0.0.5"
+    port        = 5432
+    protocol    = "tcp"
+
+    options = {
+      proxy_protocol  = true
+      request_timeout = "60s"
+    }
+  }]
+}
+
+# UDP (L4) proxy service with session idle timeout
+resource "netbird_reverse_proxy_service" "dns" {
+  name        = "dns"
+  domain      = "dns.${data.netbird_reverse_proxy_domain.free.domain}"
+  mode        = "udp"
+  listen_port = 19053
+
+  targets = [{
+    target_id   = netbird_network_resource.infra.id
+    target_type = "subnet"
+    host        = "10.0.0.6"
+    port        = 53
+    protocol    = "udp"
+
+    options = {
+      session_idle_timeout = "2m"
+    }
+  }]
+}
+
+# TLS (SNI passthrough) proxy service
+resource "netbird_reverse_proxy_service" "tls_backend" {
+  name        = "tls-backend"
+  domain      = "backend.${data.netbird_reverse_proxy_domain.free.domain}"
+  mode        = "tls"
+  listen_port = 14443
+
+  targets = [{
+    target_id   = netbird_network_resource.backend.id
+    target_type = "subnet"
+    host        = "10.0.0.7"
+    port        = 8443
+    protocol    = "tcp"
+
+    options = {
+      proxy_protocol = true
+    }
+  }]
 }
 ```
 
@@ -49,12 +121,15 @@ resource "netbird_reverse_proxy_service" "example" {
 ### Optional
 
 - `enabled` (Boolean) Whether the service is enabled
+- `listen_port` (Number) Port the proxy listens on (L4/TLS only). Set to 0 for auto-assignment.
+- `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
 - `pass_host_header` (Boolean) When true, the original client Host header is passed through to the backend
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 
 ### Read-Only
 
 - `id` (String) Service ID
+- `port_auto_assigned` (Boolean) Whether the listen port was auto-assigned by the server
 - `proxy_cluster` (String) The proxy cluster handling this service (derived from domain)
 
 <a id="nestedatt--auth"></a>
@@ -118,7 +193,7 @@ Optional:
 Required:
 
 - `port` (Number) Backend port for this target (0 for scheme default)
-- `protocol` (String) Protocol to use when connecting to the backend (http, https)
+- `protocol` (String) Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)
 - `target_id` (String) Target ID (resource or peer ID)
 - `target_type` (String) Target type (peer, host, domain, subnet)
 
@@ -126,4 +201,17 @@ Optional:
 
 - `enabled` (Boolean) Whether this target is enabled
 - `host` (String) Backend IP or domain for this target. If omitted, the API resolves it from the target peer.
+- `options` (Attributes) Per-target options (see [below for nested schema](#nestedatt--targets--options))
 - `path` (String) URL path prefix for this target. Defaults to "/" if omitted.
+
+<a id="nestedatt--targets--options"></a>
+### Nested Schema for `targets.options`
+
+Optional:
+
+- `custom_headers` (Map of String) Extra headers sent to the backend (HTTP only)
+- `path_rewrite` (String) Controls how the request path is rewritten before forwarding. Default strips the matched prefix. "preserve" keeps the full original path. (HTTP only)
+- `proxy_protocol` (Boolean) Send PROXY Protocol v2 header to this backend (TCP/TLS only)
+- `request_timeout` (String) Per-target response timeout as a Go duration string (e.g. "30s", "2m")
+- `session_idle_timeout` (String) Idle timeout before a UDP session is reaped, as a Go duration string (e.g. "30s", "2m"). Maximum 10m. (UDP only)
+- `skip_tls_verify` (Boolean) Skip TLS certificate verification for this backend (HTTPS targets only)

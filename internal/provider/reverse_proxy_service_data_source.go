@@ -27,6 +27,9 @@ type ReverseProxyServiceDataSourceModel struct {
 	Id               types.String `tfsdk:"id"`
 	Name             types.String `tfsdk:"name"`
 	Domain           types.String `tfsdk:"domain"`
+	Mode             types.String `tfsdk:"mode"`
+	ListenPort       types.Int64  `tfsdk:"listen_port"`
+	PortAutoAssigned types.Bool   `tfsdk:"port_auto_assigned"`
 	Enabled          types.Bool   `tfsdk:"enabled"`
 	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
 	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
@@ -56,6 +59,18 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 			"domain": schema.StringAttribute{
 				MarkdownDescription: "Domain for the service",
 				Optional:            true,
+				Computed:            true,
+			},
+			"mode": schema.StringAttribute{
+				MarkdownDescription: "Service mode: \"http\" for L7 reverse proxy, \"tcp\"/\"udp\"/\"tls\" for L4 passthrough",
+				Computed:            true,
+			},
+			"listen_port": schema.Int64Attribute{
+				MarkdownDescription: "Port the proxy listens on (L4/TLS only)",
+				Computed:            true,
+			},
+			"port_auto_assigned": schema.BoolAttribute{
+				MarkdownDescription: "Whether the listen port was auto-assigned by the server",
 				Computed:            true,
 			},
 			"enabled": schema.BoolAttribute{
@@ -96,7 +111,7 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 							Computed:            true,
 						},
 						"protocol": schema.StringAttribute{
-							MarkdownDescription: "Protocol to use when connecting to the backend (http, https)",
+							MarkdownDescription: "Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)",
 							Computed:            true,
 						},
 						"path": schema.StringAttribute{
@@ -106,6 +121,37 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 						"enabled": schema.BoolAttribute{
 							MarkdownDescription: "Whether this target is enabled",
 							Computed:            true,
+						},
+						"options": schema.SingleNestedAttribute{
+							MarkdownDescription: "Per-target options",
+							Computed:            true,
+							Attributes: map[string]schema.Attribute{
+								"skip_tls_verify": schema.BoolAttribute{
+									MarkdownDescription: "Skip TLS certificate verification for this backend (HTTPS targets only)",
+									Computed:            true,
+								},
+								"request_timeout": schema.StringAttribute{
+									MarkdownDescription: "Per-target response timeout as a Go duration string",
+									Computed:            true,
+								},
+								"path_rewrite": schema.StringAttribute{
+									MarkdownDescription: "Controls how the request path is rewritten before forwarding (HTTP only)",
+									Computed:            true,
+								},
+								"custom_headers": schema.MapAttribute{
+									MarkdownDescription: "Extra headers sent to the backend (HTTP only)",
+									Computed:            true,
+									ElementType:         types.StringType,
+								},
+								"proxy_protocol": schema.BoolAttribute{
+									MarkdownDescription: "Send PROXY Protocol v2 header to this backend (TCP/TLS only)",
+									Computed:            true,
+								},
+								"session_idle_timeout": schema.StringAttribute{
+									MarkdownDescription: "Idle timeout before a UDP session is reaped (UDP only)",
+									Computed:            true,
+								},
+							},
 						},
 					},
 				},
@@ -234,6 +280,9 @@ func (d *ReverseProxyServiceDataSource) Read(ctx context.Context, req datasource
 		Id:               match.Id,
 		Name:             match.Name,
 		Domain:           match.Domain,
+		Mode:             match.Mode,
+		ListenPort:       match.ListenPort,
+		PortAutoAssigned: match.PortAutoAssigned,
 		Enabled:          match.Enabled,
 		PassHostHeader:   match.PassHostHeader,
 		RewriteRedirects: match.RewriteRedirects,
