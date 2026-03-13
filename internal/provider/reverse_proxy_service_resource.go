@@ -33,18 +33,19 @@ type ReverseProxyService struct {
 
 // ReverseProxyServiceModel describes the resource data model.
 type ReverseProxyServiceModel struct {
-	Id               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Domain           types.String `tfsdk:"domain"`
-	Mode             types.String `tfsdk:"mode"`
-	ListenPort       types.Int64  `tfsdk:"listen_port"`
-	PortAutoAssigned types.Bool   `tfsdk:"port_auto_assigned"`
-	Enabled          types.Bool   `tfsdk:"enabled"`
-	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
-	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
-	ProxyCluster     types.String `tfsdk:"proxy_cluster"`
-	Targets          types.List   `tfsdk:"targets"`
-	Auth             types.Object `tfsdk:"auth"`
+	Id                 types.String `tfsdk:"id"`
+	Name               types.String `tfsdk:"name"`
+	Domain             types.String `tfsdk:"domain"`
+	Mode               types.String `tfsdk:"mode"`
+	ListenPort         types.Int64  `tfsdk:"listen_port"`
+	PortAutoAssigned   types.Bool   `tfsdk:"port_auto_assigned"`
+	Enabled            types.Bool   `tfsdk:"enabled"`
+	PassHostHeader     types.Bool   `tfsdk:"pass_host_header"`
+	RewriteRedirects   types.Bool   `tfsdk:"rewrite_redirects"`
+	ProxyCluster       types.String `tfsdk:"proxy_cluster"`
+	Targets            types.List   `tfsdk:"targets"`
+	Auth               types.Object `tfsdk:"auth"`
+	AccessRestrictions types.Object `tfsdk:"access_restrictions"`
 }
 
 // ReverseProxyServiceTargetModel describes a service target.
@@ -107,6 +108,7 @@ type ReverseProxyServiceAuthModel struct {
 	PinAuth      types.Object `tfsdk:"pin_auth"`
 	BearerAuth   types.Object `tfsdk:"bearer_auth"`
 	LinkAuth     types.Object `tfsdk:"link_auth"`
+	HeaderAuths  types.List   `tfsdk:"header_auths"`
 }
 
 // TFType returns the Terraform object type for service auth.
@@ -117,6 +119,7 @@ func (m ReverseProxyServiceAuthModel) TFType() types.ObjectType {
 			"pin_auth":      ReverseProxyPinAuthModel{}.TFType(),
 			"bearer_auth":   ReverseProxyBearerAuthModel{}.TFType(),
 			"link_auth":     ReverseProxyLinkAuthModel{}.TFType(),
+			"header_auths":  types.ListType{ElemType: ReverseProxyHeaderAuthModel{}.TFType()},
 		},
 	}
 }
@@ -181,6 +184,44 @@ func (m ReverseProxyLinkAuthModel) TFType() types.ObjectType {
 	return types.ObjectType{
 		AttrTypes: map[string]attr.Type{
 			"enabled": types.BoolType,
+		},
+	}
+}
+
+// ReverseProxyHeaderAuthModel describes header auth config.
+type ReverseProxyHeaderAuthModel struct {
+	Enabled types.Bool   `tfsdk:"enabled"`
+	Header  types.String `tfsdk:"header"`
+	Value   types.String `tfsdk:"value"`
+}
+
+// TFType returns the Terraform object type for header auth.
+func (m ReverseProxyHeaderAuthModel) TFType() types.ObjectType {
+	return types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"enabled": types.BoolType,
+			"header":  types.StringType,
+			"value":   types.StringType,
+		},
+	}
+}
+
+// ReverseProxyAccessRestrictionsModel describes access restrictions.
+type ReverseProxyAccessRestrictionsModel struct {
+	AllowedCidrs     types.List `tfsdk:"allowed_cidrs"`
+	BlockedCidrs     types.List `tfsdk:"blocked_cidrs"`
+	AllowedCountries types.List `tfsdk:"allowed_countries"`
+	BlockedCountries types.List `tfsdk:"blocked_countries"`
+}
+
+// TFType returns the Terraform object type for access restrictions.
+func (m ReverseProxyAccessRestrictionsModel) TFType() types.ObjectType {
+	return types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"allowed_cidrs":     types.ListType{ElemType: types.StringType},
+			"blocked_cidrs":     types.ListType{ElemType: types.StringType},
+			"allowed_countries": types.ListType{ElemType: types.StringType},
+			"blocked_countries": types.ListType{ElemType: types.StringType},
 		},
 	}
 }
@@ -375,6 +416,52 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 								Required: true,
 							},
 						},
+					},
+					"header_auths": schema.ListNestedAttribute{
+						MarkdownDescription: "Static header-value authentication rules",
+						Optional:            true,
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"enabled": schema.BoolAttribute{
+									Required: true,
+								},
+								"header": schema.StringAttribute{
+									MarkdownDescription: "HTTP header name to check",
+									Required:            true,
+								},
+								"value": schema.StringAttribute{
+									MarkdownDescription: "Expected header value",
+									Required:            true,
+									Sensitive:           true,
+								},
+							},
+						},
+					},
+				},
+			},
+			"access_restrictions": schema.SingleNestedAttribute{
+				MarkdownDescription: "Connection-level access restrictions based on IP or geography",
+				Optional:            true,
+				Attributes: map[string]schema.Attribute{
+					"allowed_cidrs": schema.ListAttribute{
+						MarkdownDescription: "CIDR allowlist",
+						Optional:            true,
+						ElementType:         types.StringType,
+					},
+					"blocked_cidrs": schema.ListAttribute{
+						MarkdownDescription: "CIDR blocklist",
+						Optional:            true,
+						ElementType:         types.StringType,
+					},
+					"allowed_countries": schema.ListAttribute{
+						MarkdownDescription: "ISO 3166-1 alpha-2 country codes to allow",
+						Optional:            true,
+						ElementType:         types.StringType,
+					},
+					"blocked_countries": schema.ListAttribute{
+						MarkdownDescription: "ISO 3166-1 alpha-2 country codes to block",
+						Optional:            true,
+						ElementType:         types.StringType,
 					},
 				},
 			},
@@ -597,8 +684,55 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 		authModel.LinkAuth = types.ObjectNull(ReverseProxyLinkAuthModel{}.TFType().AttrTypes)
 	}
 
+	if svc.Auth.HeaderAuths != nil && len(*svc.Auth.HeaderAuths) > 0 {
+		var headerAuthModels []ReverseProxyHeaderAuthModel
+		for _, h := range *svc.Auth.HeaderAuths {
+			headerAuthModels = append(headerAuthModels, ReverseProxyHeaderAuthModel{
+				Enabled: types.BoolValue(h.Enabled),
+				Header:  types.StringValue(h.Header),
+				Value:   types.StringValue(h.Value),
+			})
+		}
+		authModel.HeaderAuths, d = types.ListValueFrom(ctx, ReverseProxyHeaderAuthModel{}.TFType(), headerAuthModels)
+		ret.Append(d...)
+	} else {
+		authModel.HeaderAuths = types.ListNull(ReverseProxyHeaderAuthModel{}.TFType())
+	}
+
 	data.Auth, d = types.ObjectValueFrom(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, authModel)
 	ret.Append(d...)
+
+	if svc.AccessRestrictions != nil {
+		arModel := ReverseProxyAccessRestrictionsModel{}
+		if svc.AccessRestrictions.AllowedCidrs != nil {
+			arModel.AllowedCidrs, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.AllowedCidrs)
+			ret.Append(d...)
+		} else {
+			arModel.AllowedCidrs = types.ListNull(types.StringType)
+		}
+		if svc.AccessRestrictions.BlockedCidrs != nil {
+			arModel.BlockedCidrs, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.BlockedCidrs)
+			ret.Append(d...)
+		} else {
+			arModel.BlockedCidrs = types.ListNull(types.StringType)
+		}
+		if svc.AccessRestrictions.AllowedCountries != nil {
+			arModel.AllowedCountries, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.AllowedCountries)
+			ret.Append(d...)
+		} else {
+			arModel.AllowedCountries = types.ListNull(types.StringType)
+		}
+		if svc.AccessRestrictions.BlockedCountries != nil {
+			arModel.BlockedCountries, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.BlockedCountries)
+			ret.Append(d...)
+		} else {
+			arModel.BlockedCountries = types.ListNull(types.StringType)
+		}
+		data.AccessRestrictions, d = types.ObjectValueFrom(ctx, ReverseProxyAccessRestrictionsModel{}.TFType().AttrTypes, arModel)
+		ret.Append(d...)
+	} else {
+		data.AccessRestrictions = types.ObjectNull(ReverseProxyAccessRestrictionsModel{}.TFType().AttrTypes)
+	}
 
 	return ret
 }
@@ -651,6 +785,24 @@ func preserveAuthSecrets(priorAuth, currentAuth types.Object) (types.Object, dia
 	if priorLink, ok := priorAttrs["link_auth"].(types.Object); ok && !priorLink.IsNull() {
 		if curLink, ok := currentAttrs["link_auth"].(types.Object); ok && curLink.IsNull() {
 			currentAttrs["link_auth"] = priorLink
+		}
+	}
+
+	// Preserve header_auths sensitive values from plan/prior state.
+	if priorHeaders, ok := priorAttrs["header_auths"].(types.List); ok && !priorHeaders.IsNull() {
+		if curHeaders, ok := currentAttrs["header_auths"].(types.List); ok && !curHeaders.IsNull() {
+			var priorModels, curModels []ReverseProxyHeaderAuthModel
+			ret.Append(priorHeaders.ElementsAs(context.Background(), &priorModels, false)...)
+			ret.Append(curHeaders.ElementsAs(context.Background(), &curModels, false)...)
+			// Match by index (order is stable) and restore redacted values.
+			for i := range curModels {
+				if i < len(priorModels) {
+					curModels[i].Value = priorModels[i].Value
+				}
+			}
+			newList, d := types.ListValueFrom(context.Background(), ReverseProxyHeaderAuthModel{}.TFType(), curModels)
+			ret.Append(d...)
+			currentAttrs["header_auths"] = newList
 		}
 	}
 
@@ -808,7 +960,54 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		}
 	}
 
+	if v, ok := authAttrs["header_auths"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
+		var headerAuthModels []ReverseProxyHeaderAuthModel
+		ret.Append(v.ElementsAs(ctx, &headerAuthModels, false)...)
+		var headerAuths []api.HeaderAuthConfig
+		for _, h := range headerAuthModels {
+			headerAuths = append(headerAuths, api.HeaderAuthConfig{
+				Enabled: h.Enabled.ValueBool(),
+				Header:  h.Header.ValueString(),
+				Value:   h.Value.ValueString(),
+			})
+		}
+		authCfg.HeaderAuths = &headerAuths
+	}
+
 	req.Auth = authCfg
+
+	if !data.AccessRestrictions.IsNull() && !data.AccessRestrictions.IsUnknown() {
+		arAttrs := data.AccessRestrictions.Attributes()
+		ar := &api.AccessRestrictions{}
+		hasAR := false
+		if v, ok := arAttrs["allowed_cidrs"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
+			var cidrs []string
+			ret.Append(v.ElementsAs(ctx, &cidrs, false)...)
+			ar.AllowedCidrs = &cidrs
+			hasAR = true
+		}
+		if v, ok := arAttrs["blocked_cidrs"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
+			var cidrs []string
+			ret.Append(v.ElementsAs(ctx, &cidrs, false)...)
+			ar.BlockedCidrs = &cidrs
+			hasAR = true
+		}
+		if v, ok := arAttrs["allowed_countries"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
+			var countries []string
+			ret.Append(v.ElementsAs(ctx, &countries, false)...)
+			ar.AllowedCountries = &countries
+			hasAR = true
+		}
+		if v, ok := arAttrs["blocked_countries"].(types.List); ok && !v.IsNull() && !v.IsUnknown() {
+			var countries []string
+			ret.Append(v.ElementsAs(ctx, &countries, false)...)
+			ar.BlockedCountries = &countries
+			hasAR = true
+		}
+		if hasAR {
+			req.AccessRestrictions = ar
+		}
+	}
 
 	return req, ret
 }

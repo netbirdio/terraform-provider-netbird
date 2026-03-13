@@ -24,18 +24,19 @@ type ReverseProxyServiceDataSource struct {
 
 // ReverseProxyServiceDataSourceModel describes the data source model.
 type ReverseProxyServiceDataSourceModel struct {
-	Id               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Domain           types.String `tfsdk:"domain"`
-	Mode             types.String `tfsdk:"mode"`
-	ListenPort       types.Int64  `tfsdk:"listen_port"`
-	PortAutoAssigned types.Bool   `tfsdk:"port_auto_assigned"`
-	Enabled          types.Bool   `tfsdk:"enabled"`
-	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
-	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
-	ProxyCluster     types.String `tfsdk:"proxy_cluster"`
-	Targets          types.List   `tfsdk:"targets"`
-	Auth             types.Object `tfsdk:"auth"`
+	Id                 types.String `tfsdk:"id"`
+	Name               types.String `tfsdk:"name"`
+	Domain             types.String `tfsdk:"domain"`
+	Mode               types.String `tfsdk:"mode"`
+	ListenPort         types.Int64  `tfsdk:"listen_port"`
+	PortAutoAssigned   types.Bool   `tfsdk:"port_auto_assigned"`
+	Enabled            types.Bool   `tfsdk:"enabled"`
+	PassHostHeader     types.Bool   `tfsdk:"pass_host_header"`
+	RewriteRedirects   types.Bool   `tfsdk:"rewrite_redirects"`
+	ProxyCluster       types.String `tfsdk:"proxy_cluster"`
+	Targets            types.List   `tfsdk:"targets"`
+	Auth               types.Object `tfsdk:"auth"`
+	AccessRestrictions types.Object `tfsdk:"access_restrictions"`
 }
 
 func (d *ReverseProxyServiceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -209,6 +210,52 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 							},
 						},
 					},
+					"header_auths": schema.ListNestedAttribute{
+						MarkdownDescription: "Static header-value authentication rules",
+						Computed:            true,
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"enabled": schema.BoolAttribute{
+									Computed: true,
+								},
+								"header": schema.StringAttribute{
+									MarkdownDescription: "HTTP header name to check",
+									Computed:            true,
+								},
+								"value": schema.StringAttribute{
+									MarkdownDescription: "Expected header value",
+									Computed:            true,
+									Sensitive:           true,
+								},
+							},
+						},
+					},
+				},
+			},
+			"access_restrictions": schema.SingleNestedAttribute{
+				MarkdownDescription: "Connection-level access restrictions based on IP or geography",
+				Computed:            true,
+				Attributes: map[string]schema.Attribute{
+					"allowed_cidrs": schema.ListAttribute{
+						MarkdownDescription: "CIDR allowlist",
+						Computed:            true,
+						ElementType:         types.StringType,
+					},
+					"blocked_cidrs": schema.ListAttribute{
+						MarkdownDescription: "CIDR blocklist",
+						Computed:            true,
+						ElementType:         types.StringType,
+					},
+					"allowed_countries": schema.ListAttribute{
+						MarkdownDescription: "ISO 3166-1 alpha-2 country codes to allow",
+						Computed:            true,
+						ElementType:         types.StringType,
+					},
+					"blocked_countries": schema.ListAttribute{
+						MarkdownDescription: "ISO 3166-1 alpha-2 country codes to block",
+						Computed:            true,
+						ElementType:         types.StringType,
+					},
 				},
 			},
 		},
@@ -277,18 +324,19 @@ func (d *ReverseProxyServiceDataSource) Read(ctx context.Context, req datasource
 	}
 
 	result := ReverseProxyServiceDataSourceModel{
-		Id:               match.Id,
-		Name:             match.Name,
-		Domain:           match.Domain,
-		Mode:             match.Mode,
-		ListenPort:       match.ListenPort,
-		PortAutoAssigned: match.PortAutoAssigned,
-		Enabled:          match.Enabled,
-		PassHostHeader:   match.PassHostHeader,
-		RewriteRedirects: match.RewriteRedirects,
-		ProxyCluster:     match.ProxyCluster,
-		Targets:          match.Targets,
-		Auth:             match.Auth,
+		Id:                 match.Id,
+		Name:               match.Name,
+		Domain:             match.Domain,
+		Mode:               match.Mode,
+		ListenPort:         match.ListenPort,
+		PortAutoAssigned:   match.PortAutoAssigned,
+		Enabled:            match.Enabled,
+		PassHostHeader:     match.PassHostHeader,
+		RewriteRedirects:   match.RewriteRedirects,
+		ProxyCluster:       match.ProxyCluster,
+		Targets:            match.Targets,
+		Auth:               match.Auth,
+		AccessRestrictions: match.AccessRestrictions,
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &result)...)
