@@ -33,16 +33,16 @@ type ReverseProxyService struct {
 
 // ReverseProxyServiceModel describes the resource data model.
 type ReverseProxyServiceModel struct {
-	Id               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Domain           types.String `tfsdk:"domain"`
-	Mode             types.String `tfsdk:"mode"`
-	ListenPort       types.Int64  `tfsdk:"listen_port"`
-	PortAutoAssigned types.Bool   `tfsdk:"port_auto_assigned"`
-	Enabled          types.Bool   `tfsdk:"enabled"`
-	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
-	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
-	ProxyCluster     types.String `tfsdk:"proxy_cluster"`
+	Id                 types.String `tfsdk:"id"`
+	Name               types.String `tfsdk:"name"`
+	Domain             types.String `tfsdk:"domain"`
+	Mode               types.String `tfsdk:"mode"`
+	ListenPort         types.Int64  `tfsdk:"listen_port"`
+	PortAutoAssigned   types.Bool   `tfsdk:"port_auto_assigned"`
+	Enabled            types.Bool   `tfsdk:"enabled"`
+	PassHostHeader     types.Bool   `tfsdk:"pass_host_header"`
+	RewriteRedirects   types.Bool   `tfsdk:"rewrite_redirects"`
+	ProxyCluster       types.String `tfsdk:"proxy_cluster"`
 	Targets            types.List   `tfsdk:"targets"`
 	Auth               types.Object `tfsdk:"auth"`
 	AccessRestrictions types.Object `tfsdk:"access_restrictions"`

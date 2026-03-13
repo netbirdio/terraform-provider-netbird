@@ -224,8 +224,8 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 								},
 								"value": schema.StringAttribute{
 									MarkdownDescription: "Expected header value",
-									Computed:  true,
-									Sensitive: true,
+									Computed:            true,
+									Sensitive:           true,
 								},
 							},
 						},
