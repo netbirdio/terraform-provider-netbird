@@ -27,7 +27,7 @@ services:
       - "8080:80"
 
   netbird-proxy:
-    image: netbirdio/reverse-proxy:latest
+    image: ${NB_PROXY_IMAGE:-netbirdio/reverse-proxy:latest}
     entrypoint:
       - sh
       - -c
