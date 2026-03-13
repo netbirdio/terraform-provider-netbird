@@ -10,6 +10,12 @@ on:
   push:
     paths-ignore:
       - 'README.md'
+  workflow_dispatch:
+    inputs:
+      management_image:
+        description: 'NetBird management Docker image (e.g. netbirdio/management:main)'
+        required: false
+        default: 'netbirdio/management:latest'
 
 # Testing only needs permissions to read the repository contents.
 permissions:
@@ -82,5 +88,6 @@ jobs:
       - run: go mod download
       - env:
           TF_ACC: "1"
+          NB_MANAGEMENT_IMAGE: ${{ inputs.management_image || 'netbirdio/management:latest' }}
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10
