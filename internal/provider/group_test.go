@@ -172,9 +172,121 @@ func Test_Group_Update(t *testing.T) {
 	})
 }
 
+func Test_Group_Update_PeersWithResources(t *testing.T) {
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_group." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(s *terraform.State) error {
+			groups, err := testClient().Groups.List(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, g := range groups {
+				if g.Name == rName {
+					return fmt.Errorf("Group not deleted")
+				}
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testGroupResourceWithResources(rName, `[]`, `["resource1"]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.0", "resource1"),
+					func(s *terraform.State) error {
+						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						group, err := testClient().Groups.Get(context.Background(), gID)
+						if err != nil {
+							return err
+						}
+						if len(group.Peers) != 0 {
+							return fmt.Errorf("Group Peers incorrect")
+						}
+						if len(group.Resources) != 1 {
+							return fmt.Errorf("Group Resources not updated in management")
+						}
+						if group.Resources[0].Id != "resource1" {
+							return fmt.Errorf("Group Resources incorrect")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testGroupResourceWithResources(rName, `["peer1"]`, `["resource1"]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "peers.0", "peer1"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.0", "resource1"),
+					func(s *terraform.State) error {
+						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						group, err := testClient().Groups.Get(context.Background(), gID)
+						if err != nil {
+							return err
+						}
+						if len(group.Peers) != 1 {
+							return fmt.Errorf("Group Peers not updated in management")
+						}
+						if group.Peers[0].Id != "peer1" {
+							return fmt.Errorf("Group Peers incorrect")
+						}
+						if len(group.Resources) != 1 {
+							return fmt.Errorf("Group Resources not preserved in management")
+						}
+						if group.Resources[0].Id != "resource1" {
+							return fmt.Errorf("Group Resources incorrect")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testGroupResourceWithResources(rName, `[]`, `[]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "0"),
+					func(s *terraform.State) error {
+						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						group, err := testClient().Groups.Get(context.Background(), gID)
+						if err != nil {
+							return err
+						}
+						if len(group.Peers) != 0 {
+							return fmt.Errorf("Group Peers not cleared in management")
+						}
+						if len(group.Resources) != 0 {
+							return fmt.Errorf("Group Resources not cleared in management")
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
 func testGroupResource(rName, peers string) string {
+	return testGroupResourceWithResources(rName, peers, `[]`)
+}
+
+func testGroupResourceWithResources(rName, peers, resources string) string {
 	return fmt.Sprintf(`resource "netbird_group" "%s" {
 	name = "%s"
 	peers = %s
-}`, rName, rName, peers)
+	resources = %s
+}`, rName, rName, peers, resources)
 }
