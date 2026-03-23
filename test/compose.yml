@@ -1,6 +1,6 @@
 services:
   netbird-mgmt:
-    image: netbirdio/management:latest
+    image: ${NB_MANAGEMENT_IMAGE:-netbirdio/management:latest}
     environment:
       - NB_LOG_LEVEL=debug
       - NETBIRD_STORE_ENGINE=sqlite
@@ -27,7 +27,7 @@ services:
       - "8080:80"
 
   netbird-proxy:
-    image: netbirdio/reverse-proxy:latest
+    image: ${NB_PROXY_IMAGE:-netbirdio/reverse-proxy:latest}
     entrypoint:
       - sh
       - -c
