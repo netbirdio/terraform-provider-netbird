@@ -498,10 +498,17 @@ func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOpt
 		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
 	}
 
+	// Treat proxy_protocol=false the same as nil so it doesn't appear in
+	// state when the user never configured it.
+	var proxyProtocol *bool
+	if opts.ProxyProtocol != nil && *opts.ProxyProtocol {
+		proxyProtocol = opts.ProxyProtocol
+	}
+
 	model := ReverseProxyTargetOptionsModel{
 		SkipTLSVerify:  types.BoolPointerValue(opts.SkipTlsVerify),
 		RequestTimeout: types.StringPointerValue(opts.RequestTimeout),
-		ProxyProtocol:  types.BoolPointerValue(opts.ProxyProtocol),
+		ProxyProtocol:  types.BoolPointerValue(proxyProtocol),
 	}
 
 	if opts.PathRewrite != nil {
