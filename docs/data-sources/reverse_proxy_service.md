@@ -40,6 +40,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 ### Read-Only
 
+- `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
 - `listen_port` (Number) Port the proxy listens on (L4/TLS only)
@@ -50,12 +51,24 @@ data "netbird_reverse_proxy_service" "by_id" {
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 - `targets` (Attributes List) List of target backends for this service (see [below for nested schema](#nestedatt--targets))
 
+<a id="nestedatt--access_restrictions"></a>
+### Nested Schema for `access_restrictions`
+
+Read-Only:
+
+- `allowed_cidrs` (List of String) CIDR allowlist
+- `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
+- `blocked_cidrs` (List of String) CIDR blocklist
+- `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
+
+
 <a id="nestedatt--auth"></a>
 ### Nested Schema for `auth`
 
 Read-Only:
 
 - `bearer_auth` (Attributes) Bearer token authentication (see [below for nested schema](#nestedatt--auth--bearer_auth))
+- `header_auths` (Attributes List) Static header-value authentication rules (see [below for nested schema](#nestedatt--auth--header_auths))
 - `link_auth` (Attributes) Link authentication (see [below for nested schema](#nestedatt--auth--link_auth))
 - `password_auth` (Attributes) Password authentication (see [below for nested schema](#nestedatt--auth--password_auth))
 - `pin_auth` (Attributes) PIN authentication (see [below for nested schema](#nestedatt--auth--pin_auth))
@@ -67,6 +80,16 @@ Read-Only:
 
 - `distribution_groups` (List of String) List of group IDs that can use bearer auth
 - `enabled` (Boolean)
+
+
+<a id="nestedatt--auth--header_auths"></a>
+### Nested Schema for `auth.header_auths`
+
+Read-Only:
+
+- `enabled` (Boolean)
+- `header` (String) HTTP header name to check
+- `value` (String, Sensitive) Expected header value
 
 
 <a id="nestedatt--auth--link_auth"></a>

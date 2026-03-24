@@ -344,6 +344,18 @@ func Test_AccountSettings_PeerExpose(t *testing.T) {
 	})
 }
 
+func testFirstPeerID(t *testing.T) string {
+	t.Helper()
+	peers, err := testClient().Peers.List(context.Background())
+	if err != nil {
+		t.Fatalf("list peers: %v", err)
+	}
+	if len(peers) == 0 {
+		t.Skip("no peers available for testing")
+	}
+	return peers[0].Id
+}
+
 // --- Config helpers ---
 
 func testReverseProxyDomainResource(rName, domain, cluster string) string {
@@ -603,6 +615,173 @@ resource "netbird_reverse_proxy_service" "%s" {
       enabled  = true
       password = "options-test"
     }
+  }
+}`, rName, rName, domain, peerID)
+}
+
+func Test_ReverseProxyService_HeaderAuth(t *testing.T) {
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + ".external.test"
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testFirstPeerID(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(s *terraform.State) error {
+			services, err := testClient().ReverseProxyServices.List(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, svc := range services {
+				if svc.Name == rName {
+					return fmt.Errorf("service %s still exists", rName)
+				}
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceHeaderAuth(rName, domain, peerID, "X-API-Key", "my-secret-key"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "auth.header_auths.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "auth.header_auths.0.enabled", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "auth.header_auths.0.header", "X-API-Key"),
+					resource.TestCheckResourceAttr(rNameFull, "auth.header_auths.0.value", "my-secret-key"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if svc.Auth.HeaderAuths == nil || len(*svc.Auth.HeaderAuths) != 1 {
+							return fmt.Errorf("expected 1 header auth")
+						}
+						h := (*svc.Auth.HeaderAuths)[0]
+						if !h.Enabled || h.Header != "X-API-Key" {
+							return fmt.Errorf("header auth mismatch")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.header_auths.0.value"},
+			},
+		},
+	})
+}
+
+func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + ".external.test"
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testFirstPeerID(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(s *terraform.State) error {
+			services, err := testClient().ReverseProxyServices.List(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, svc := range services {
+				if svc.Name == rName {
+					return fmt.Errorf("service %s still exists", rName)
+				}
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceAccessRestrictions(rName, domain, peerID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.#", "2"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.0", "US"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.1", "DE"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.0", "192.168.0.0/16"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if svc.AccessRestrictions == nil {
+							return fmt.Errorf("expected access restrictions")
+						}
+						if svc.AccessRestrictions.AllowedCountries == nil || len(*svc.AccessRestrictions.AllowedCountries) != 2 {
+							return fmt.Errorf("expected 2 allowed countries")
+						}
+						if svc.AccessRestrictions.BlockedCidrs == nil || len(*svc.AccessRestrictions.BlockedCidrs) != 1 {
+							return fmt.Errorf("expected 1 blocked CIDR")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.password_auth.password"},
+			},
+		},
+	})
+}
+
+func testReverseProxyServiceHeaderAuth(rName, domain, peerID, header, value string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8080
+    protocol    = "http"
+  }]
+
+  auth = {
+    header_auths = [{
+      enabled = true
+      header  = %q
+      value   = %q
+    }]
+  }
+}`, rName, rName, domain, peerID, header, value)
+}
+
+func testReverseProxyServiceAccessRestrictions(rName, domain, peerID string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8080
+    protocol    = "http"
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = "test123"
+    }
+  }
+
+  access_restrictions = {
+    allowed_countries = ["US", "DE"]
+    blocked_cidrs     = ["192.168.0.0/16"]
   }
 }`, rName, rName, domain, peerID)
 }

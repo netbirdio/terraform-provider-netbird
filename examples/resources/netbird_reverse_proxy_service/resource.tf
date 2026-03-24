@@ -72,6 +72,32 @@ resource "netbird_reverse_proxy_service" "dns" {
   }]
 }
 
+# HTTP service with header auth and access restrictions
+resource "netbird_reverse_proxy_service" "api_gateway" {
+  name   = "api-gateway"
+  domain = "api.${data.netbird_reverse_proxy_domain.free.domain}"
+
+  targets = [{
+    target_id   = netbird_peer.api.id
+    target_type = "peer"
+    port        = 3000
+    protocol    = "http"
+  }]
+
+  auth = {
+    header_auths = [{
+      enabled = true
+      header  = "X-API-Key"
+      value   = var.api_key
+    }]
+  }
+
+  access_restrictions = {
+    allowed_countries = ["US", "DE", "GB"]
+    blocked_cidrs     = ["192.168.0.0/16"]
+  }
+}
+
 # TLS (SNI passthrough) proxy service
 resource "netbird_reverse_proxy_service" "tls_backend" {
   name        = "tls-backend"
