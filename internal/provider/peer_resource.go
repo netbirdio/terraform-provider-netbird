@@ -41,6 +41,7 @@ type PeerModel struct {
 	Id                          types.String `tfsdk:"id"`
 	Name                        types.String `tfsdk:"name"`
 	Ip                          types.String `tfsdk:"ip"`
+	Ipv6                        types.String `tfsdk:"ipv6"`
 	ConnectionIp                types.String `tfsdk:"connection_ip"`
 	Connected                   types.Bool   `tfsdk:"connected"`
 	LastSeen                    types.String `tfsdk:"last_seen"`
@@ -88,6 +89,10 @@ func (r *Peer) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			},
 			"ip": schema.StringAttribute{
 				MarkdownDescription: "Peer  IP",
+				Computed:            true,
+			},
+			"ipv6": schema.StringAttribute{
+				MarkdownDescription: "Peer IPv6 overlay address",
 				Computed:            true,
 			},
 			"connection_ip": schema.StringAttribute{
@@ -217,6 +222,7 @@ func peerAPIToTerraform(ctx context.Context, peer *api.Peer, data *PeerModel) di
 	data.Id = types.StringValue(peer.Id)
 	data.Name = types.StringValue(peer.Name)
 	data.Ip = types.StringValue(peer.Ip)
+	data.Ipv6 = types.StringPointerValue(peer.Ipv6)
 	data.ConnectionIp = types.StringValue(peer.ConnectionIp)
 	data.Connected = types.BoolValue(peer.Connected)
 	data.LastSeen = types.StringValue(peer.LastSeen.Format(time.RFC3339))

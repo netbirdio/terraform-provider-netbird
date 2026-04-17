@@ -515,6 +515,8 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		Name:    data.Name.ValueString(),
 		Domain:  data.Domain.ValueString(),
 		Enabled: data.Enabled.ValueBool(),
+		Targets: &[]api.ServiceTarget{},
+		Auth:    &api.ServiceAuthConfig{},
 	}
 
 	if !data.PassHostHeader.IsNull() && !data.PassHostHeader.IsUnknown() {
@@ -548,7 +550,7 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			v := t.Path.ValueString()
 			target.Path = &v
 		}
-		req.Targets = append(req.Targets, target)
+		*req.Targets = append(*req.Targets, target)
 	}
 
 	authAttrs := data.Auth.Attributes()

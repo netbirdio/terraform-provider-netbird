@@ -57,6 +57,8 @@ type AccountSettingsModel struct {
 	AutoUpdateVersion                  types.String `tfsdk:"auto_update_version"`
 	DnsDomain                          types.String `tfsdk:"dns_domain"`
 	NetworkRange                       types.String `tfsdk:"network_range"`
+	NetworkRangeV6                     types.String `tfsdk:"network_range_v6"`
+	IPv6EnabledGroups                  types.List   `tfsdk:"ipv6_enabled_groups"`
 	LazyConnectionEnabled              types.Bool   `tfsdk:"lazy_connection_enabled"`
 	UserApprovalRequired               types.Bool   `tfsdk:"user_approval_required"`
 	NetworkTrafficLogsGroups           types.List   `tfsdk:"network_traffic_logs_groups"`
@@ -177,6 +179,19 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"network_range_v6": schema.StringAttribute{
+				MarkdownDescription: "IPv6 network range for the account in CIDR format (e.g. fd00:1234:5678::/64). Valid prefix lengths are /48 through /112.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"ipv6_enabled_groups": schema.ListAttribute{
+				MarkdownDescription: "List of group IDs whose peers receive IPv6 overlay addresses. Defaults to the All group for new accounts.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+			},
 			"lazy_connection_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Enables or disables experimental lazy connection",
 				Optional:            true,
@@ -252,6 +267,10 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	data.AutoUpdateVersion = types.StringPointerValue(account.Settings.AutoUpdateVersion)
 	data.DnsDomain = types.StringPointerValue(account.Settings.DnsDomain)
 	data.NetworkRange = types.StringPointerValue(account.Settings.NetworkRange)
+	data.NetworkRangeV6 = types.StringPointerValue(account.Settings.NetworkRangeV6)
+	ipv6Groups, d := types.ListValueFrom(ctx, types.StringType, account.Settings.Ipv6EnabledGroups)
+	ret.Append(d...)
+	data.IPv6EnabledGroups = ipv6Groups
 	data.LazyConnectionEnabled = types.BoolPointerValue(account.Settings.LazyConnectionEnabled)
 	data.UserApprovalRequired = types.BoolValue(account.Settings.Extra.UserApprovalRequired)
 	logsGroups, d := types.ListValueFrom(ctx, types.StringType, account.Settings.Extra.NetworkTrafficLogsGroups)
@@ -286,6 +305,8 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 			AutoUpdateVersion:               stringDefaultPointer(data.AutoUpdateVersion, account.Settings.AutoUpdateVersion),
 			DnsDomain:                       stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain),
 			NetworkRange:                    stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange),
+			NetworkRangeV6:                  stringDefaultPointer(data.NetworkRangeV6, account.Settings.NetworkRangeV6),
+			Ipv6EnabledGroups:               stringListDefaultPointer(ctx, data.IPv6EnabledGroups, account.Settings.Ipv6EnabledGroups),
 			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),
 			PeerExposeEnabled:               boolDefault(data.PeerExposeEnabled, account.Settings.PeerExposeEnabled),
 			PeerExposeGroups:                stringListDefault(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups),
