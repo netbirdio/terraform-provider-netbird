@@ -51,6 +51,7 @@ data "netbird_peer" "example" {
 - `groups` (List of String) Peer groups
 - `hostname` (String) Peer's HOSTNAME
 - `inactivity_expiration_enabled` (Boolean) Enable inactivity expiration for peer
+- `ipv6` (String) Peer IPv6 overlay address
 - `kernel_version` (String) Peer Kernel Version
 - `last_login` (String) Time of peer last login
 - `last_seen` (String) Peer Last Seen timedate
