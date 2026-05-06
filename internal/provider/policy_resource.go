@@ -333,8 +333,8 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 			Bidirectional: types.BoolValue(r.Bidirectional),
 			Description:   types.StringPointerValue(r.Description),
 		}
-		if r.Description == nil || *r.Description == "" {
-			ruleModel.Description = types.StringNull()
+		if r.Description == nil {
+			ruleModel.Description = types.StringValue("")
 		}
 		if r.Sources != nil {
 			var sources []string
