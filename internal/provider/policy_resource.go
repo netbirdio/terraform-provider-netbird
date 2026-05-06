@@ -156,6 +156,8 @@ func (r *Policy) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 						"description": schema.StringAttribute{
 							MarkdownDescription: "Policy description",
 							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString(""),
 						},
 						"action": schema.StringAttribute{
 							MarkdownDescription: "Policy Rule Action (accept|drop)",
