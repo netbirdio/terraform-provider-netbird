@@ -170,7 +170,7 @@ func Test_policyAPIToTerraform(t *testing.T) {
 					"id":                   types.StringValue("r3"),
 					"action":               types.StringValue("accept"),
 					"bidirectional":        types.BoolValue(true),
-					"description":          types.StringNull(),
+					"description":          types.StringValue(""),
 					"sources":              types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
 					"destinations":         types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g2")}),
 					"enabled":              types.BoolValue(true),
