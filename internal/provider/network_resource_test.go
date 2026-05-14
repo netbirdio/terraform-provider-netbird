@@ -123,7 +123,7 @@ func Test_NetworkResource_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall", "group-all"]`, rName),
+				Config:       testNetworkResourceResource(rName, `example.com`, `["group-notall", "group-all"]`, rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "address", "example.com"),
@@ -165,14 +165,31 @@ func Test_NetworkResource_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall"]`, rName),
+				Config:       testNetworkResourceResource(rName, `example.com`, `null`, rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `google.com`, `["group-all", "group-notall"]`, rName+"Updated"),
+				Config:       testNetworkResourceResource(rName, `example.com`, `["group-notall"]`, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testNetworkResourceResource(rName, `example.com`, `[]`, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testNetworkResourceResource(rName, `google.com`, `["group-all", "group-notall"]`, rName+"Updated"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "address", "google.com"),
 					resource.TestCheckResourceAttr(rNameFull, "groups.#", "2"),
@@ -204,11 +221,11 @@ func Test_NetworkResource_Update(t *testing.T) {
 	})
 }
 
-func testNetworkResourceResource(rName, networkID, address, groups, name string) string {
+func testNetworkResourceResource(rName, address, groups, name string) string {
 	return fmt.Sprintf(`resource "netbird_network_resource" "%s" {
 	network_id = "%s"
 	address = "%s"
 	groups = %s
 	name = "%s"
-}`, rName, networkID, address, groups, name)
+}`, rName, "network1", address, groups, name)
 }
