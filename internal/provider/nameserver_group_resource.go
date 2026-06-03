@@ -30,7 +30,17 @@ import (
 )
 
 const (
-	fqdnRegex = `^(?:[_a-z0-9](?:[_a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)?$`
+	// The management API's own domainRegex (netbirdio/netbird
+	// shared/management/domain/validate.go), copied verbatim — redundant
+	// (?:xn--)? branch included — so an upstream change is a textual diff here.
+	// It accepts a single label, which the regex it replaces did not: #145, #146.
+	//
+	// Two differences, both from what management's validateDomain does around that
+	// regex for a match domain: no (?:\*\.)? prefix, because it refuses wildcards
+	// outright and the plan should fail rather than the apply; and a trailing dot
+	// is allowed, because it trims one before matching and stores the domain as
+	// written.
+	fqdnRegex = `^(?:(?:xn--)?[a-zA-Z0-9_](?:[a-zA-Z0-9-_]{0,61}[a-zA-Z0-9])?\.)*(?:xn--)?[a-zA-Z0-9](?:[a-zA-Z0-9-_]{0,61}[a-zA-Z0-9])?\.?$`
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.

@@ -191,8 +191,27 @@ func Test_fqdnRegex(t *testing.T) {
 			expected: true,
 		},
 		{
+			// single-label domains are valid match domains: the management
+			// API accepts them (see #145 / #146), the provider must too
 			fqdn:     "test",
-			expected: false,
+			expected: true,
+		},
+		{
+			fqdn:     "lan",
+			expected: true,
+		},
+		{
+			fqdn:     "consul",
+			expected: true,
+		},
+		{
+			// leading digits: the shape of an EKS cluster endpoint, #146
+			fqdn:     "123.eks.internal",
+			expected: true,
+		},
+		{
+			fqdn:     "under_score.lan",
+			expected: true,
 		},
 		{
 			fqdn:     "company.internal",
@@ -203,7 +222,40 @@ func Test_fqdnRegex(t *testing.T) {
 			expected: true,
 		},
 		{
+			fqdn:     "xn--bcher-kva.example",
+			expected: true,
+		},
+		{
+			fqdn:     "UPPER.example",
+			expected: true,
+		},
+		{
 			fqdn:     "company,name.internal-dns",
+			expected: false,
+		},
+		{
+			fqdn:     "-bad",
+			expected: false,
+		},
+		{
+			fqdn:     "bad-",
+			expected: false,
+		},
+		{
+			// wildcards are not allowed in nameserver match domains
+			fqdn:     "*.lab",
+			expected: false,
+		},
+		{
+			fqdn:     "..",
+			expected: false,
+		},
+		{
+			fqdn:     ".",
+			expected: false,
+		},
+		{
+			fqdn:     "",
 			expected: false,
 		},
 	}
