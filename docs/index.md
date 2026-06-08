@@ -40,5 +40,7 @@ provider "netbird" {
 ### Optional
 
 - `management_url` (String) NetBird Management API URL, can be also set through NB_MANAGEMENT_URL Environment Variable, value defined in Terraform files takes precedence
+- `max_retries` (Number) Maximum number of retries for transient Management API failures (429, 5xx, and connection errors; 5xx and connection retries are limited to idempotent methods), can be also set through NB_MAX_RETRIES Environment Variable. Defaults to 4, set to 0 to disable retries.
+- `request_timeout` (Number) Per-attempt timeout in seconds for Management API requests, can be also set through NB_REQUEST_TIMEOUT Environment Variable. Defaults to 30.
 - `tenant_account` (String) Account ID to impersonate, can be also set through NB_ACCOUNT Environment Variable, value defined in Terraform files takes precedence
 - `token` (String, Sensitive) Admin PAT for NetBird Management Server, can be also set through NB_PAT Environment Variable, value defined in Terraform files takes precedence
