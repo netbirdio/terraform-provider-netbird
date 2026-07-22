@@ -216,11 +216,14 @@ func Test_reverseProxyServiceRoundtrip(t *testing.T) {
 	if req.RewriteRedirects == nil || *req.RewriteRedirects != *original.RewriteRedirects {
 		t.Errorf("RewriteRedirects mismatch")
 	}
-	if len(req.Targets) != 1 {
-		t.Fatalf("Expected 1 target, got %d", len(req.Targets))
+	if req.Targets == nil {
+		t.Fatalf("Expected 1 target, got nil")
+	}
+	if len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target, got %d", len(*req.Targets))
 	}
 
-	target := req.Targets[0]
+	target := (*req.Targets)[0]
 	origTarget := original.Targets[0]
 	if target.TargetId != origTarget.TargetId {
 		t.Errorf("Target.TargetId mismatch: expected %s, got %s", origTarget.TargetId, target.TargetId)
@@ -494,16 +497,20 @@ func Test_reverseProxyServiceTerraformToAPI_targets(t *testing.T) {
 	if req.Name != "test" {
 		t.Errorf("Name mismatch: expected test, got %s", req.Name)
 	}
-	if len(req.Targets) != 1 {
-		t.Fatalf("Expected 1 target, got %d", len(req.Targets))
+	if req.Targets == nil {
+		t.Fatalf("Expected 1 target, got nil")
 	}
-	if req.Targets[0].TargetId != "peer1" {
+	if len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target, got %d", len(*req.Targets))
+	}
+	firstTarget := (*req.Targets)[0]
+	if firstTarget.TargetId != "peer1" {
 		t.Errorf("Target ID mismatch")
 	}
-	if req.Targets[0].Host != nil {
+	if firstTarget.Host != nil {
 		t.Errorf("Target Host should be nil for null input")
 	}
-	if req.Targets[0].Path != nil {
+	if firstTarget.Path != nil {
 		t.Errorf("Target Path should be nil for null input")
 	}
 	if req.Auth.PasswordAuth == nil {
