@@ -6,8 +6,8 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -150,6 +151,7 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 						Optional:            true,
 						Computed:            true,
 						Default:             int64default.StaticInt64(2592000),
+						Validators:          []validator.Int64{int64validator.AtLeast(60)},
 					},
 				},
 			},
@@ -179,6 +181,7 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 						Optional:            true,
 						Computed:            true,
 						Default:             int64default.StaticInt64(2592000),
+						Validators:          []validator.Int64{int64validator.AtLeast(60)},
 					},
 				},
 			},
@@ -320,7 +323,7 @@ func (r *AgentNetworkPolicy) Read(ctx context.Context, req resource.ReadRequest,
 	}
 	p, err := r.client.GetPolicy(ctx, data.Id.ValueString())
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if netbird.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}

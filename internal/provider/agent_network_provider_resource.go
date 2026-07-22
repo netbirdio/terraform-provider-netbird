@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -252,7 +251,7 @@ func (r *AgentNetworkProvider) Read(ctx context.Context, req resource.ReadReques
 	}
 	p, err := r.client.GetProvider(ctx, data.Id.ValueString())
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if netbird.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -299,7 +298,7 @@ func (r *AgentNetworkProvider) Delete(ctx context.Context, req resource.DeleteRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeleteProvider(ctx, data.Id.ValueString()); err != nil {
+	if err := r.client.DeleteProvider(ctx, data.Id.ValueString()); err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting Agent Network Provider", err.Error())
 	}
 }

@@ -114,7 +114,7 @@ func agentNetworkSettingsAPIToTerraform(_ context.Context, s *api.AgentNetworkSe
 	if s.AccessLogRetentionDays != nil {
 		data.AccessLogRetentionDays = types.Int64Value(int64(*s.AccessLogRetentionDays))
 	} else {
-		data.AccessLogRetentionDays = types.Int64Value(0)
+		data.AccessLogRetentionDays = types.Int64Null()
 	}
 	return nil
 }
@@ -126,12 +126,14 @@ func (r *AgentNetworkSettings) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	retentionDays := int(data.AccessLogRetentionDays.ValueInt64())
 	apiReq := api.AgentNetworkSettingsRequest{
 		EnableLogCollection:    data.EnableLogCollection.ValueBool(),
 		EnablePromptCollection: data.EnablePromptCollection.ValueBool(),
 		RedactPii:              data.RedactPii.ValueBool(),
-		AccessLogRetentionDays: &retentionDays,
+	}
+	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
+		v := int(data.AccessLogRetentionDays.ValueInt64())
+		apiReq.AccessLogRetentionDays = &v
 	}
 	s, err := r.client.UpdateSettings(ctx, apiReq)
 	if err != nil {
@@ -169,12 +171,14 @@ func (r *AgentNetworkSettings) Update(ctx context.Context, req resource.UpdateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	retentionDays := int(data.AccessLogRetentionDays.ValueInt64())
 	apiReq := api.AgentNetworkSettingsRequest{
 		EnableLogCollection:    data.EnableLogCollection.ValueBool(),
 		EnablePromptCollection: data.EnablePromptCollection.ValueBool(),
 		RedactPii:              data.RedactPii.ValueBool(),
-		AccessLogRetentionDays: &retentionDays,
+	}
+	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
+		v := int(data.AccessLogRetentionDays.ValueInt64())
+		apiReq.AccessLogRetentionDays = &v
 	}
 	s, err := r.client.UpdateSettings(ctx, apiReq)
 	if err != nil {

@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -220,7 +219,7 @@ func (r *AgentNetworkGuardrail) Read(ctx context.Context, req resource.ReadReque
 	}
 	g, err := r.client.GetGuardrail(ctx, data.Id.ValueString())
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if netbird.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
