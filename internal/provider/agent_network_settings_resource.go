@@ -137,6 +137,13 @@ func (r *AgentNetworkSettings) Create(ctx context.Context, req resource.CreateRe
 	}
 	s, err := r.client.UpdateSettings(ctx, apiReq)
 	if err != nil {
+		if netbird.IsNotFound(err) {
+			resp.Diagnostics.AddError(
+				"Agent Network not bootstrapped",
+				"Settings cannot be applied before the first Agent Network provider is created. Create a netbird_agent_network_provider resource first.",
+			)
+			return
+		}
 		resp.Diagnostics.AddError("Error applying Agent Network Settings", err.Error())
 		return
 	}
@@ -155,6 +162,10 @@ func (r *AgentNetworkSettings) Read(ctx context.Context, req resource.ReadReques
 	}
 	s, err := r.client.GetSettings(ctx)
 	if err != nil {
+		if netbird.IsNotFound(err) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Error reading Agent Network Settings", err.Error())
 		return
 	}
@@ -182,6 +193,13 @@ func (r *AgentNetworkSettings) Update(ctx context.Context, req resource.UpdateRe
 	}
 	s, err := r.client.UpdateSettings(ctx, apiReq)
 	if err != nil {
+		if netbird.IsNotFound(err) {
+			resp.Diagnostics.AddError(
+				"Agent Network not bootstrapped",
+				"Settings cannot be applied before the first Agent Network provider is created. Create a netbird_agent_network_provider resource first.",
+			)
+			return
+		}
 		resp.Diagnostics.AddError("Error updating Agent Network Settings", err.Error())
 		return
 	}
