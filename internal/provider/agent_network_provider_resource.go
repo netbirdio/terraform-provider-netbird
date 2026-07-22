@@ -46,10 +46,18 @@ type AgentNetworkProviderModel struct {
 	Models               types.List   `tfsdk:"models"`
 }
 
-var agentNetworkProviderModelAttrTypes = map[string]attr.Type{
-	"id":           types.StringType,
-	"input_per_1k": types.Float64Type,
-	"output_per_1k": types.Float64Type,
+type AgentNetworkProviderModelItem struct {
+	Id          types.String  `tfsdk:"id"`
+	InputPer1k  types.Float64 `tfsdk:"input_per_1k"`
+	OutputPer1k types.Float64 `tfsdk:"output_per_1k"`
+}
+
+func (AgentNetworkProviderModelItem) TFType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"id":           types.StringType,
+		"input_per_1k": types.Float64Type,
+		"output_per_1k": types.Float64Type,
+	}}
 }
 
 func (r *AgentNetworkProvider) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -160,17 +168,15 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	data.IdentityHeaderUserId = types.StringPointerValue(p.IdentityHeaderUserId)
 	data.IdentityHeaderGroups = types.StringPointerValue(p.IdentityHeaderGroups)
 
-	modelObjs := make([]types.Object, 0, len(p.Models))
+	modelObjs := make([]AgentNetworkProviderModelItem, 0, len(p.Models))
 	for _, m := range p.Models {
-		obj, d := types.ObjectValue(agentNetworkProviderModelAttrTypes, map[string]attr.Value{
-			"id":           types.StringValue(m.Id),
-			"input_per_1k": types.Float64Value(m.InputPer1k),
-			"output_per_1k": types.Float64Value(m.OutputPer1k),
+		modelObjs = append(modelObjs, AgentNetworkProviderModelItem{
+			Id:          types.StringValue(m.Id),
+			InputPer1k:  types.Float64Value(m.InputPer1k),
+			OutputPer1k: types.Float64Value(m.OutputPer1k),
 		})
-		ret.Append(d...)
-		modelObjs = append(modelObjs, obj)
 	}
-	list, d := types.ListValueFrom(ctx, types.ObjectType{AttrTypes: agentNetworkProviderModelAttrTypes}, modelObjs)
+	list, d := types.ListValueFrom(ctx, AgentNetworkProviderModelItem{}.TFType(), modelObjs)
 	ret.Append(d...)
 	data.Models = list
 	return ret
@@ -198,20 +204,15 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 		req.IdentityHeaderGroups = data.IdentityHeaderGroups.ValueStringPointer()
 	}
 	if !data.Models.IsNull() && !data.Models.IsUnknown() {
-		type modelElem struct {
-			Id          string  `tfsdk:"id"`
-			InputPer1k  float64 `tfsdk:"input_per_1k"`
-			OutputPer1k float64 `tfsdk:"output_per_1k"`
-		}
-		var elems []modelElem
+		var elems []AgentNetworkProviderModelItem
 		ret.Append(data.Models.ElementsAs(ctx, &elems, false)...)
 		if !ret.HasError() {
 			models := make([]api.AgentNetworkProviderModel, 0, len(elems))
 			for _, e := range elems {
 				models = append(models, api.AgentNetworkProviderModel{
-					Id:          e.Id,
-					InputPer1k:  e.InputPer1k,
-					OutputPer1k: e.OutputPer1k,
+					Id:          e.Id.ValueString(),
+					InputPer1k:  e.InputPer1k.ValueFloat64(),
+					OutputPer1k: e.OutputPer1k.ValueFloat64(),
 				})
 			}
 			req.Models = &models

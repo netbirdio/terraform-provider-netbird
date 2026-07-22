@@ -18,7 +18,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -46,18 +45,36 @@ type AgentNetworkPolicyModel struct {
 	BudgetLimit            types.Object `tfsdk:"budget_limit"`
 }
 
-var tokenLimitAttrTypes = map[string]attr.Type{
-	"enabled":        types.BoolType,
-	"group_cap":      types.Int64Type,
-	"user_cap":       types.Int64Type,
-	"window_seconds": types.Int64Type,
+type AgentNetworkTokenLimitModel struct {
+	Enabled       types.Bool  `tfsdk:"enabled"`
+	GroupCap      types.Int64 `tfsdk:"group_cap"`
+	UserCap       types.Int64 `tfsdk:"user_cap"`
+	WindowSeconds types.Int64 `tfsdk:"window_seconds"`
 }
 
-var budgetLimitAttrTypes = map[string]attr.Type{
-	"enabled":        types.BoolType,
-	"group_cap_usd":  types.Float64Type,
-	"user_cap_usd":   types.Float64Type,
-	"window_seconds": types.Int64Type,
+func (AgentNetworkTokenLimitModel) TFType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"enabled":        types.BoolType,
+		"group_cap":      types.Int64Type,
+		"user_cap":       types.Int64Type,
+		"window_seconds": types.Int64Type,
+	}}
+}
+
+type AgentNetworkBudgetLimitModel struct {
+	Enabled       types.Bool    `tfsdk:"enabled"`
+	GroupCapUsd   types.Float64 `tfsdk:"group_cap_usd"`
+	UserCapUsd    types.Float64 `tfsdk:"user_cap_usd"`
+	WindowSeconds types.Int64   `tfsdk:"window_seconds"`
+}
+
+func (AgentNetworkBudgetLimitModel) TFType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"enabled":        types.BoolType,
+		"group_cap_usd":  types.Float64Type,
+		"user_cap_usd":   types.Float64Type,
+		"window_seconds": types.Int64Type,
+	}}
 }
 
 func (r *AgentNetworkPolicy) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -198,37 +215,23 @@ func agentNetworkPolicyAPIToTerraform(ctx context.Context, p *api.AgentNetworkPo
 	ret.Append(d...)
 
 	tl := p.Limits.TokenLimit
-	data.TokenLimit, d = types.ObjectValue(tokenLimitAttrTypes, map[string]attr.Value{
-		"enabled":        types.BoolValue(tl.Enabled),
-		"group_cap":      types.Int64Value(tl.GroupCap),
-		"user_cap":       types.Int64Value(tl.UserCap),
-		"window_seconds": types.Int64Value(tl.WindowSeconds),
+	data.TokenLimit, d = types.ObjectValueFrom(ctx, AgentNetworkTokenLimitModel{}.TFType().AttrTypes, AgentNetworkTokenLimitModel{
+		Enabled:       types.BoolValue(tl.Enabled),
+		GroupCap:      types.Int64Value(tl.GroupCap),
+		UserCap:       types.Int64Value(tl.UserCap),
+		WindowSeconds: types.Int64Value(tl.WindowSeconds),
 	})
 	ret.Append(d...)
 
 	bl := p.Limits.BudgetLimit
-	data.BudgetLimit, d = types.ObjectValue(budgetLimitAttrTypes, map[string]attr.Value{
-		"enabled":        types.BoolValue(bl.Enabled),
-		"group_cap_usd":  types.Float64Value(bl.GroupCapUsd),
-		"user_cap_usd":   types.Float64Value(bl.UserCapUsd),
-		"window_seconds": types.Int64Value(bl.WindowSeconds),
+	data.BudgetLimit, d = types.ObjectValueFrom(ctx, AgentNetworkBudgetLimitModel{}.TFType().AttrTypes, AgentNetworkBudgetLimitModel{
+		Enabled:       types.BoolValue(bl.Enabled),
+		GroupCapUsd:   types.Float64Value(bl.GroupCapUsd),
+		UserCapUsd:    types.Float64Value(bl.UserCapUsd),
+		WindowSeconds: types.Int64Value(bl.WindowSeconds),
 	})
 	ret.Append(d...)
 	return ret
-}
-
-type tokenLimitElem struct {
-	Enabled       bool  `tfsdk:"enabled"`
-	GroupCap      int64 `tfsdk:"group_cap"`
-	UserCap       int64 `tfsdk:"user_cap"`
-	WindowSeconds int64 `tfsdk:"window_seconds"`
-}
-
-type budgetLimitElem struct {
-	Enabled       bool    `tfsdk:"enabled"`
-	GroupCapUsd   float64 `tfsdk:"group_cap_usd"`
-	UserCapUsd    float64 `tfsdk:"user_cap_usd"`
-	WindowSeconds int64   `tfsdk:"window_seconds"`
 }
 
 func agentNetworkPolicyTerraformToRequest(ctx context.Context, data *AgentNetworkPolicyModel) (api.AgentNetworkPolicyRequest, diag.Diagnostics) {
@@ -257,23 +260,29 @@ func agentNetworkPolicyTerraformToRequest(ctx context.Context, data *AgentNetwor
 
 	limits := api.AgentNetworkPolicyLimits{}
 	if !data.TokenLimit.IsNull() && !data.TokenLimit.IsUnknown() {
-		var tl tokenLimitElem
-		ret.Append(data.TokenLimit.As(ctx, &tl, basetypes.ObjectAsOptions{})...)
+		attrs := data.TokenLimit.Attributes()
+		enabled, _ := attrs["enabled"].(types.Bool)
+		groupCap, _ := attrs["group_cap"].(types.Int64)
+		userCap, _ := attrs["user_cap"].(types.Int64)
+		windowSeconds, _ := attrs["window_seconds"].(types.Int64)
 		limits.TokenLimit = api.AgentNetworkPolicyTokenLimit{
-			Enabled:       tl.Enabled,
-			GroupCap:      tl.GroupCap,
-			UserCap:       tl.UserCap,
-			WindowSeconds: tl.WindowSeconds,
+			Enabled:       enabled.ValueBool(),
+			GroupCap:      groupCap.ValueInt64(),
+			UserCap:       userCap.ValueInt64(),
+			WindowSeconds: windowSeconds.ValueInt64(),
 		}
 	}
 	if !data.BudgetLimit.IsNull() && !data.BudgetLimit.IsUnknown() {
-		var bl budgetLimitElem
-		ret.Append(data.BudgetLimit.As(ctx, &bl, basetypes.ObjectAsOptions{})...)
+		attrs := data.BudgetLimit.Attributes()
+		enabled, _ := attrs["enabled"].(types.Bool)
+		groupCapUsd, _ := attrs["group_cap_usd"].(types.Float64)
+		userCapUsd, _ := attrs["user_cap_usd"].(types.Float64)
+		windowSeconds, _ := attrs["window_seconds"].(types.Int64)
 		limits.BudgetLimit = api.AgentNetworkPolicyBudgetLimit{
-			Enabled:       bl.Enabled,
-			GroupCapUsd:   bl.GroupCapUsd,
-			UserCapUsd:    bl.UserCapUsd,
-			WindowSeconds: bl.WindowSeconds,
+			Enabled:       enabled.ValueBool(),
+			GroupCapUsd:   groupCapUsd.ValueFloat64(),
+			UserCapUsd:    userCapUsd.ValueFloat64(),
+			WindowSeconds: windowSeconds.ValueInt64(),
 		}
 	}
 	req.Limits = &limits

@@ -17,7 +17,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -34,21 +33,35 @@ type AgentNetworkGuardrail struct {
 }
 
 type AgentNetworkGuardrailModel struct {
-	Id              types.String `tfsdk:"id"`
-	Name            types.String `tfsdk:"name"`
-	Description     types.String `tfsdk:"description"`
-	ModelAllowlist  types.Object `tfsdk:"model_allowlist"`
-	PromptCapture   types.Object `tfsdk:"prompt_capture"`
+	Id             types.String `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	Description    types.String `tfsdk:"description"`
+	ModelAllowlist types.Object `tfsdk:"model_allowlist"`
+	PromptCapture  types.Object `tfsdk:"prompt_capture"`
 }
 
-var modelAllowlistAttrTypes = map[string]attr.Type{
-	"enabled": types.BoolType,
-	"models":  types.ListType{ElemType: types.StringType},
+type AgentNetworkModelAllowlistModel struct {
+	Enabled types.Bool `tfsdk:"enabled"`
+	Models  types.List `tfsdk:"models"`
 }
 
-var promptCaptureAttrTypes = map[string]attr.Type{
-	"enabled":    types.BoolType,
-	"redact_pii": types.BoolType,
+func (AgentNetworkModelAllowlistModel) TFType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"enabled": types.BoolType,
+		"models":  types.ListType{ElemType: types.StringType},
+	}}
+}
+
+type AgentNetworkPromptCaptureModel struct {
+	Enabled   types.Bool `tfsdk:"enabled"`
+	RedactPii types.Bool `tfsdk:"redact_pii"`
+}
+
+func (AgentNetworkPromptCaptureModel) TFType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"enabled":    types.BoolType,
+		"redact_pii": types.BoolType,
+	}}
 }
 
 func (r *AgentNetworkGuardrail) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -135,28 +148,18 @@ func agentNetworkGuardrailAPIToTerraform(ctx context.Context, g *api.AgentNetwor
 
 	modelsList, d := types.ListValueFrom(ctx, types.StringType, g.Checks.ModelAllowlist.Models)
 	ret.Append(d...)
-	data.ModelAllowlist, d = types.ObjectValue(modelAllowlistAttrTypes, map[string]attr.Value{
-		"enabled": types.BoolValue(g.Checks.ModelAllowlist.Enabled),
-		"models":  modelsList,
+	data.ModelAllowlist, d = types.ObjectValueFrom(ctx, AgentNetworkModelAllowlistModel{}.TFType().AttrTypes, AgentNetworkModelAllowlistModel{
+		Enabled: types.BoolValue(g.Checks.ModelAllowlist.Enabled),
+		Models:  modelsList,
 	})
 	ret.Append(d...)
 
-	data.PromptCapture, d = types.ObjectValue(promptCaptureAttrTypes, map[string]attr.Value{
-		"enabled":    types.BoolValue(g.Checks.PromptCapture.Enabled),
-		"redact_pii": types.BoolValue(g.Checks.PromptCapture.RedactPii),
+	data.PromptCapture, d = types.ObjectValueFrom(ctx, AgentNetworkPromptCaptureModel{}.TFType().AttrTypes, AgentNetworkPromptCaptureModel{
+		Enabled:   types.BoolValue(g.Checks.PromptCapture.Enabled),
+		RedactPii: types.BoolValue(g.Checks.PromptCapture.RedactPii),
 	})
 	ret.Append(d...)
 	return ret
-}
-
-type modelAllowlistElem struct {
-	Enabled bool     `tfsdk:"enabled"`
-	Models  []string `tfsdk:"models"`
-}
-
-type promptCaptureElem struct {
-	Enabled   bool `tfsdk:"enabled"`
-	RedactPii bool `tfsdk:"redact_pii"`
 }
 
 func agentNetworkGuardrailTerraformToRequest(ctx context.Context, data *AgentNetworkGuardrailModel) (api.AgentNetworkGuardrailRequest, diag.Diagnostics) {
@@ -168,16 +171,21 @@ func agentNetworkGuardrailTerraformToRequest(ctx context.Context, data *AgentNet
 		req.Description = data.Description.ValueStringPointer()
 	}
 
-	var ma modelAllowlistElem
-	ret.Append(data.ModelAllowlist.As(ctx, &ma, basetypes.ObjectAsOptions{})...)
-	var pc promptCaptureElem
-	ret.Append(data.PromptCapture.As(ctx, &pc, basetypes.ObjectAsOptions{})...)
-
 	req.Checks = api.AgentNetworkGuardrailChecks{}
-	req.Checks.ModelAllowlist.Enabled = ma.Enabled
-	req.Checks.ModelAllowlist.Models = ma.Models
-	req.Checks.PromptCapture.Enabled = pc.Enabled
-	req.Checks.PromptCapture.RedactPii = pc.RedactPii
+
+	maAttrs := data.ModelAllowlist.Attributes()
+	enabled, _ := maAttrs["enabled"].(types.Bool)
+	req.Checks.ModelAllowlist.Enabled = enabled.ValueBool()
+	if modelsList, ok := maAttrs["models"].(types.List); ok && !modelsList.IsNull() && !modelsList.IsUnknown() {
+		ret.Append(modelsList.ElementsAs(ctx, &req.Checks.ModelAllowlist.Models, false)...)
+	}
+
+	pcAttrs := data.PromptCapture.Attributes()
+	pcEnabled, _ := pcAttrs["enabled"].(types.Bool)
+	redactPii, _ := pcAttrs["redact_pii"].(types.Bool)
+	req.Checks.PromptCapture.Enabled = pcEnabled.ValueBool()
+	req.Checks.PromptCapture.RedactPii = redactPii.ValueBool()
+
 	return req, ret
 }
 
