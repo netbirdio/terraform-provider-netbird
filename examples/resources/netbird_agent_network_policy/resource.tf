@@ -3,9 +3,9 @@ resource "netbird_agent_network_policy" "engineering" {
   description = "Allow engineers to call OpenAI with a monthly token budget."
   enabled     = true
 
-  source_groups           = [netbird_group.engineering.id]
+  source_groups            = [netbird_group.engineering.id]
   destination_provider_ids = [netbird_agent_network_provider.openai.id]
-  guardrail_ids           = [netbird_agent_network_guardrail.strict.id]
+  guardrail_ids            = [netbird_agent_network_guardrail.strict.id]
 
   token_limit = {
     enabled        = true

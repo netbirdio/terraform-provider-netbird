@@ -6,13 +6,13 @@ resource "netbird_agent_network_provider" "openai" {
 
   models = [
     {
-      id           = "gpt-4o-mini"
-      input_per_1k = 0.00015
+      id            = "gpt-4o-mini"
+      input_per_1k  = 0.00015
       output_per_1k = 0.0006
     },
     {
-      id           = "gpt-4o"
-      input_per_1k = 0.005
+      id            = "gpt-4o"
+      input_per_1k  = 0.005
       output_per_1k = 0.015
     },
   ]
