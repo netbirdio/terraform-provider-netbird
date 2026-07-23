@@ -1227,3 +1227,119 @@ func mustObjectValue(ctx context.Context, attrTypes map[string]attr.Type, val an
 	}
 	return obj
 }
+
+func Test_reverseProxyServiceTerraformToAPI_private(t *testing.T) {
+	ctx := context.Background()
+
+	linkAuth := mustObjectValue(ctx, ReverseProxyLinkAuthModel{}.TFType().AttrTypes, ReverseProxyLinkAuthModel{Enabled: types.BoolValue(true)})
+	authObj := mustObjectValue(ctx, ReverseProxyServiceAuthModel{}.TFType().AttrTypes, ReverseProxyServiceAuthModel{
+		PasswordAuth: types.ObjectNull(ReverseProxyPasswordAuthModel{}.TFType().AttrTypes),
+		PinAuth:      types.ObjectNull(ReverseProxyPinAuthModel{}.TFType().AttrTypes),
+		BearerAuth:   types.ObjectNull(ReverseProxyBearerAuthModel{}.TFType().AttrTypes),
+		LinkAuth:     linkAuth,
+	})
+
+	target := mustObjectValue(ctx, ReverseProxyServiceTargetModel{}.TFType().AttrTypes, ReverseProxyServiceTargetModel{
+		TargetId:   types.StringValue("res1"),
+		TargetType: types.StringValue("domain"),
+		Host:       types.StringValue("backend.example.com"),
+		Port:       types.Int64Value(443),
+		Protocol:   types.StringValue("https"),
+		Path:       types.StringNull(),
+		Enabled:    types.BoolValue(true),
+		Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
+	})
+	targetsList, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), []attr.Value{target})
+	if d.HasError() {
+		t.Fatalf("Failed to build targets list")
+	}
+	groups, d := types.SetValueFrom(ctx, types.StringType, []string{"grp-a", "grp-b"})
+	if d.HasError() {
+		t.Fatalf("Failed to build access_groups set")
+	}
+
+	model := &ReverseProxyServiceModel{
+		Name:         types.StringValue("prod-backend"),
+		Domain:       types.StringValue("backend.int.example.com"),
+		Enabled:      types.BoolValue(true),
+		Private:      types.BoolValue(true),
+		AccessGroups: groups,
+		Targets:      targetsList,
+		Auth:         authObj,
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, model)
+	if d.HasError() {
+		t.Fatalf("reverseProxyServiceTerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+	if req.Private == nil || !*req.Private {
+		t.Error("private not mapped to API request")
+	}
+	if req.AccessGroups == nil || len(*req.AccessGroups) != 2 {
+		t.Errorf("access_groups not mapped to API request: %v", req.AccessGroups)
+	}
+}
+
+func Test_reverseProxyServiceAPIToTerraform_private(t *testing.T) {
+	ctx := context.Background()
+	svc := &api.Service{
+		Id:           "svc-priv",
+		Name:         "prod-backend",
+		Domain:       "backend.int.example.com",
+		Enabled:      true,
+		Private:      valPtr(true),
+		AccessGroups: &[]string{"grp-a", "grp-b"},
+		Targets: []api.ServiceTarget{
+			{TargetId: "res1", TargetType: "domain", Port: 443, Protocol: api.ServiceTargetProtocolHttps, Enabled: true},
+		},
+		Auth: api.ServiceAuthConfig{LinkAuth: &api.LinkAuthConfig{Enabled: true}},
+	}
+
+	var out ReverseProxyServiceModel
+	if d := reverseProxyServiceAPIToTerraform(ctx, svc, &out); d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if !out.Private.ValueBool() {
+		t.Error("private not read back from API")
+	}
+	var groups []string
+	if d := out.AccessGroups.ElementsAs(ctx, &groups, false); d.HasError() {
+		t.Fatalf("Failed to extract access_groups")
+	}
+	// access_groups is a set: assert membership, not order.
+	got := map[string]bool{}
+	for _, g := range groups {
+		got[g] = true
+	}
+	if len(groups) != 2 || !got["grp-a"] || !got["grp-b"] {
+		t.Errorf("access_groups mismatch: %v", groups)
+	}
+}
+
+func Test_reverseProxyServiceAPIToTerraform_nonPrivateHasNullAccessGroups(t *testing.T) {
+	ctx := context.Background()
+	// A non-private service: the API omits access_groups; it must read back as
+	// null (not empty set) so it doesn't drift against an unset config.
+	svc := &api.Service{
+		Id:      "svc-pub",
+		Name:    "public",
+		Domain:  "pub.example.com",
+		Enabled: true,
+		Private: valPtr(false),
+		Targets: []api.ServiceTarget{
+			{TargetId: "res1", TargetType: "domain", Port: 443, Protocol: api.ServiceTargetProtocolHttps, Enabled: true},
+		},
+		Auth: api.ServiceAuthConfig{LinkAuth: &api.LinkAuthConfig{Enabled: true}},
+	}
+
+	var out ReverseProxyServiceModel
+	if d := reverseProxyServiceAPIToTerraform(ctx, svc, &out); d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if out.Private.ValueBool() {
+		t.Error("expected private=false")
+	}
+	if !out.AccessGroups.IsNull() {
+		t.Errorf("expected access_groups null for non-private service, got %v", out.AccessGroups)
+	}
+}

@@ -40,12 +40,14 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 ### Read-Only
 
+- `access_groups` (Set of String) NetBird group IDs whose peers may reach this private service over the tunnel.
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
 - `listen_port` (Number) Port the proxy listens on (L4/TLS only)
 - `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
 - `pass_host_header` (Boolean) When true, the original client Host header is passed through to the backend
 - `port_auto_assigned` (Boolean) Whether the listen port was auto-assigned by the server
+- `private` (Boolean) When true, the service is NetBird-only: peers authenticate via their WireGuard tunnel identity and an ACL policy is auto-generated from access_groups.
 - `proxy_cluster` (String) The proxy cluster handling this service
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 - `targets` (Attributes List) List of target backends for this service (see [below for nested schema](#nestedatt--targets))

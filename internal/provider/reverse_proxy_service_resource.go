@@ -43,6 +43,8 @@ type ReverseProxyServiceModel struct {
 	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
 	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
 	ProxyCluster     types.String `tfsdk:"proxy_cluster"`
+	Private          types.Bool   `tfsdk:"private"`
+	AccessGroups     types.Set    `tfsdk:"access_groups"`
 	Targets          types.List   `tfsdk:"targets"`
 	Auth             types.Object `tfsdk:"auth"`
 }
@@ -248,6 +250,17 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 				MarkdownDescription: "The proxy cluster handling this service (derived from domain)",
 				Computed:            true,
 			},
+			"private": schema.BoolAttribute{
+				MarkdownDescription: "When true, the service is NetBird-only: inbound peers authenticate via their WireGuard tunnel identity (no OIDC), and an ACL policy is auto-generated from `access_groups` to the cluster's proxy-peer group. Requires the service to target a proxy cluster.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"access_groups": schema.SetAttribute{
+				MarkdownDescription: "NetBird group IDs whose peers may reach this private service over the tunnel. Required when `private` is true, ignored otherwise. Mutually exclusive with bearer auth.",
+				Optional:            true,
+				ElementType:         types.StringType,
+			},
 			"targets": schema.ListNestedAttribute{
 				MarkdownDescription: "List of target backends for this service",
 				Required:            true,
@@ -399,6 +412,51 @@ func (r *ReverseProxyService) Configure(ctx context.Context, req resource.Config
 	r.client = client
 }
 
+func (r *ReverseProxyService) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data ReverseProxyServiceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// access_groups is only honored for private services and is required there
+	// (the API auto-generates the ACL policy from it). Enforce both directions,
+	// but only when both values are known at plan time (an unknown access_groups
+	// must not be treated as empty, and an unknown private can't pick a branch).
+	private := data.Private.ValueBool()
+	groupsKnown := !data.AccessGroups.IsUnknown()
+	if !data.Private.IsUnknown() && private && groupsKnown && (data.AccessGroups.IsNull() || len(data.AccessGroups.Elements()) == 0) {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("access_groups"),
+			"access_groups required for a private service",
+			"When private is true, access_groups must list at least one NetBird group ID allowed to reach the service over the tunnel.",
+		)
+	}
+	// Reject any non-null access_groups (including an explicit empty set) on a
+	// public service: the API ignores it, and the read path maps it back to null,
+	// which would drift an intentionally set value forever.
+	if !data.Private.IsUnknown() && !private && groupsKnown && !data.AccessGroups.IsNull() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("access_groups"),
+			"access_groups only applies to a private service",
+			"access_groups is ignored unless private is true. Set private = true or remove access_groups.",
+		)
+	}
+
+	// private (tunnel-identity auth) is mutually exclusive with bearer auth (SSO).
+	if !data.Private.IsUnknown() && private && !data.Auth.IsNull() && !data.Auth.IsUnknown() {
+		if bearer, ok := data.Auth.Attributes()["bearer_auth"].(types.Object); ok && !bearer.IsNull() && !bearer.IsUnknown() {
+			if enabled, ok := bearer.Attributes()["enabled"].(types.Bool); ok && enabled.ValueBool() {
+				resp.Diagnostics.AddAttributeError(
+					path.Root("private"),
+					"private is mutually exclusive with bearer auth",
+					"A private service authenticates peers by their WireGuard tunnel identity, which cannot be combined with bearer (SSO) auth. Disable one of them.",
+				)
+			}
+		}
+	}
+}
+
 func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOptions) (types.Object, diag.Diagnostics) {
 	if opts == nil {
 		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
@@ -536,6 +594,22 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 	}
 
 	data.ProxyCluster = types.StringPointerValue(svc.ProxyCluster)
+
+	if svc.Private != nil {
+		data.Private = types.BoolValue(*svc.Private)
+	} else {
+		data.Private = types.BoolValue(false)
+	}
+
+	// A set (not a list): the API may reorder the group IDs, which would drift a
+	// list forever. The API also omits access_groups when the service is not
+	// private; keep it null then so a non-private service doesn't drift.
+	if svc.AccessGroups != nil && len(*svc.AccessGroups) > 0 {
+		data.AccessGroups, d = types.SetValueFrom(ctx, types.StringType, *svc.AccessGroups)
+		ret.Append(d...)
+	} else {
+		data.AccessGroups = types.SetNull(types.StringType)
+	}
 
 	var targets []ReverseProxyServiceTargetModel
 	for _, t := range svc.Targets {
@@ -735,6 +809,17 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 	if !data.RewriteRedirects.IsNull() && !data.RewriteRedirects.IsUnknown() {
 		v := data.RewriteRedirects.ValueBool()
 		req.RewriteRedirects = &v
+	}
+
+	if !data.Private.IsNull() && !data.Private.IsUnknown() {
+		v := data.Private.ValueBool()
+		req.Private = &v
+	}
+
+	if !data.AccessGroups.IsNull() && !data.AccessGroups.IsUnknown() {
+		var groups []string
+		ret.Append(data.AccessGroups.ElementsAs(ctx, &groups, false)...)
+		req.AccessGroups = &groups
 	}
 
 	var targetModels []ReverseProxyServiceTargetModel

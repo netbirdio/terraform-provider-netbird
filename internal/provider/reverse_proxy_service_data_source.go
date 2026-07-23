@@ -34,6 +34,8 @@ type ReverseProxyServiceDataSourceModel struct {
 	PassHostHeader   types.Bool   `tfsdk:"pass_host_header"`
 	RewriteRedirects types.Bool   `tfsdk:"rewrite_redirects"`
 	ProxyCluster     types.String `tfsdk:"proxy_cluster"`
+	Private          types.Bool   `tfsdk:"private"`
+	AccessGroups     types.Set    `tfsdk:"access_groups"`
 	Targets          types.List   `tfsdk:"targets"`
 	Auth             types.Object `tfsdk:"auth"`
 }
@@ -88,6 +90,15 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 			"proxy_cluster": schema.StringAttribute{
 				MarkdownDescription: "The proxy cluster handling this service",
 				Computed:            true,
+			},
+			"private": schema.BoolAttribute{
+				MarkdownDescription: "When true, the service is NetBird-only: peers authenticate via their WireGuard tunnel identity and an ACL policy is auto-generated from access_groups.",
+				Computed:            true,
+			},
+			"access_groups": schema.SetAttribute{
+				MarkdownDescription: "NetBird group IDs whose peers may reach this private service over the tunnel.",
+				Computed:            true,
+				ElementType:         types.StringType,
 			},
 			"targets": schema.ListNestedAttribute{
 				MarkdownDescription: "List of target backends for this service",
@@ -287,6 +298,8 @@ func (d *ReverseProxyServiceDataSource) Read(ctx context.Context, req datasource
 		PassHostHeader:   match.PassHostHeader,
 		RewriteRedirects: match.RewriteRedirects,
 		ProxyCluster:     match.ProxyCluster,
+		Private:          match.Private,
+		AccessGroups:     match.AccessGroups,
 		Targets:          match.Targets,
 		Auth:             match.Auth,
 	}

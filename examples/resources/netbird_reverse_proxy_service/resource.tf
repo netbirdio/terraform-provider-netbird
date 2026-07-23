@@ -91,3 +91,27 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
     }
   }]
 }
+
+# Private (NetBird-only) service: reachable only from inside the mesh by peers in
+# access_groups, authenticated by their WireGuard tunnel identity (no OIDC).
+resource "netbird_reverse_proxy_service" "internal" {
+  name    = "internal-app"
+  domain  = "internal.${data.netbird_reverse_proxy_domain.free.domain}"
+  private = true
+  # NetBird group IDs allowed to reach the service. Required when private = true.
+  access_groups = [netbird_group.engineering.id, netbird_group.ops.id]
+
+  targets = [{
+    target_id   = netbird_network_resource.internal.id
+    target_type = "domain"
+    host        = "internal.example.com"
+    port        = 443
+    protocol    = "https"
+  }]
+
+  auth = {
+    link_auth = {
+      enabled = true
+    }
+  }
+}
