@@ -26,7 +26,11 @@ func newAgentNetworkClient(c *netbird.Client) *agentNetworkClient {
 
 func anDo[T any](ctx context.Context, c *netbird.Client, method, path string, body any) (T, error) {
 	var zero T
-	var bodyReader *bytes.Reader
+	// bodyReader must stay a nil io.Reader interface (not a typed-nil
+	// *bytes.Reader) when there is no body: http.NewRequestWithContext
+	// type-switches on the concrete type and dereferences a *bytes.Reader,
+	// so a typed-nil would panic on every body-less request.
+	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
