@@ -31,14 +31,14 @@ type AgentNetworkSettings struct {
 // AgentNetworkSettingsModel mirrors the mutable + read-only fields of AgentNetworkSettings.
 type AgentNetworkSettingsModel struct {
 	// computed / read-only
-	Cluster                types.String `tfsdk:"cluster"`
-	Subdomain              types.String `tfsdk:"subdomain"`
-	Endpoint               types.String `tfsdk:"endpoint"`
+	Cluster   types.String `tfsdk:"cluster"`
+	Subdomain types.String `tfsdk:"subdomain"`
+	Endpoint  types.String `tfsdk:"endpoint"`
 	// mutable
-	EnableLogCollection    types.Bool   `tfsdk:"enable_log_collection"`
-	EnablePromptCollection types.Bool   `tfsdk:"enable_prompt_collection"`
-	RedactPii              types.Bool   `tfsdk:"redact_pii"`
-	AccessLogRetentionDays types.Int64  `tfsdk:"access_log_retention_days"`
+	EnableLogCollection    types.Bool  `tfsdk:"enable_log_collection"`
+	EnablePromptCollection types.Bool  `tfsdk:"enable_prompt_collection"`
+	RedactPii              types.Bool  `tfsdk:"redact_pii"`
+	AccessLogRetentionDays types.Int64 `tfsdk:"access_log_retention_days"`
 }
 
 func (r *AgentNetworkSettings) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {

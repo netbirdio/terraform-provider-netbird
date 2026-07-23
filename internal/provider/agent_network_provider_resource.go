@@ -53,8 +53,8 @@ type AgentNetworkProviderModelItem struct {
 
 func (AgentNetworkProviderModelItem) TFType() types.ObjectType {
 	return types.ObjectType{AttrTypes: map[string]attr.Type{
-		"id":           types.StringType,
-		"input_per_1k": types.Float64Type,
+		"id":            types.StringType,
+		"input_per_1k":  types.Float64Type,
 		"output_per_1k": types.Float64Type,
 	}}
 }
@@ -184,10 +184,10 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetworkProviderModel) (api.AgentNetworkProviderRequest, diag.Diagnostics) {
 	var ret diag.Diagnostics
 	req := api.AgentNetworkProviderRequest{
-		ProviderId:  data.ProviderId.ValueString(),
-		Name:        data.Name.ValueString(),
-		UpstreamUrl: data.UpstreamUrl.ValueString(),
-		Enabled:     data.Enabled.ValueBoolPointer(),
+		ProviderId:          data.ProviderId.ValueString(),
+		Name:                data.Name.ValueString(),
+		UpstreamUrl:         data.UpstreamUrl.ValueString(),
+		Enabled:             data.Enabled.ValueBoolPointer(),
 		SkipTlsVerification: data.SkipTlsVerification.ValueBoolPointer(),
 	}
 	if !data.ApiKey.IsNull() && !data.ApiKey.IsUnknown() {
