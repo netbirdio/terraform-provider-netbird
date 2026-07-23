@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -104,7 +103,7 @@ func (r *AgentNetworkSettings) Configure(_ context.Context, req resource.Configu
 	r.client = newAgentNetworkClient(client)
 }
 
-func agentNetworkSettingsAPIToTerraform(_ context.Context, s *api.AgentNetworkSettings, data *AgentNetworkSettingsModel) diag.Diagnostics {
+func agentNetworkSettingsAPIToTerraform(s *api.AgentNetworkSettings, data *AgentNetworkSettingsModel) {
 	data.Cluster = types.StringValue(s.Cluster)
 	data.Subdomain = types.StringValue(s.Subdomain)
 	data.Endpoint = types.StringValue(s.Endpoint)
@@ -116,7 +115,6 @@ func agentNetworkSettingsAPIToTerraform(_ context.Context, s *api.AgentNetworkSe
 	} else {
 		data.AccessLogRetentionDays = types.Int64Null()
 	}
-	return nil
 }
 
 // Create reads the current settings and stores them (singleton — no actual create).
@@ -147,10 +145,9 @@ func (r *AgentNetworkSettings) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Error applying Agent Network Settings", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(agentNetworkSettingsAPIToTerraform(ctx, s, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+
+	agentNetworkSettingsAPIToTerraform(s, &data)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -169,10 +166,9 @@ func (r *AgentNetworkSettings) Read(ctx context.Context, req resource.ReadReques
 		resp.Diagnostics.AddError("Error reading Agent Network Settings", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(agentNetworkSettingsAPIToTerraform(ctx, s, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+
+	agentNetworkSettingsAPIToTerraform(s, &data)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -203,10 +199,9 @@ func (r *AgentNetworkSettings) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("Error updating Agent Network Settings", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(agentNetworkSettingsAPIToTerraform(ctx, s, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+
+	agentNetworkSettingsAPIToTerraform(s, &data)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
