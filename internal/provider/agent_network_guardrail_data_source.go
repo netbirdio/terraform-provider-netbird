@@ -84,6 +84,8 @@ func (d *AgentNetworkGuardrailDataSource) Configure(_ context.Context, req datas
 
 func (d *AgentNetworkGuardrailDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data AgentNetworkGuardrailModel
+
+	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -101,17 +103,22 @@ func (d *AgentNetworkGuardrailDataSource) Read(ctx context.Context, req datasour
 	}
 
 	var found *api.AgentNetworkGuardrail
-	for i := range guardrails {
-		g := &guardrails[i]
-		if matchString(g.Id, data.Id)+matchString(g.Name, data.Name) == 0 {
-			continue
+	for _, g := range guardrails {
+		match := 0
+		match += matchString(g.Id, data.Id)
+		match += matchString(g.Name, data.Name)
+		if match > 0 {
+			if found != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Guardrail")
+			}
+			found = &g
 		}
-		if found != nil {
-			resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Guardrail")
-			return
-		}
-		found = g
 	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if found == nil {
 		resp.Diagnostics.AddError("No Match", "No Agent Network Guardrail matched the given filters")
 		return
@@ -121,5 +128,6 @@ func (d *AgentNetworkGuardrailDataSource) Read(ctx context.Context, req datasour
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

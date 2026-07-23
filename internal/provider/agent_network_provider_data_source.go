@@ -113,6 +113,8 @@ func (d *AgentNetworkProviderDataSource) Configure(_ context.Context, req dataso
 
 func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data AgentNetworkProviderModel
+
+	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -130,17 +132,22 @@ func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasourc
 	}
 
 	var found *api.AgentNetworkProvider
-	for i := range providers {
-		p := &providers[i]
-		if matchString(p.Id, data.Id)+matchString(p.Name, data.Name) == 0 {
-			continue
+	for _, p := range providers {
+		match := 0
+		match += matchString(p.Id, data.Id)
+		match += matchString(p.Name, data.Name)
+		if match > 0 {
+			if found != nil {
+				resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Policy")
+			}
+			found = &p
 		}
-		if found != nil {
-			resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Provider")
-			return
-		}
-		found = p
 	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if found == nil {
 		resp.Diagnostics.AddError("No Match", "No Agent Network Provider matched the given filters")
 		return
@@ -150,5 +157,6 @@ func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasourc
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
