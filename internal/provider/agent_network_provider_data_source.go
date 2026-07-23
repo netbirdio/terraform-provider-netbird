@@ -138,7 +138,7 @@ func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasourc
 		match += matchString(p.Name, data.Name)
 		if match > 0 {
 			if found != nil {
-				resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Policy")
+				resp.Diagnostics.AddError("Multiple Matches", "Data source matched more than one Agent Network Provider")
 			}
 			found = &p
 		}
