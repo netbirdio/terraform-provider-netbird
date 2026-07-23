@@ -87,7 +87,7 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Upstream provider API key. Sealed at rest; never returned in responses. Required on create; omit on update to keep the existing key.",
-				Optional:            true,
+				Required:            true,
 				Sensitive:           true,
 			},
 			"bootstrap_cluster": schema.StringAttribute{
