@@ -39,13 +39,13 @@ resource "netbird_agent_network_provider" "openai" {
 
 ### Required
 
+- `api_key` (String, Sensitive) Upstream provider API key. Sealed at rest; never returned in responses. Required on create; omit on update to keep the existing key.
 - `name` (String) Display name shown in the dashboard
 - `provider_id` (String) Catalog identifier for the upstream AI provider (e.g. `openai_api`, `anthropic_api`, `custom`)
 - `upstream_url` (String) Full upstream URL (with scheme) that NetBird forwards traffic to
 
 ### Optional
 
-- `api_key` (String, Sensitive) Upstream provider API key. Sealed at rest; never returned in responses. Required on create; omit on update to keep the existing key.
 - `bootstrap_cluster` (String) Proxy cluster used when creating the first provider. Ignored on subsequent creates and all updates.
 - `enabled` (Boolean) Whether the provider is enabled
 - `identity_header_groups` (String) Wire header name the proxy stamps with the caller's NetBird groups as a comma-separated list
