@@ -256,6 +256,10 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 						Computed:            true,
 						ElementType:         types.StringType,
 					},
+					"allow_match": schema.StringAttribute{
+						MarkdownDescription: "How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.",
+						Computed:            true,
+					},
 				},
 			},
 		},

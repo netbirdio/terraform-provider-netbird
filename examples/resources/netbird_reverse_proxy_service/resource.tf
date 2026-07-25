@@ -100,6 +100,9 @@ resource "netbird_reverse_proxy_service" "api_gateway" {
   access_restrictions = {
     allowed_countries = ["US", "DE", "GB"]
     blocked_cidrs     = ["192.168.0.0/16"]
+    # "any": allow a client matching an allowed country OR an allowed CIDR.
+    # "all" (default) requires matching every configured allowlist.
+    allow_match = "any"
   }
 }
 
