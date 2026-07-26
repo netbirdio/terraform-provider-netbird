@@ -59,6 +59,7 @@ Read-Only:
 - `allow_match` (String) How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.
 - `allowed_cidrs` (List of String) CIDR allowlist
 - `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
+- `appsec_mode` (String) CrowdSec AppSec (WAF) request inspection mode: `off`, `enforce`, or `observe`. HTTP services only.
 - `blocked_cidrs` (List of String) CIDR blocklist
 - `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
 

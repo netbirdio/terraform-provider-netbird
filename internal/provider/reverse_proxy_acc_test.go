@@ -848,6 +848,7 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.0", "192.168.0.0/16"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allow_match", "any"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.appsec_mode", "observe"),
 					func(s *terraform.State) error {
 						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
@@ -865,6 +866,9 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 						}
 						if svc.AccessRestrictions.AllowMatch == nil || *svc.AccessRestrictions.AllowMatch != api.AccessRestrictionsAllowMatchAny {
 							return fmt.Errorf("expected allow_match any")
+						}
+						if svc.AccessRestrictions.AppsecMode == nil || *svc.AccessRestrictions.AppsecMode != api.AccessRestrictionsAppsecModeObserve {
+							return fmt.Errorf("expected appsec_mode observe")
 						}
 						return nil
 					},
@@ -927,6 +931,7 @@ resource "netbird_reverse_proxy_service" "%s" {
     allowed_countries = ["US", "DE"]
     blocked_cidrs     = ["192.168.0.0/16"]
     allow_match       = "any"
+    appsec_mode       = "observe"
   }
 }`, rName, rName, domain, peerID)
 }
