@@ -31,8 +31,10 @@ data "netbird_agent_network_provider" "openai" {
 - `api_key` (String, Sensitive) Not returned by the API (sealed at rest)
 - `bootstrap_cluster` (String) Bootstrap cluster (only relevant on create)
 - `enabled` (Boolean) Whether the provider is enabled
+- `extra_values` (Map of String) Catalog-specific extra header values
 - `identity_header_groups` (String) Wire header for caller groups
 - `identity_header_user_id` (String) Wire header for caller display identity
+- `metadata_disabled` (Boolean) Whether identity-metadata injection is suppressed for this provider
 - `models` (Attributes List) Models exposed through this endpoint (see [below for nested schema](#nestedatt--models))
 - `provider_id` (String) Catalog identifier for the upstream AI provider
 - `skip_tls_verification` (Boolean) Whether upstream TLS verification is skipped

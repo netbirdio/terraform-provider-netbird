@@ -26,10 +26,10 @@ resource "netbird_agent_network_settings" "main" {
 
 ### Optional
 
-- `access_log_retention_days` (Number) Days to retain full access-log rows (0 or less = keep indefinitely)
-- `enable_log_collection` (Boolean) Collect per-request access-log entries for this account
-- `enable_prompt_collection` (Boolean) Master switch for request/response prompt capture (effective only when a policy guardrail also enables it)
-- `redact_pii` (Boolean) Redact PII from captured prompts
+- `access_log_retention_days` (Number) Days to retain full access-log rows (0 or less = keep indefinitely). Omit to leave the account's current value unchanged.
+- `enable_log_collection` (Boolean) Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.
+- `enable_prompt_collection` (Boolean) Master switch for request/response prompt capture (effective only when a policy guardrail also enables it). Omit to leave the account's current value unchanged.
+- `redact_pii` (Boolean) Redact PII from captured prompts. Omit to leave the account's current value unchanged.
 
 ### Read-Only
 

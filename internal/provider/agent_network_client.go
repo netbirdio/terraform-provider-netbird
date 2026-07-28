@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -164,11 +165,29 @@ func (a *agentNetworkClient) DeleteGuardrail(ctx context.Context, id string) err
 // ---- Settings ---------------------------------------------------------------
 
 func (a *agentNetworkClient) GetSettings(ctx context.Context) (*api.AgentNetworkSettings, error) {
-	r, err := anDo[api.AgentNetworkSettings](ctx, a.c, "GET", "/api/agent-network/settings", nil)
+	resp, err := a.c.NewRequest(ctx, "GET", "/api/agent-network/settings", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &r, nil
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	// The server deliberately answers 200 with a JSON `null` body (not 404)
+	// when the account's agent-network settings row has not been bootstrapped.
+	// Decoding that would yield a bogus all-zero settings row, so translate it
+	// into a NotFound error and let callers treat the resource as absent.
+	if trimmed := bytes.TrimSpace(body); len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, &netbird.APIError{StatusCode: http.StatusNotFound, Message: "agent network settings not found"}
+	}
+	var result api.AgentNetworkSettings
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (a *agentNetworkClient) UpdateSettings(ctx context.Context, req api.PutApiAgentNetworkSettingsJSONRequestBody) (*api.AgentNetworkSettings, error) {

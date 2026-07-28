@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -73,6 +74,15 @@ func (d *AgentNetworkProviderDataSource) Schema(_ context.Context, _ datasource.
 			"identity_header_groups": schema.StringAttribute{
 				MarkdownDescription: "Wire header for caller groups",
 				Computed:            true,
+			},
+			"metadata_disabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether identity-metadata injection is suppressed for this provider",
+				Computed:            true,
+			},
+			"extra_values": schema.MapAttribute{
+				MarkdownDescription: "Catalog-specific extra header values",
+				Computed:            true,
+				ElementType:         types.StringType,
 			},
 			"models": schema.ListNestedAttribute{
 				MarkdownDescription: "Models exposed through this endpoint",
