@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -141,6 +142,7 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 				MarkdownDescription: "Per-policy token cap",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
 				Attributes: map[string]schema.Attribute{
 					"enabled": schema.BoolAttribute{
 						MarkdownDescription: "Whether the token limit is enforced",
@@ -172,6 +174,7 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 				MarkdownDescription: "Per-policy USD spend cap",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
 				Attributes: map[string]schema.Attribute{
 					"enabled": schema.BoolAttribute{
 						MarkdownDescription: "Whether the budget limit is enforced",
