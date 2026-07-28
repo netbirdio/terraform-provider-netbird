@@ -76,10 +76,14 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			// Updated in place: the API accepts a new catalog id on PUT (validated
+			// against the catalog) and preserves the provider's identity and
+			// session keys. Forcing a replace here would make the destroy hit the
+			// server's "provider is in use by N policies" guard whenever a policy
+			// still references the provider.
 			"provider_id": schema.StringAttribute{
 				MarkdownDescription: "Catalog identifier for the upstream AI provider (e.g. `openai_api`, `anthropic_api`, `custom`)",
 				Required:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Display name shown in the dashboard",
@@ -95,8 +99,12 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 				Sensitive:           true,
 			},
 			"bootstrap_cluster": schema.StringAttribute{
-				MarkdownDescription: "Proxy cluster used when creating the first provider. Ignored on subsequent creates and all updates.",
-				Optional:            true,
+				MarkdownDescription: "Proxy cluster that fronts this account's Agent Network endpoint. Setting this on a provider create " +
+					"bootstraps the account's Agent Network settings row (cluster, subdomain and endpoint); **an account with no " +
+					"providers created with `bootstrap_cluster` set is never bootstrapped**, leaving agents with no endpoint to call " +
+					"and `netbird_agent_network_settings` unmanageable. Ignored once the account is bootstrapped, and on all updates. " +
+					"Use the `netbird_reverse_proxy_clusters` data source to find valid cluster addresses.",
+				Optional: true,
 			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the provider is enabled",
@@ -288,11 +296,38 @@ func (r *AgentNetworkProvider) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Error creating Agent Network Provider", err.Error())
 		return
 	}
+	r.warnIfAccountUnbootstrapped(ctx, &data, &resp.Diagnostics)
 	resp.Diagnostics.Append(agentNetworkProviderAPIToTerraform(ctx, p, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// warnIfAccountUnbootstrapped flags the silent dead end where providers exist but
+// the account has no agent-network settings row, so there is no endpoint for
+// agents to call. The server only bootstraps that row when a provider is created
+// with bootstrap_cluster set, and it reports failures at debug level only, so
+// without this the misconfiguration is invisible until the settings resource
+// errors out. Only checked when bootstrap_cluster was omitted, so accounts that
+// are already bootstrapped (where the field is ignored) stay quiet.
+func (r *AgentNetworkProvider) warnIfAccountUnbootstrapped(ctx context.Context, data *AgentNetworkProviderModel, diags *diag.Diagnostics) {
+	if !data.BootstrapCluster.IsNull() && !data.BootstrapCluster.IsUnknown() && data.BootstrapCluster.ValueString() != "" {
+		return
+	}
+	if _, err := r.client.GetSettings(ctx); err == nil || !netbird.IsNotFound(err) {
+		// Bootstrapped already, or the check itself failed — either way this is
+		// advisory only and must never fail the apply.
+		return
+	}
+	diags.AddWarning(
+		"Agent Network account not bootstrapped",
+		"This provider was created but the account has no Agent Network settings row, so there is no "+
+			"endpoint for agents to call and netbird_agent_network_settings cannot be managed. The row is "+
+			"created only when a provider is created with `bootstrap_cluster` set. Set `bootstrap_cluster` "+
+			"on an Agent Network provider to bootstrap the account; the `netbird_reverse_proxy_clusters` "+
+			"data source lists valid cluster addresses.",
+	)
 }
 
 func (r *AgentNetworkProvider) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {

@@ -13,11 +13,19 @@ Manage Agent Network providers (upstream AI API endpoints), see [NetBird Docs](h
 ## Example Usage
 
 ```terraform
+# The account's Agent Network settings row — which supplies the endpoint agents
+# call — is created only when a provider is created with `bootstrap_cluster` set.
+# Creating providers without it leaves the account unbootstrapped, so set it on
+# at least the first provider. It is ignored once the account is bootstrapped.
+data "netbird_reverse_proxy_clusters" "all" {}
+
 resource "netbird_agent_network_provider" "openai" {
   provider_id  = "openai_api"
   name         = "OpenAI Production"
   upstream_url = "https://api.openai.com"
   api_key      = var.openai_api_key
+
+  bootstrap_cluster = data.netbird_reverse_proxy_clusters.all.clusters[0].address
 
   models = [
     {
@@ -46,7 +54,7 @@ resource "netbird_agent_network_provider" "openai" {
 
 ### Optional
 
-- `bootstrap_cluster` (String) Proxy cluster used when creating the first provider. Ignored on subsequent creates and all updates.
+- `bootstrap_cluster` (String) Proxy cluster that fronts this account's Agent Network endpoint. Setting this on a provider create bootstraps the account's Agent Network settings row (cluster, subdomain and endpoint); **an account with no providers created with `bootstrap_cluster` set is never bootstrapped**, leaving agents with no endpoint to call and `netbird_agent_network_settings` unmanageable. Ignored once the account is bootstrapped, and on all updates. Use the `netbird_reverse_proxy_clusters` data source to find valid cluster addresses.
 - `enabled` (Boolean) Whether the provider is enabled
 - `extra_values` (Map of String) Catalog-specific extra header values (e.g. `x-portkey-config` for Portkey gateways). Omit to leave the stored values unchanged. Empty values are dropped by the API.
 - `identity_header_groups` (String) Wire header name the proxy stamps with the caller's NetBird groups as a comma-separated list
