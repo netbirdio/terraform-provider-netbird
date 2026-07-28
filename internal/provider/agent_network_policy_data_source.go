@@ -116,6 +116,30 @@ func (d *AgentNetworkPolicyDataSource) Read(ctx context.Context, req datasource.
 		return
 	}
 
+	// A known id identifies the record uniquely, so fetch it directly instead of
+	// listing everything and scanning. A name filter given alongside must agree.
+	if !data.Id.IsNull() && !data.Id.IsUnknown() {
+		found, err := d.client.GetPolicy(ctx, data.Id.ValueString())
+		if err != nil {
+			if netbird.IsNotFound(err) {
+				resp.Diagnostics.AddError("No Match", "No Agent Network Policy matched the given filters")
+				return
+			}
+			resp.Diagnostics.AddError("Error reading Agent Network Policy", err.Error())
+			return
+		}
+		if matchString(found.Name, data.Name) < 0 {
+			resp.Diagnostics.AddError("No Match", "No Agent Network Policy matched the given filters")
+			return
+		}
+		resp.Diagnostics.Append(agentNetworkPolicyAPIToTerraform(ctx, found, &data)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		return
+	}
+
 	policies, err := d.client.ListPolicies(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Agent Network Policies", err.Error())

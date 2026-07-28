@@ -43,9 +43,9 @@ resource "netbird_agent_network_policy" "engineering" {
 
 ### Required
 
-- `destination_provider_ids` (List of String) Agent Network provider IDs the source groups can reach
+- `destination_provider_ids` (List of String) Agent Network provider IDs the source groups can reach. Must contain at least one non-empty provider ID.
 - `name` (String) Display name for the policy
-- `source_groups` (List of String) NetBird group IDs whose members may call the destination providers
+- `source_groups` (List of String) NetBird group IDs whose members may call the destination providers. Must contain at least one non-empty group ID.
 
 ### Optional
 

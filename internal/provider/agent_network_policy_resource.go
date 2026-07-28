@@ -7,13 +7,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -25,6 +27,7 @@ import (
 
 var _ resource.Resource = &AgentNetworkPolicy{}
 var _ resource.ResourceWithImportState = &AgentNetworkPolicy{}
+var _ resource.ResourceWithValidateConfig = &AgentNetworkPolicy{}
 
 func NewAgentNetworkPolicy() resource.Resource {
 	return &AgentNetworkPolicy{}
@@ -108,20 +111,31 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 				Default:             booldefault.StaticBool(true),
 			},
 			"source_groups": schema.ListAttribute{
-				MarkdownDescription: "NetBird group IDs whose members may call the destination providers",
+				MarkdownDescription: "NetBird group IDs whose members may call the destination providers. Must contain at least one non-empty group ID.",
 				Required:            true,
 				ElementType:         types.StringType,
+				Validators: []validator.List{
+					listvalidator.SizeAtLeast(1),
+					listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+				},
 			},
 			"destination_provider_ids": schema.ListAttribute{
-				MarkdownDescription: "Agent Network provider IDs the source groups can reach",
+				MarkdownDescription: "Agent Network provider IDs the source groups can reach. Must contain at least one non-empty provider ID.",
 				Required:            true,
 				ElementType:         types.StringType,
+				Validators: []validator.List{
+					listvalidator.SizeAtLeast(1),
+					listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+				},
 			},
 			"guardrail_ids": schema.ListAttribute{
 				MarkdownDescription: "Agent Network guardrail IDs attached to this policy",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
+				Validators: []validator.List{
+					listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+				},
 			},
 			"token_limit": schema.SingleNestedAttribute{
 				MarkdownDescription: "Per-policy token cap",
@@ -151,7 +165,6 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 						Optional:            true,
 						Computed:            true,
 						Default:             int64default.StaticInt64(2592000),
-						Validators:          []validator.Int64{int64validator.AtLeast(60)},
 					},
 				},
 			},
@@ -170,18 +183,19 @@ func (r *AgentNetworkPolicy) Schema(_ context.Context, _ resource.SchemaRequest,
 						MarkdownDescription: "USD allowed per source group per window (0 = uncapped)",
 						Optional:            true,
 						Computed:            true,
+						Default:             float64default.StaticFloat64(0),
 					},
 					"user_cap_usd": schema.Float64Attribute{
 						MarkdownDescription: "USD allowed per user per window (0 = uncapped)",
 						Optional:            true,
 						Computed:            true,
+						Default:             float64default.StaticFloat64(0),
 					},
 					"window_seconds": schema.Int64Attribute{
 						MarkdownDescription: "Reset frequency in seconds (minimum 60 when enabled)",
 						Optional:            true,
 						Computed:            true,
 						Default:             int64default.StaticInt64(2592000),
-						Validators:          []validator.Int64{int64validator.AtLeast(60)},
 					},
 				},
 			},
@@ -200,6 +214,86 @@ func (r *AgentNetworkPolicy) Configure(_ context.Context, req resource.Configure
 		return
 	}
 	r.client = newAgentNetworkClient(client)
+}
+
+// zeroCap reports whether a cap resolves to zero. A null or unknown cap picks up
+// the schema's 0 default, so it counts as zero for validation purposes.
+func zeroCap[T int64 | float64](null, unknown bool, v T) bool {
+	return null || unknown || v == 0
+}
+
+// validateLimit mirrors the server's validatePolicyLimits for one limit block.
+// Every rule applies only when the limit is enabled, matching the API: a
+// disabled limit may hold any values.
+func validateLimit(limit types.Object, name string, capNames [2]string, diags *diag.Diagnostics) {
+	if limit.IsNull() || limit.IsUnknown() {
+		return
+	}
+	attrs := limit.Attributes()
+
+	enabled, _ := attrs["enabled"].(types.Bool)
+	if enabled.IsUnknown() || !enabled.ValueBool() {
+		return
+	}
+
+	if w, ok := attrs["window_seconds"].(types.Int64); ok && !w.IsNull() && !w.IsUnknown() && w.ValueInt64() < 60 {
+		diags.AddAttributeError(
+			path.Root(name).AtName("window_seconds"),
+			"Invalid "+name,
+			fmt.Sprintf("%s.window_seconds must be at least 60 (one minute) when the limit is enabled, got %d.", name, w.ValueInt64()),
+		)
+	}
+
+	// The server requires at least one positive cap and rejects negatives.
+	var groupZero, userZero bool
+	switch g := attrs[capNames[0]].(type) {
+	case types.Int64:
+		u, _ := attrs[capNames[1]].(types.Int64)
+		groupZero, userZero = zeroCap(g.IsNull(), g.IsUnknown(), g.ValueInt64()), zeroCap(u.IsNull(), u.IsUnknown(), u.ValueInt64())
+		checkNonNegativeInt64(g, name, capNames[0], diags)
+		checkNonNegativeInt64(u, name, capNames[1], diags)
+	case types.Float64:
+		u, _ := attrs[capNames[1]].(types.Float64)
+		groupZero, userZero = zeroCap(g.IsNull(), g.IsUnknown(), g.ValueFloat64()), zeroCap(u.IsNull(), u.IsUnknown(), u.ValueFloat64())
+		checkNonNegativeFloat64(g, name, capNames[0], diags)
+		checkNonNegativeFloat64(u, name, capNames[1], diags)
+	}
+
+	if groupZero && userZero {
+		diags.AddAttributeError(
+			path.Root(name),
+			"Invalid "+name,
+			fmt.Sprintf("%s requires %s or %s to be greater than 0 when the limit is enabled. Caps default to 0 (uncapped), so at least one must be set explicitly.",
+				name, capNames[0], capNames[1]),
+		)
+	}
+}
+
+func checkNonNegativeInt64(v types.Int64, block, attrName string, diags *diag.Diagnostics) {
+	if !v.IsNull() && !v.IsUnknown() && v.ValueInt64() < 0 {
+		diags.AddAttributeError(path.Root(block).AtName(attrName), "Invalid "+block,
+			fmt.Sprintf("%s.%s must not be negative.", block, attrName))
+	}
+}
+
+func checkNonNegativeFloat64(v types.Float64, block, attrName string, diags *diag.Diagnostics) {
+	if !v.IsNull() && !v.IsUnknown() && v.ValueFloat64() < 0 {
+		diags.AddAttributeError(path.Root(block).AtName(attrName), "Invalid "+block,
+			fmt.Sprintf("%s.%s must not be negative.", block, attrName))
+	}
+}
+
+// ValidateConfig surfaces the server's limit rules at plan time instead of
+// letting them fail mid-apply.
+func (r *AgentNetworkPolicy) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data AgentNetworkPolicyModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validateLimit(data.TokenLimit, "token_limit", [2]string{"group_cap", "user_cap"}, &resp.Diagnostics)
+	validateLimit(data.BudgetLimit, "budget_limit", [2]string{"group_cap_usd", "user_cap_usd"}, &resp.Diagnostics)
 }
 
 func agentNetworkPolicyAPIToTerraform(ctx context.Context, p *api.AgentNetworkPolicy, data *AgentNetworkPolicyModel) diag.Diagnostics {
@@ -343,10 +437,6 @@ func (r *AgentNetworkPolicy) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if data.Id.ValueString() == "" {
-		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
-		return
-	}
 	apiReq, d := agentNetworkPolicyTerraformToRequest(ctx, &data)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
@@ -370,7 +460,9 @@ func (r *AgentNetworkPolicy) Delete(ctx context.Context, req resource.DeleteRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeletePolicy(ctx, data.Id.ValueString()); err != nil {
+	// A policy already removed out-of-band is not an error: the desired end
+	// state (gone) is satisfied, so let the destroy succeed.
+	if err := r.client.DeletePolicy(ctx, data.Id.ValueString()); err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting Agent Network Policy", err.Error())
 	}
 }
