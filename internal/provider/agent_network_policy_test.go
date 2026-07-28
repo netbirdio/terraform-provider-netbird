@@ -1,11 +1,14 @@
 package provider
 
 import (
+	"context"
+	"reflect"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func tokenLimit(enabled attr.Value, groupCap, userCap, window attr.Value) types.Object {
@@ -140,5 +143,81 @@ func Test_validateLimit_budgetLimit(t *testing.T) {
 				t.Fatalf("Expected error=%v, got error=%v (%v)", c.wantError, got, diags.Errors())
 			}
 		})
+	}
+}
+
+func Test_agentNetworkPolicyAPIToTerraform(t *testing.T) {
+	res := &api.AgentNetworkPolicy{
+		Id:                     "pol1",
+		Name:                   "engineering",
+		Description:            "eng access",
+		Enabled:                true,
+		SourceGroups:           []string{"g1"},
+		DestinationProviderIds: []string{"p1"},
+		GuardrailIds:           []string{"gr1"},
+		Limits: api.AgentNetworkPolicyLimits{
+			TokenLimit:  api.AgentNetworkPolicyTokenLimit{Enabled: true, GroupCap: 100, UserCap: 10, WindowSeconds: 2592000},
+			BudgetLimit: api.AgentNetworkPolicyBudgetLimit{Enabled: true, GroupCapUsd: 500, UserCapUsd: 50, WindowSeconds: 2592000},
+		},
+	}
+
+	expected := AgentNetworkPolicyModel{
+		Id:                     types.StringValue("pol1"),
+		Name:                   types.StringValue("engineering"),
+		Description:            types.StringValue("eng access"),
+		Enabled:                types.BoolValue(true),
+		SourceGroups:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+		DestinationProviderIds: types.ListValueMust(types.StringType, []attr.Value{types.StringValue("p1")}),
+		GuardrailIds:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("gr1")}),
+		TokenLimit:             tokenLimit(types.BoolValue(true), types.Int64Value(100), types.Int64Value(10), types.Int64Value(2592000)),
+		BudgetLimit:            budgetLimit(types.BoolValue(true), types.Float64Value(500), types.Float64Value(50), types.Int64Value(2592000)),
+	}
+
+	var out AgentNetworkPolicyModel
+	if d := agentNetworkPolicyAPIToTerraform(context.Background(), res, &out); d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if !reflect.DeepEqual(out, expected) {
+		t.Fatalf("Expected:\n%#v\nFound:\n%#v", expected, out)
+	}
+}
+
+func Test_agentNetworkPolicyTerraformToRequest(t *testing.T) {
+	data := AgentNetworkPolicyModel{
+		Name:                   types.StringValue("engineering"),
+		Description:            types.StringValue("eng access"),
+		Enabled:                types.BoolValue(true),
+		SourceGroups:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1")}),
+		DestinationProviderIds: types.ListValueMust(types.StringType, []attr.Value{types.StringValue("p1")}),
+		GuardrailIds:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("gr1")}),
+		TokenLimit:             tokenLimit(types.BoolValue(true), types.Int64Value(100), types.Int64Value(10), types.Int64Value(2592000)),
+		BudgetLimit:            budgetLimit(types.BoolValue(true), types.Float64Value(500), types.Float64Value(50), types.Int64Value(2592000)),
+	}
+
+	req, d := agentNetworkPolicyTerraformToRequest(context.Background(), &data)
+	if d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+
+	if req.Name != "engineering" {
+		t.Errorf("Name mismatch: got %q", req.Name)
+	}
+	if len(req.SourceGroups) != 1 || req.SourceGroups[0] != "g1" {
+		t.Errorf("SourceGroups mismatch: got %v", req.SourceGroups)
+	}
+	if len(req.DestinationProviderIds) != 1 || req.DestinationProviderIds[0] != "p1" {
+		t.Errorf("DestinationProviderIds mismatch: got %v", req.DestinationProviderIds)
+	}
+	if req.GuardrailIds == nil || len(*req.GuardrailIds) != 1 {
+		t.Errorf("GuardrailIds mismatch: got %v", req.GuardrailIds)
+	}
+	if req.Limits == nil {
+		t.Fatal("expected limits to be sent")
+	}
+	if !req.Limits.TokenLimit.Enabled || req.Limits.TokenLimit.GroupCap != 100 {
+		t.Errorf("TokenLimit mismatch: %+v", req.Limits.TokenLimit)
+	}
+	if !req.Limits.BudgetLimit.Enabled || req.Limits.BudgetLimit.GroupCapUsd != 500 {
+		t.Errorf("BudgetLimit mismatch: %+v", req.Limits.BudgetLimit)
 	}
 }
