@@ -135,6 +135,30 @@ func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasourc
 		return
 	}
 
+	// A known id identifies the record uniquely, so fetch it directly instead of
+	// listing everything and scanning. A name filter given alongside must agree.
+	if !data.Id.IsNull() && !data.Id.IsUnknown() {
+		found, err := d.client.GetProvider(ctx, data.Id.ValueString())
+		if err != nil {
+			if netbird.IsNotFound(err) {
+				resp.Diagnostics.AddError("No Match", "No Agent Network Provider matched the given filters")
+				return
+			}
+			resp.Diagnostics.AddError("Error reading Agent Network Provider", err.Error())
+			return
+		}
+		if matchString(found.Name, data.Name) < 0 {
+			resp.Diagnostics.AddError("No Match", "No Agent Network Provider matched the given filters")
+			return
+		}
+		resp.Diagnostics.Append(agentNetworkProviderAPIToTerraform(ctx, found, &data)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		return
+	}
+
 	providers, err := d.client.ListProviders(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Agent Network Providers", err.Error())

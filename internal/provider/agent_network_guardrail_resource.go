@@ -239,10 +239,6 @@ func (r *AgentNetworkGuardrail) Update(ctx context.Context, req resource.UpdateR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if data.Id.ValueString() == "" {
-		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
-		return
-	}
 	apiReq, d := agentNetworkGuardrailTerraformToRequest(ctx, &data)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
@@ -266,7 +262,9 @@ func (r *AgentNetworkGuardrail) Delete(ctx context.Context, req resource.DeleteR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeleteGuardrail(ctx, data.Id.ValueString()); err != nil {
+	// A guardrail already removed out-of-band is not an error: the desired end
+	// state (gone) is satisfied, so let the destroy succeed.
+	if err := r.client.DeleteGuardrail(ctx, data.Id.ValueString()); err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting Agent Network Guardrail", err.Error())
 	}
 }

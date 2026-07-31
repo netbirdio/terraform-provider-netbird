@@ -96,6 +96,30 @@ func (d *AgentNetworkGuardrailDataSource) Read(ctx context.Context, req datasour
 		return
 	}
 
+	// A known id identifies the record uniquely, so fetch it directly instead of
+	// listing everything and scanning. A name filter given alongside must agree.
+	if !data.Id.IsNull() && !data.Id.IsUnknown() {
+		found, err := d.client.GetGuardrail(ctx, data.Id.ValueString())
+		if err != nil {
+			if netbird.IsNotFound(err) {
+				resp.Diagnostics.AddError("No Match", "No Agent Network Guardrail matched the given filters")
+				return
+			}
+			resp.Diagnostics.AddError("Error reading Agent Network Guardrail", err.Error())
+			return
+		}
+		if matchString(found.Name, data.Name) < 0 {
+			resp.Diagnostics.AddError("No Match", "No Agent Network Guardrail matched the given filters")
+			return
+		}
+		resp.Diagnostics.Append(agentNetworkGuardrailAPIToTerraform(ctx, found, &data)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		return
+	}
+
 	guardrails, err := d.client.ListGuardrails(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Error listing Agent Network Guardrails", err.Error())
