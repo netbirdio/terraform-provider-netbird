@@ -160,7 +160,11 @@ func (r *AgentNetworkSettings) applySettings(ctx context.Context, data *AgentNet
 		if netbird.IsNotFound(err) {
 			diags.AddError(
 				"Agent Network not bootstrapped",
-				"The account has no Agent Network settings row yet. It is created when the first Agent Network provider is created with bootstrap_cluster set.",
+				"The account has no Agent Network settings row yet, so there is nothing to configure. "+
+					"The row is created when an Agent Network provider is created with `bootstrap_cluster` set — "+
+					"creating a provider without it does not bootstrap the account. Set `bootstrap_cluster` on a "+
+					"netbird_agent_network_provider resource and re-apply; the `netbird_reverse_proxy_clusters` "+
+					"data source lists valid cluster addresses.",
 			)
 			return
 		}
