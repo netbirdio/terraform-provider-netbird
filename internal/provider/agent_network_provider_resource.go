@@ -13,6 +13,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -42,6 +44,8 @@ type AgentNetworkProviderModel struct {
 	SkipTlsVerification  types.Bool   `tfsdk:"skip_tls_verification"`
 	IdentityHeaderUserId types.String `tfsdk:"identity_header_user_id"`
 	IdentityHeaderGroups types.String `tfsdk:"identity_header_groups"`
+	MetadataDisabled     types.Bool   `tfsdk:"metadata_disabled"`
+	ExtraValues          types.Map    `tfsdk:"extra_values"`
 	Models               types.List   `tfsdk:"models"`
 }
 
@@ -118,6 +122,19 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"metadata_disabled": schema.BoolAttribute{
+				MarkdownDescription: "Suppress identity-metadata injection for this provider (e.g. the AWS Bedrock request-metadata header). Omit to leave the stored value unchanged.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"extra_values": schema.MapAttribute{
+				MarkdownDescription: "Catalog-specific extra header values (e.g. `x-portkey-config` for Portkey gateways). Omit to leave the stored values unchanged. Empty values are dropped by the API.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				PlanModifiers:       []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
+			},
 			"models": schema.ListNestedAttribute{
 				MarkdownDescription: "Models exposed through this endpoint with per-1k token prices. Empty means all catalog models at catalog prices.",
 				Optional:            true,
@@ -156,6 +173,18 @@ func (r *AgentNetworkProvider) Configure(_ context.Context, req resource.Configu
 	r.client = newAgentNetworkClient(client)
 }
 
+// preserveConfiguredEmptyString keeps an explicitly-configured empty string
+// intact when the API omits the field. The identity-header fields treat "" as
+// "disable stamping for this dimension", but the server omits them from
+// responses when empty, which would turn a configured "" into null and trip
+// Terraform's "provider produced inconsistent result after apply" check.
+func preserveConfiguredEmptyString(apiVal *string, configured types.String) types.String {
+	if apiVal == nil && !configured.IsNull() && !configured.IsUnknown() && configured.ValueString() == "" {
+		return types.StringValue("")
+	}
+	return types.StringPointerValue(apiVal)
+}
+
 func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetworkProvider, data *AgentNetworkProviderModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(p.Id)
@@ -164,8 +193,17 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	data.UpstreamUrl = types.StringValue(p.UpstreamUrl)
 	data.Enabled = types.BoolValue(p.Enabled)
 	data.SkipTlsVerification = types.BoolValue(p.SkipTlsVerification)
-	data.IdentityHeaderUserId = types.StringPointerValue(p.IdentityHeaderUserId)
-	data.IdentityHeaderGroups = types.StringPointerValue(p.IdentityHeaderGroups)
+	data.IdentityHeaderUserId = preserveConfiguredEmptyString(p.IdentityHeaderUserId, data.IdentityHeaderUserId)
+	data.IdentityHeaderGroups = preserveConfiguredEmptyString(p.IdentityHeaderGroups, data.IdentityHeaderGroups)
+	data.MetadataDisabled = types.BoolValue(p.MetadataDisabled)
+
+	if p.ExtraValues != nil {
+		m, d := types.MapValueFrom(ctx, types.StringType, *p.ExtraValues)
+		ret.Append(d...)
+		data.ExtraValues = m
+	} else {
+		data.ExtraValues = types.MapNull(types.StringType)
+	}
 
 	modelObjs := make([]AgentNetworkProviderModelItem, 0, len(p.Models))
 	for _, m := range p.Models {
@@ -201,6 +239,20 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 	}
 	if !data.IdentityHeaderGroups.IsNull() && !data.IdentityHeaderGroups.IsUnknown() {
 		req.IdentityHeaderGroups = data.IdentityHeaderGroups.ValueStringPointer()
+	}
+	// The server rebuilds the provider row from the request on update, carrying
+	// over only the API key and session keys. Anything omitted here is reset, so
+	// these must be sent whenever their value is known (UseStateForUnknown makes
+	// the prior value known on update) or they would be silently wiped.
+	if !data.MetadataDisabled.IsNull() && !data.MetadataDisabled.IsUnknown() {
+		req.MetadataDisabled = data.MetadataDisabled.ValueBoolPointer()
+	}
+	if !data.ExtraValues.IsNull() && !data.ExtraValues.IsUnknown() {
+		extra := make(map[string]string, len(data.ExtraValues.Elements()))
+		ret.Append(data.ExtraValues.ElementsAs(ctx, &extra, false)...)
+		if !ret.HasError() {
+			req.ExtraValues = &extra
+		}
 	}
 	if !data.Models.IsNull() && !data.Models.IsUnknown() {
 		var elems []AgentNetworkProviderModelItem

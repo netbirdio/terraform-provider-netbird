@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -64,27 +66,28 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"enable_log_collection": schema.BoolAttribute{
-				MarkdownDescription: "Collect per-request access-log entries for this account",
+				MarkdownDescription: "Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.",
 				Optional:            true,
 				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"enable_prompt_collection": schema.BoolAttribute{
-				MarkdownDescription: "Master switch for request/response prompt capture (effective only when a policy guardrail also enables it)",
+				MarkdownDescription: "Master switch for request/response prompt capture (effective only when a policy guardrail also enables it). Omit to leave the account's current value unchanged.",
 				Optional:            true,
 				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"redact_pii": schema.BoolAttribute{
-				MarkdownDescription: "Redact PII from captured prompts",
+				MarkdownDescription: "Redact PII from captured prompts. Omit to leave the account's current value unchanged.",
 				Optional:            true,
 				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"access_log_retention_days": schema.Int64Attribute{
-				MarkdownDescription: "Days to retain full access-log rows (0 or less = keep indefinitely)",
+				MarkdownDescription: "Days to retain full access-log rows (0 or less = keep indefinitely). Omit to leave the account's current value unchanged.",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 		},
 	}
@@ -117,36 +120,76 @@ func agentNetworkSettingsAPIToTerraform(s *api.AgentNetworkSettings, data *Agent
 	}
 }
 
-// Create reads the current settings and stores them (singleton — no actual create).
+// settingsUpdateRequest builds an UpdateSettings request that starts from the
+// current server-side values and overrides only the fields the plan explicitly
+// set. The server replaces every mutable field on PUT, so without this merge an
+// omitted attribute would reset the account's value (turning off log/prompt
+// collection, or dropping access-log retention) instead of leaving it alone.
+func settingsUpdateRequest(data *AgentNetworkSettingsModel, current *api.AgentNetworkSettings) api.AgentNetworkSettingsRequest {
+	req := api.AgentNetworkSettingsRequest{
+		EnableLogCollection:    current.EnableLogCollection,
+		EnablePromptCollection: current.EnablePromptCollection,
+		RedactPii:              current.RedactPii,
+	}
+	if current.AccessLogRetentionDays != nil {
+		v := *current.AccessLogRetentionDays
+		req.AccessLogRetentionDays = &v
+	}
+
+	if !data.EnableLogCollection.IsNull() && !data.EnableLogCollection.IsUnknown() {
+		req.EnableLogCollection = data.EnableLogCollection.ValueBool()
+	}
+	if !data.EnablePromptCollection.IsNull() && !data.EnablePromptCollection.IsUnknown() {
+		req.EnablePromptCollection = data.EnablePromptCollection.ValueBool()
+	}
+	if !data.RedactPii.IsNull() && !data.RedactPii.IsUnknown() {
+		req.RedactPii = data.RedactPii.ValueBool()
+	}
+	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
+		v := int(data.AccessLogRetentionDays.ValueInt64())
+		req.AccessLogRetentionDays = &v
+	}
+	return req
+}
+
+// applySettings reads the current server-managed singleton, merges the planned
+// overrides onto it, and PUTs the result.
+func (r *AgentNetworkSettings) applySettings(ctx context.Context, data *AgentNetworkSettingsModel, diags *diag.Diagnostics) {
+	current, err := r.client.GetSettings(ctx)
+	if err != nil {
+		if netbird.IsNotFound(err) {
+			diags.AddError(
+				"Agent Network not bootstrapped",
+				"The account has no Agent Network settings row yet. It is created when the first Agent Network provider is created with bootstrap_cluster set.",
+			)
+			return
+		}
+		diags.AddError("Error reading Agent Network Settings", err.Error())
+		return
+	}
+
+	s, err := r.client.UpdateSettings(ctx, settingsUpdateRequest(data, current))
+	if err != nil {
+		diags.AddError("Error applying Agent Network Settings", err.Error())
+		return
+	}
+
+	agentNetworkSettingsAPIToTerraform(s, data)
+}
+
+// Create adopts the server-managed settings singleton, overriding only the
+// fields the configuration sets (singleton — no actual create).
 func (r *AgentNetworkSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AgentNetworkSettingsModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiReq := api.AgentNetworkSettingsRequest{
-		EnableLogCollection:    data.EnableLogCollection.ValueBool(),
-		EnablePromptCollection: data.EnablePromptCollection.ValueBool(),
-		RedactPii:              data.RedactPii.ValueBool(),
-	}
-	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
-		v := int(data.AccessLogRetentionDays.ValueInt64())
-		apiReq.AccessLogRetentionDays = &v
-	}
-	s, err := r.client.UpdateSettings(ctx, apiReq)
-	if err != nil {
-		if netbird.IsNotFound(err) {
-			resp.Diagnostics.AddError(
-				"Agent Network not bootstrapped",
-				"Settings cannot be applied before the first Agent Network provider is created. Create a netbird_agent_network_provider resource first.",
-			)
-			return
-		}
-		resp.Diagnostics.AddError("Error applying Agent Network Settings", err.Error())
+
+	r.applySettings(ctx, &data, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	agentNetworkSettingsAPIToTerraform(s, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -178,29 +221,10 @@ func (r *AgentNetworkSettings) Update(ctx context.Context, req resource.UpdateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiReq := api.AgentNetworkSettingsRequest{
-		EnableLogCollection:    data.EnableLogCollection.ValueBool(),
-		EnablePromptCollection: data.EnablePromptCollection.ValueBool(),
-		RedactPii:              data.RedactPii.ValueBool(),
-	}
-	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
-		v := int(data.AccessLogRetentionDays.ValueInt64())
-		apiReq.AccessLogRetentionDays = &v
-	}
-	s, err := r.client.UpdateSettings(ctx, apiReq)
-	if err != nil {
-		if netbird.IsNotFound(err) {
-			resp.Diagnostics.AddError(
-				"Agent Network not bootstrapped",
-				"Settings cannot be applied before the first Agent Network provider is created. Create a netbird_agent_network_provider resource first.",
-			)
-			return
-		}
-		resp.Diagnostics.AddError("Error updating Agent Network Settings", err.Error())
+	r.applySettings(ctx, &data, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	agentNetworkSettingsAPIToTerraform(s, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

@@ -48,8 +48,10 @@ resource "netbird_agent_network_provider" "openai" {
 
 - `bootstrap_cluster` (String) Proxy cluster used when creating the first provider. Ignored on subsequent creates and all updates.
 - `enabled` (Boolean) Whether the provider is enabled
+- `extra_values` (Map of String) Catalog-specific extra header values (e.g. `x-portkey-config` for Portkey gateways). Omit to leave the stored values unchanged. Empty values are dropped by the API.
 - `identity_header_groups` (String) Wire header name the proxy stamps with the caller's NetBird groups as a comma-separated list
 - `identity_header_user_id` (String) Wire header name the proxy stamps with the caller's display identity
+- `metadata_disabled` (Boolean) Suppress identity-metadata injection for this provider (e.g. the AWS Bedrock request-metadata header). Omit to leave the stored value unchanged.
 - `models` (Attributes List) Models exposed through this endpoint with per-1k token prices. Empty means all catalog models at catalog prices. (see [below for nested schema](#nestedatt--models))
 - `skip_tls_verification` (Boolean) Skip upstream TLS certificate verification (for self-hosted gateways with private certificates)
 
