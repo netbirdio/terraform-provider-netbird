@@ -21,7 +21,7 @@ func NewAgentNetworkProviderDataSource() datasource.DataSource {
 }
 
 type AgentNetworkProviderDataSource struct {
-	client *agentNetworkClient
+	client *netbird.AgentNetworkAPI
 }
 
 func (d *AgentNetworkProviderDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -118,7 +118,7 @@ func (d *AgentNetworkProviderDataSource) Configure(_ context.Context, req dataso
 			fmt.Sprintf("Expected *netbird.Client, got: %T.", req.ProviderData))
 		return
 	}
-	d.client = newAgentNetworkClient(client)
+	d.client = client.AgentNetwork
 }
 
 func (d *AgentNetworkProviderDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

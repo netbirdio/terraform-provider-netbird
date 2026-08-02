@@ -3,12 +3,12 @@
 page_title: "netbird_agent_network_settings Resource - netbird"
 subcategory: ""
 description: |-
-  Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Cluster and subdomain are auto-assigned and immutable.
+  Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting cluster bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.
 ---
 
 # netbird_agent_network_settings (Resource)
 
-Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Cluster and subdomain are auto-assigned and immutable.
+Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting `cluster` bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.
 
 ## Example Usage
 
@@ -27,12 +27,12 @@ resource "netbird_agent_network_settings" "main" {
 ### Optional
 
 - `access_log_retention_days` (Number) Days to retain full access-log rows (0 or less = keep indefinitely). Omit to leave the account's current value unchanged.
+- `cluster` (String) Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned; omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.
 - `enable_log_collection` (Boolean) Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.
 - `enable_prompt_collection` (Boolean) Master switch for request/response prompt capture (effective only when a policy guardrail also enables it). Omit to leave the account's current value unchanged.
 - `redact_pii` (Boolean) Redact PII from captured prompts. Omit to leave the account's current value unchanged.
 
 ### Read-Only
 
-- `cluster` (String) Proxy cluster address fronting this account's agent-network endpoint (read-only, assigned on first provider create)
 - `endpoint` (String) Full agent-network endpoint hostname (`<subdomain>.<cluster>`), read-only
 - `subdomain` (String) DNS-safe subdomain prefix (read-only)

@@ -26,7 +26,7 @@ func NewAgentNetworkSettings() resource.Resource {
 }
 
 type AgentNetworkSettings struct {
-	client *agentNetworkClient
+	client *netbird.AgentNetworkAPI
 }
 
 // AgentNetworkSettingsModel mirrors the mutable + read-only fields of AgentNetworkSettings.
@@ -48,12 +48,16 @@ func (r *AgentNetworkSettings) Metadata(_ context.Context, req resource.Metadata
 
 func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Cluster and subdomain are auto-assigned and immutable.",
+		MarkdownDescription: "Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting `cluster` bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.",
 		Attributes: map[string]schema.Attribute{
 			"cluster": schema.StringAttribute{
-				MarkdownDescription: "Proxy cluster address fronting this account's agent-network endpoint (read-only, assigned on first provider create)",
+				MarkdownDescription: "Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned; omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.",
+				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"subdomain": schema.StringAttribute{
 				MarkdownDescription: "DNS-safe subdomain prefix (read-only)",
@@ -103,7 +107,7 @@ func (r *AgentNetworkSettings) Configure(_ context.Context, req resource.Configu
 			fmt.Sprintf("Expected *netbird.Client, got: %T.", req.ProviderData))
 		return
 	}
-	r.client = newAgentNetworkClient(client)
+	r.client = client.AgentNetwork
 }
 
 func agentNetworkSettingsAPIToTerraform(s *api.AgentNetworkSettings, data *AgentNetworkSettingsModel) {
@@ -153,26 +157,41 @@ func settingsUpdateRequest(data *AgentNetworkSettingsModel, current *api.AgentNe
 }
 
 // applySettings reads the current server-managed singleton, merges the planned
-// overrides onto it, and PUTs the result.
+// overrides onto it, and PUTs the result. When the account has no settings
+// row yet, a configured cluster bootstraps it in the same call.
 func (r *AgentNetworkSettings) applySettings(ctx context.Context, data *AgentNetworkSettingsModel, diags *diag.Diagnostics) {
 	current, err := r.client.GetSettings(ctx)
 	if err != nil {
-		if netbird.IsNotFound(err) {
-			diags.AddError(
-				"Agent Network not bootstrapped",
-				"The account has no Agent Network settings row yet, so there is nothing to configure. "+
-					"The row is created when an Agent Network provider is created with `bootstrap_cluster` set — "+
-					"creating a provider without it does not bootstrap the account. Set `bootstrap_cluster` on a "+
-					"netbird_agent_network_provider resource and re-apply; the `netbird_reverse_proxy_clusters` "+
-					"data source lists valid cluster addresses.",
-			)
+		if !netbird.IsNotFound(err) {
+			diags.AddError("Error reading Agent Network Settings", err.Error())
 			return
 		}
-		diags.AddError("Error reading Agent Network Settings", err.Error())
+		// Management servers predating the defaults response answer the
+		// unbootstrapped state with a null body (translated to not-found by
+		// the client); fall back to the same defaults those servers apply at
+		// bootstrap so the merge below has a base either way.
+		retention := 30
+		current = &api.AgentNetworkSettings{EnableLogCollection: true, AccessLogRetentionDays: &retention}
+	}
+
+	apiReq := settingsUpdateRequest(data, current)
+
+	clusterConfigured := !data.Cluster.IsNull() && !data.Cluster.IsUnknown() && data.Cluster.ValueString() != ""
+	if clusterConfigured {
+		apiReq.Cluster = data.Cluster.ValueStringPointer()
+	}
+	// An empty endpoint is the server's not-bootstrapped signal.
+	if current.Endpoint == "" && !clusterConfigured {
+		diags.AddError(
+			"Agent Network not bootstrapped",
+			"The account has no Agent Network settings row yet. Set `cluster` on this resource to bootstrap it — "+
+				"the `netbird_reverse_proxy_clusters` data source lists valid cluster addresses — or create an "+
+				"Agent Network provider with `bootstrap_cluster` set and re-apply.",
+		)
 		return
 	}
 
-	s, err := r.client.UpdateSettings(ctx, settingsUpdateRequest(data, current))
+	s, err := r.client.UpdateSettings(ctx, apiReq)
 	if err != nil {
 		diags.AddError("Error applying Agent Network Settings", err.Error())
 		return
@@ -211,6 +230,12 @@ func (r *AgentNetworkSettings) Read(ctx context.Context, req resource.ReadReques
 			return
 		}
 		resp.Diagnostics.AddError("Error reading Agent Network Settings", err.Error())
+		return
+	}
+	// An empty endpoint is the server's not-bootstrapped signal: the row this
+	// resource manages does not exist (yet), so drop it from state.
+	if s.Endpoint == "" {
+		resp.State.RemoveResource(ctx)
 		return
 	}
 

@@ -30,13 +30,15 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				},
 			},
 			expected: AgentNetworkProviderModel{
-				Id:                  types.StringValue("p1"),
-				ProviderId:          types.StringValue("openai_api"),
-				Name:                types.StringValue("OpenAI"),
-				UpstreamUrl:         types.StringValue("https://api.openai.com"),
-				Enabled:             types.BoolValue(true),
-				SkipTlsVerification: types.BoolValue(false),
-				MetadataDisabled:    types.BoolValue(true),
+				Id:                   types.StringValue("p1"),
+				ProviderId:           types.StringValue("openai_api"),
+				Name:                 types.StringValue("OpenAI"),
+				UpstreamUrl:          types.StringValue("https://api.openai.com"),
+				Enabled:              types.BoolValue(true),
+				SkipTlsVerification:  types.BoolValue(false),
+				IdentityHeaderUserId: types.StringValue(""),
+				IdentityHeaderGroups: types.StringValue(""),
+				MetadataDisabled:     types.BoolValue(true),
 				ExtraValues: types.MapValueMust(types.StringType, map[string]attr.Value{
 					"x-portkey-config": types.StringValue("pc-abc123"),
 				}),
@@ -59,15 +61,17 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				UpstreamUrl: "https://example.com",
 			},
 			expected: AgentNetworkProviderModel{
-				Id:                  types.StringValue("p2"),
-				ProviderId:          types.StringValue("custom"),
-				Name:                types.StringValue("Custom"),
-				UpstreamUrl:         types.StringValue("https://example.com"),
-				Enabled:             types.BoolValue(false),
-				MetadataDisabled:    types.BoolValue(false),
-				SkipTlsVerification: types.BoolValue(false),
-				ExtraValues:         types.MapNull(types.StringType),
-				Models:              types.ListValueMust(AgentNetworkProviderModelItem{}.TFType(), []attr.Value{}),
+				Id:                   types.StringValue("p2"),
+				ProviderId:           types.StringValue("custom"),
+				Name:                 types.StringValue("Custom"),
+				UpstreamUrl:          types.StringValue("https://example.com"),
+				Enabled:              types.BoolValue(false),
+				IdentityHeaderUserId: types.StringValue(""),
+				IdentityHeaderGroups: types.StringValue(""),
+				MetadataDisabled:     types.BoolValue(false),
+				SkipTlsVerification:  types.BoolValue(false),
+				ExtraValues:          types.MapNull(types.StringType),
+				Models:               types.ListValueMust(AgentNetworkProviderModelItem{}.TFType(), []attr.Value{}),
 			},
 		},
 	}
@@ -85,35 +89,33 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 	}
 }
 
-// An empty identity-header value means "disable stamping for this dimension",
-// but the API omits empty values from responses. Without preserving the
-// configured "" the apply would fail with "provider produced inconsistent
-// result after apply ... was cty.StringVal(\"\"), but now null".
-func Test_agentNetworkProviderAPIToTerraform_preservesEmptyIdentityHeaders(t *testing.T) {
+// The identity-header fields are always present in API responses ("" means
+// stamping disabled), so an explicitly cleared header round-trips as "" and
+// the model maps the wire value directly — the attributes are Computed, so a
+// concrete "" is also valid when the configuration omits them.
+func Test_agentNetworkProviderAPIToTerraform_identityHeadersAlwaysConcrete(t *testing.T) {
+	res := &api.AgentNetworkProvider{Id: "p1", ProviderId: "custom", Name: "n", UpstreamUrl: "u"}
+
 	out := AgentNetworkProviderModel{
 		IdentityHeaderUserId: types.StringValue(""),
 		IdentityHeaderGroups: types.StringValue(""),
 	}
-
-	res := &api.AgentNetworkProvider{Id: "p1", ProviderId: "custom", Name: "n", UpstreamUrl: "u"}
 	if d := agentNetworkProviderAPIToTerraform(context.Background(), res, &out); d.HasError() {
 		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
 	}
-
 	if out.IdentityHeaderUserId != types.StringValue("") {
-		t.Errorf("identity_header_user_id: expected preserved \"\", got %#v", out.IdentityHeaderUserId)
+		t.Errorf("identity_header_user_id: expected \"\", got %#v", out.IdentityHeaderUserId)
 	}
 	if out.IdentityHeaderGroups != types.StringValue("") {
-		t.Errorf("identity_header_groups: expected preserved \"\", got %#v", out.IdentityHeaderGroups)
+		t.Errorf("identity_header_groups: expected \"\", got %#v", out.IdentityHeaderGroups)
 	}
 
-	// An unset (null) header must stay null rather than becoming "".
-	unset := AgentNetworkProviderModel{}
-	if d := agentNetworkProviderAPIToTerraform(context.Background(), res, &unset); d.HasError() {
+	res.IdentityHeaderUserId = "x-bf-dim-netbird_user_id"
+	if d := agentNetworkProviderAPIToTerraform(context.Background(), res, &out); d.HasError() {
 		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
 	}
-	if !unset.IdentityHeaderUserId.IsNull() {
-		t.Errorf("unset identity_header_user_id: expected null, got %#v", unset.IdentityHeaderUserId)
+	if out.IdentityHeaderUserId != types.StringValue("x-bf-dim-netbird_user_id") {
+		t.Errorf("identity_header_user_id: expected configured header, got %#v", out.IdentityHeaderUserId)
 	}
 }
 

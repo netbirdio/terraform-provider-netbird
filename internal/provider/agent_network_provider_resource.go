@@ -30,7 +30,7 @@ func NewAgentNetworkProvider() resource.Resource {
 }
 
 type AgentNetworkProvider struct {
-	client *agentNetworkClient
+	client *netbird.AgentNetworkAPI
 }
 
 type AgentNetworkProviderModel struct {
@@ -178,19 +178,7 @@ func (r *AgentNetworkProvider) Configure(_ context.Context, req resource.Configu
 			fmt.Sprintf("Expected *netbird.Client, got: %T.", req.ProviderData))
 		return
 	}
-	r.client = newAgentNetworkClient(client)
-}
-
-// preserveConfiguredEmptyString keeps an explicitly-configured empty string
-// intact when the API omits the field. The identity-header fields treat "" as
-// "disable stamping for this dimension", but the server omits them from
-// responses when empty, which would turn a configured "" into null and trip
-// Terraform's "provider produced inconsistent result after apply" check.
-func preserveConfiguredEmptyString(apiVal *string, configured types.String) types.String {
-	if apiVal == nil && !configured.IsNull() && !configured.IsUnknown() && configured.ValueString() == "" {
-		return types.StringValue("")
-	}
-	return types.StringPointerValue(apiVal)
+	r.client = client.AgentNetwork
 }
 
 func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetworkProvider, data *AgentNetworkProviderModel) diag.Diagnostics {
@@ -201,8 +189,8 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	data.UpstreamUrl = types.StringValue(p.UpstreamUrl)
 	data.Enabled = types.BoolValue(p.Enabled)
 	data.SkipTlsVerification = types.BoolValue(p.SkipTlsVerification)
-	data.IdentityHeaderUserId = preserveConfiguredEmptyString(p.IdentityHeaderUserId, data.IdentityHeaderUserId)
-	data.IdentityHeaderGroups = preserveConfiguredEmptyString(p.IdentityHeaderGroups, data.IdentityHeaderGroups)
+	data.IdentityHeaderUserId = types.StringValue(p.IdentityHeaderUserId)
+	data.IdentityHeaderGroups = types.StringValue(p.IdentityHeaderGroups)
 	data.MetadataDisabled = types.BoolValue(p.MetadataDisabled)
 
 	if p.ExtraValues != nil {
@@ -315,18 +303,24 @@ func (r *AgentNetworkProvider) warnIfAccountUnbootstrapped(ctx context.Context, 
 	if !data.BootstrapCluster.IsNull() && !data.BootstrapCluster.IsUnknown() && data.BootstrapCluster.ValueString() != "" {
 		return
 	}
-	if _, err := r.client.GetSettings(ctx); err == nil || !netbird.IsNotFound(err) {
-		// Bootstrapped already, or the check itself failed — either way this is
-		// advisory only and must never fail the apply.
+	settings, err := r.client.GetSettings(ctx)
+	if err != nil && !netbird.IsNotFound(err) {
+		// The check itself failed — this is advisory only and must never
+		// fail the apply.
+		return
+	}
+	// Current servers answer the unbootstrapped state with the defaults and
+	// an empty endpoint; older ones with a null body, which the client
+	// translates to not-found.
+	if err == nil && settings.Endpoint != "" {
 		return
 	}
 	diags.AddWarning(
 		"Agent Network account not bootstrapped",
 		"This provider was created but the account has no Agent Network settings row, so there is no "+
-			"endpoint for agents to call and netbird_agent_network_settings cannot be managed. The row is "+
-			"created only when a provider is created with `bootstrap_cluster` set. Set `bootstrap_cluster` "+
-			"on an Agent Network provider to bootstrap the account; the `netbird_reverse_proxy_clusters` "+
-			"data source lists valid cluster addresses.",
+			"endpoint for agents to call. Set `bootstrap_cluster` on an Agent Network provider or `cluster` "+
+			"on a netbird_agent_network_settings resource to bootstrap the account; the "+
+			"`netbird_reverse_proxy_clusters` data source lists valid cluster addresses.",
 	)
 }
 

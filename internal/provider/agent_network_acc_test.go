@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
@@ -18,8 +19,8 @@ import (
 // string verbatim without validating it, so a placeholder is enough.
 const testBootstrapCluster = "acc.test.invalid"
 
-func testAgentNetworkClient() *agentNetworkClient {
-	return newAgentNetworkClient(testClient())
+func testAgentNetworkClient() *netbird.AgentNetworkAPI {
+	return testClient().AgentNetwork
 }
 
 func testGetProvider(id string) (*api.AgentNetworkProvider, error) {
