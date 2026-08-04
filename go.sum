@@ -345,8 +345,8 @@ github.com/netbirdio/dex/api/v2 v2.0.0-20260512110716-8d70ad8647c1 h1:neE7z+FPUk
 github.com/netbirdio/dex/api/v2 v2.0.0-20260512110716-8d70ad8647c1/go.mod h1:awuTyT29CYALpEyET0S307EgNlPWrc7fFKRAyhsO45M=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20260416123949-2355d972be42 h1:F3zS5fT9xzD1OFLfcdAE+3FfyiwjGukF1hvj0jErgs8=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20260416123949-2355d972be42/go.mod h1:n47r67ZSPgwSmT/Z1o48JjZQW9YJ6m/6Bd/uAXkL3Pg=
-github.com/netbirdio/netbird v0.75.1 h1:p87fffEyhCpClHouFP89fMIdnm/3rQVtv3PhRjBUwJM=
-github.com/netbirdio/netbird v0.75.1/go.mod h1:j2L9NH3w7y9Ut4Z3tXf+teyt2mBnoWcsyW9FyFYB21w=
+github.com/netbirdio/netbird v0.76.1 h1:MrpqFYtmcrcTb02NQS4ZcBYdyJltbzOrh4LRk6isVXQ=
+github.com/netbirdio/netbird v0.76.1/go.mod h1:v1hGAJhN/jMM6GgsnrwWHGpsYnxdu4SipVJeL3OVNfk=
 github.com/oapi-codegen/nullable v1.1.0 h1:eAh8JVc5430VtYVnq00Hrbpag9PFRGWLjxR1/3KntMs=
 github.com/oapi-codegen/nullable v1.1.0/go.mod h1:KUZ3vUzkmEKY90ksAmit2+5juDIhIZhfDl+0PwOQlFY=
 github.com/oapi-codegen/runtime v1.6.0 h1:7Xx+GlueD6nRuyKoCPzL434Jfi3BetbiJOrzCHp/VPU=
