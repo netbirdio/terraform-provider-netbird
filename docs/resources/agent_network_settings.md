@@ -27,7 +27,7 @@ resource "netbird_agent_network_settings" "main" {
 ### Optional
 
 - `access_log_retention_days` (Number) Days to retain full access-log rows (0 or less = keep indefinitely). Omit to leave the account's current value unchanged.
-- `cluster` (String) Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned; omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.
+- `cluster` (String) Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned: changing it is rejected at plan time, since the settings row cannot be deleted or re-created on another cluster. Omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.
 - `enable_log_collection` (Boolean) Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.
 - `enable_prompt_collection` (Boolean) Master switch for request/response prompt capture (effective only when a policy guardrail also enables it). Omit to leave the account's current value unchanged.
 - `redact_pii` (Boolean) Redact PII from captured prompts. Omit to leave the account's current value unchanged.

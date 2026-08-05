@@ -7,19 +7,25 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
-var _ resource.Resource = &AgentNetworkSettings{}
+var (
+	_ resource.Resource               = &AgentNetworkSettings{}
+	_ resource.ResourceWithModifyPlan = &AgentNetworkSettings{}
+)
 
 func NewAgentNetworkSettings() resource.Resource {
 	return &AgentNetworkSettings{}
@@ -51,11 +57,11 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 		MarkdownDescription: "Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting `cluster` bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.",
 		Attributes: map[string]schema.Attribute{
 			"cluster": schema.StringAttribute{
-				MarkdownDescription: "Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned; omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.",
+				MarkdownDescription: "Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned: changing it is rejected at plan time, since the settings row cannot be deleted or re-created on another cluster. Omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.",
 				Optional:            true,
 				Computed:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
@@ -94,6 +100,49 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 		},
+	}
+}
+
+// clusterChangeForbidden reports whether the plan attempts to change an
+// already-assigned cluster. Unknown or empty values never trip it: creates
+// (no assigned cluster yet), interpolated values (unknown until apply), and
+// omitted attributes (the plan copies state) are all legitimate.
+func clusterChangeForbidden(state, plan types.String) bool {
+	if state.IsNull() || state.IsUnknown() || state.ValueString() == "" {
+		return false
+	}
+	if plan.IsNull() || plan.IsUnknown() || plan.ValueString() == "" {
+		return false
+	}
+	return plan.ValueString() != state.ValueString()
+}
+
+// ModifyPlan rejects changes to an already-assigned cluster at plan time. The
+// server pins the cluster forever (there is no settings delete), so neither
+// an in-place update nor a replace can ever satisfy such a plan — failing
+// early beats a half-executed apply.
+func (r *AgentNetworkSettings) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Nothing to guard on destroy (null plan) or create (null state — the
+	// bootstrap path may pin any cluster).
+	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
+		return
+	}
+
+	var stateCluster, planCluster types.String
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("cluster"), &stateCluster)...)
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("cluster"), &planCluster)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if clusterChangeForbidden(stateCluster, planCluster) {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("cluster"),
+			"Cluster is immutable once assigned",
+			fmt.Sprintf("The account's Agent Network cluster is pinned to %q and cannot be changed or replaced — "+
+				"the settings row cannot be deleted or re-created on another cluster. Remove `cluster` from the "+
+				"configuration or set it back to the assigned value.", stateCluster.ValueString()),
+		)
 	}
 }
 
