@@ -456,6 +456,19 @@ resource "netbird_agent_network_settings" "%[1]s" {
 					},
 				),
 			},
+			{
+				// The cluster is pinned for good: a change must fail at plan
+				// time, before any destroy or API call can run.
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	cluster               = "changed.cluster.invalid"
+	enable_log_collection = true
+	redact_pii            = true
+}`, rName),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`Cluster is immutable once assigned`),
+			},
 		},
 	})
 }
