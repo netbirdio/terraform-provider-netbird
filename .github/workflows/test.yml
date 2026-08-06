@@ -80,6 +80,11 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
+      # Needs the never-bootstrapped account, so it runs before the suite bootstraps it.
+      - env:
+          TF_ACC: "1"
+        run: go test -v -run Test_AgentNetworkSettings_BootstrapViaCluster ./internal/provider/
+        timeout-minutes: 5
       - env:
           TF_ACC: "1"
         run: go test -v -cover ./internal/provider/

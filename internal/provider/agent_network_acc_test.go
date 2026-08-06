@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
@@ -18,8 +19,8 @@ import (
 // string verbatim without validating it, so a placeholder is enough.
 const testBootstrapCluster = "acc.test.invalid"
 
-func testAgentNetworkClient() *agentNetworkClient {
-	return newAgentNetworkClient(testClient())
+func testAgentNetworkClient() *netbird.AgentNetworkAPI {
+	return testClient().AgentNetwork
 }
 
 func testGetProvider(id string) (*api.AgentNetworkProvider, error) {
@@ -390,6 +391,83 @@ resource "netbird_agent_network_settings" "%[1]s" {
 						return nil
 					},
 				),
+			},
+		},
+	})
+}
+
+// Test_AgentNetworkSettings_BootstrapViaCluster covers the settings-first
+// bootstrap path: a settings resource carrying `cluster` creates the
+// account's settings row without any provider existing. It needs a
+// management server with the settings-defaults contract AND an account that
+// has never been bootstrapped, so it self-skips against older servers (where
+// the unbootstrapped read surfaces as not-found) and on accounts a previous
+// test already bootstrapped — on a fresh compose environment it runs when
+// scheduled before the provider tests.
+func Test_AgentNetworkSettings_BootstrapViaCluster(t *testing.T) {
+	rName := "ansboot" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_agent_network_settings." + rName
+
+	config := fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	cluster               = "%[2]s"
+	enable_log_collection = true
+	redact_pii            = true
+}`, rName, testBootstrapCluster)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			s, err := testAgentNetworkClient().GetSettings(context.Background())
+			if err != nil {
+				if netbird.IsNotFound(err) {
+					t.Skip("management server predates the agent-network settings defaults contract")
+				}
+				t.Fatalf("failed to read agent-network settings: %v", err)
+			}
+			if s.Endpoint != "" {
+				t.Skip("account already bootstrapped; the settings cluster bootstrap needs a fresh account")
+			}
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "cluster", testBootstrapCluster),
+					resource.TestCheckResourceAttrSet(rNameFull, "subdomain"),
+					resource.TestMatchResourceAttr(rNameFull, "endpoint",
+						regexp.MustCompile(`\.`+regexp.QuoteMeta(testBootstrapCluster)+`$`)),
+					resource.TestCheckResourceAttr(rNameFull, "enable_log_collection", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "redact_pii", "true"),
+					func(s *terraform.State) error {
+						got, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if got.Cluster != testBootstrapCluster {
+							return fmt.Errorf("cluster not pinned by the settings bootstrap, found %q", got.Cluster)
+						}
+						if got.Endpoint == "" {
+							return fmt.Errorf("account still reads as unbootstrapped after the settings apply")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				// The cluster is pinned for good: a change must fail at plan
+				// time, before any destroy or API call can run.
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	cluster               = "changed.cluster.invalid"
+	enable_log_collection = true
+	redact_pii            = true
+}`, rName),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`Cluster is immutable once assigned`),
 			},
 		},
 	})

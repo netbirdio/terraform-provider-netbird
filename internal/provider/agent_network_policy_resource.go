@@ -35,7 +35,7 @@ func NewAgentNetworkPolicy() resource.Resource {
 }
 
 type AgentNetworkPolicy struct {
-	client *agentNetworkClient
+	client *netbird.AgentNetworkAPI
 }
 
 type AgentNetworkPolicyModel struct {
@@ -216,7 +216,7 @@ func (r *AgentNetworkPolicy) Configure(_ context.Context, req resource.Configure
 			fmt.Sprintf("Expected *netbird.Client, got: %T.", req.ProviderData))
 		return
 	}
-	r.client = newAgentNetworkClient(client)
+	r.client = client.AgentNetwork
 }
 
 // zeroCap reports whether a cap resolves to zero. A null or unknown cap picks up

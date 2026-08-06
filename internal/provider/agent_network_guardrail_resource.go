@@ -28,7 +28,7 @@ func NewAgentNetworkGuardrail() resource.Resource {
 }
 
 type AgentNetworkGuardrail struct {
-	client *agentNetworkClient
+	client *netbird.AgentNetworkAPI
 }
 
 type AgentNetworkGuardrailModel struct {
@@ -135,7 +135,7 @@ func (r *AgentNetworkGuardrail) Configure(_ context.Context, req resource.Config
 			fmt.Sprintf("Expected *netbird.Client, got: %T.", req.ProviderData))
 		return
 	}
-	r.client = newAgentNetworkClient(client)
+	r.client = client.AgentNetwork
 }
 
 func agentNetworkGuardrailAPIToTerraform(ctx context.Context, g *api.AgentNetworkGuardrail, data *AgentNetworkGuardrailModel) diag.Diagnostics {

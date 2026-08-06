@@ -29,7 +29,7 @@ func readProviderDataSource(t *testing.T, serverURL, id, name string) diag.Diagn
 	t.Helper()
 	ctx := context.Background()
 
-	d := &AgentNetworkProviderDataSource{client: newAgentNetworkClient(netbird.New(serverURL, "test-token"))}
+	d := &AgentNetworkProviderDataSource{client: netbird.New(serverURL, "test-token").AgentNetwork}
 
 	schemaResp := datasource.SchemaResponse{}
 	d.Schema(ctx, datasource.SchemaRequest{}, &schemaResp)

@@ -135,3 +135,28 @@ func Test_settingsUpdateRequest(t *testing.T) {
 		})
 	}
 }
+
+// Test_clusterChangeForbidden pins the plan-time immutability gate: only a
+// known, non-empty planned cluster that differs from a known, non-empty
+// assigned one is rejected. Creates, interpolated (unknown) values, and
+// omitted attributes must all pass — the server remains the backstop there.
+func Test_clusterChangeForbidden(t *testing.T) {
+	cases := []struct {
+		name      string
+		state     types.String
+		plan      types.String
+		forbidden bool
+	}{
+		{"create: null state", types.StringNull(), types.StringValue("eu.proxy"), false},
+		{"create: empty state", types.StringValue(""), types.StringValue("eu.proxy"), false},
+		{"omitted: plan copies state", types.StringValue("eu.proxy"), types.StringValue("eu.proxy"), false},
+		{"interpolated: unknown plan", types.StringValue("eu.proxy"), types.StringUnknown(), false},
+		{"null plan", types.StringValue("eu.proxy"), types.StringNull(), false},
+		{"change is forbidden", types.StringValue("eu.proxy"), types.StringValue("us.proxy"), true},
+	}
+	for _, c := range cases {
+		if got := clusterChangeForbidden(c.state, c.plan); got != c.forbidden {
+			t.Errorf("%s: clusterChangeForbidden = %v, want %v", c.name, got, c.forbidden)
+		}
+	}
+}
