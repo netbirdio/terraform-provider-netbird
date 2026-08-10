@@ -447,7 +447,9 @@ func startReverseProxy(ctx context.Context) error {
 // discoverPeers waits for the agents to appear in the API and records their IDs.
 // A deployment that was handed to us without agents simply has none.
 func discoverPeers(ctx context.Context, client *netbird.Client, env *e2eStack) error {
-	timeout := 3 * time.Minute
+	// The agents may need a second registration attempt (see
+	// test/agent-entrypoint.sh), so allow for more than a single login.
+	timeout := 5 * time.Minute
 	if !e2eOwned {
 		// Nothing is starting agents on our behalf, so do not wait around.
 		timeout = 5 * time.Second
@@ -465,7 +467,8 @@ func discoverPeers(ctx context.Context, client *netbird.Client, env *e2eStack) e
 		time.Sleep(3 * time.Second)
 	}
 	if e2eOwned && len(env.PeerIDs) < len(e2ePeerNames) {
-		return fmt.Errorf("only %d of %d agents registered within the timeout; check `docker compose -p %s -f test/compose.yml logs netbird-peer1`",
+		return fmt.Errorf("only %d of %d agents registered within the timeout; the agent entrypoint logs how it enrolled, see "+
+			"`docker compose -p %s -f test/compose.yml --profile peers logs netbird-peer1`",
 			len(env.PeerIDs), len(e2ePeerNames), e2eComposeProject)
 	}
 	return nil

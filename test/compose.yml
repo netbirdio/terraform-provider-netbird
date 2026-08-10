@@ -129,6 +129,10 @@ services:
   netbird-peer1: &peer
     image: netbirdio/netbird:${NETBIRD_CLIENT_TAG:-latest}
     profiles: [ "peers" ]
+    hostname: peer1
+    entrypoint: [ "/bin/sh", "/etc/netbird/agent-entrypoint.sh" ]
+    volumes: &peer_volumes
+      - ./agent-entrypoint.sh:/etc/netbird/agent-entrypoint.sh:ro
     environment: &peer_env
       - NB_MANAGEMENT_URL=http://192.168.1.10:80
       - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
@@ -153,6 +157,7 @@ services:
 
   netbird-peer2:
     <<: *peer
+    hostname: peer2
     environment:
       - NB_MANAGEMENT_URL=http://192.168.1.10:80
       - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
@@ -164,6 +169,7 @@ services:
 
   netbird-peer3:
     <<: *peer
+    hostname: peer3
     environment:
       - NB_MANAGEMENT_URL=http://192.168.1.10:80
       - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
