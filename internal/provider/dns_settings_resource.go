@@ -184,6 +184,11 @@ func (r *DNSSettings) Delete(ctx context.Context, req resource.DeleteRequest, re
 	// Do nothing
 }
 
+// ImportState imports the account's DNS settings. This resource is an
+// account-wide singleton with no "id" attribute, so there is nothing to carry an
+// import ID into — passing it through would fail with "could not find attribute
+// or block id in schema". Seed the one attribute instead so the state exists,
+// and let Read fill it in from the API. The import ID itself is ignored.
 func (r *DNSSettings) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("disabled_management_groups"), types.ListNull(types.StringType))...)
 }

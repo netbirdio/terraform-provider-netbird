@@ -294,6 +294,7 @@ func Test_postureCheckTerraformToAPI(t *testing.T) {
 }
 
 func Test_PostureCheck_Create(t *testing.T) {
+	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_posture_check." + rName
 	resource.Test(t, resource.TestCase{
@@ -359,6 +360,7 @@ func Test_PostureCheck_Create(t *testing.T) {
 }
 
 func Test_PostureCheck_Update(t *testing.T) {
+	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_posture_check." + rName
 	resource.Test(t, resource.TestCase{

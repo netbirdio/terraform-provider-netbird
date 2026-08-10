@@ -66,6 +66,7 @@ func Test_userAPIToTerraform(t *testing.T) {
 }
 
 func Test_User_Create(t *testing.T) {
+	testE2E(t)
 	rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_user." + rName
 	resource.Test(t, resource.TestCase{
@@ -74,13 +75,13 @@ func Test_User_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testUserResource(rName, `true`, `["group-notall"]`, `false`, `user`),
+				Config:       testUserResource(rName, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `false`, `user`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "is_service_user", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", "group-notall"),
+					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", e2eGroupNotAllID()),
 					resource.TestCheckResourceAttr(rNameFull, "is_blocked", "false"),
 					resource.TestCheckResourceAttr(rNameFull, "role", "user"),
 					func(s *terraform.State) error {
@@ -102,7 +103,7 @@ func Test_User_Create(t *testing.T) {
 							"name":            {rName, user.Name},
 							"is_service_user": {true, *user.IsServiceUser},
 							"auto_groups.#":   {int(1), len(user.AutoGroups)},
-							"auto_groups.0":   {"group-notall", user.AutoGroups[0]},
+							"auto_groups.0":   {e2eGroupNotAllID(), user.AutoGroups[0]},
 							"is_blocked":      {false, user.IsBlocked},
 							"role":            {"user", user.Role},
 						})
@@ -113,12 +114,15 @@ func Test_User_Create(t *testing.T) {
 	})
 }
 
-func testUserResource(rName, serviceUser, groups, blocked, role string) string {
+// Users are always created as service users: inviting a regular user needs an
+// IdP that can deliver the invitation, which a self-hosted test deployment has
+// no way to satisfy.
+func testUserResource(rName, groups, blocked, role string) string {
 	return fmt.Sprintf(`resource "netbird_user" "%s" {
 	name            = "%s"
-  is_service_user = %s
+  is_service_user = true
   auto_groups     = %s
   is_blocked      = %s
   role            = "%s"
-}`, rName, rName, serviceUser, groups, blocked, role)
+}`, rName, rName, groups, blocked, role)
 }

@@ -142,6 +142,7 @@ func Test_peerAPIToTerraform(t *testing.T) {
 }
 
 func Test_Peer_Create(t *testing.T) {
+	testE2E(t)
 	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_peer." + rName
 	resource.Test(t, resource.TestCase{
@@ -150,7 +151,7 @@ func Test_Peer_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, `peer2`, rName),
+				Config:       testPeerResource(rName, testPeerID(t, "peer2"), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -174,6 +175,7 @@ func Test_Peer_Create(t *testing.T) {
 }
 
 func Test_Peer_Update(t *testing.T) {
+	testE2E(t)
 	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_peer." + rName
 	resource.Test(t, resource.TestCase{
@@ -182,14 +184,14 @@ func Test_Peer_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, `peer3`, "meow"),
+				Config:       testPeerResource(rName, testPeerID(t, "peer3"), "meow"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, `peer3`, rName),
+				Config:       testPeerResource(rName, testPeerID(t, "peer3"), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),

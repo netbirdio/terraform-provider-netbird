@@ -1,33 +1,181 @@
+# End-to-end stack for the provider's acceptance tests.
+#
+# Unlike the previous fixture-seeded setup, nothing here writes to the
+# management store directly. The account is created the way a real operator
+# creates it: the Go harness (internal/provider/e2e_harness_test.go) calls the
+# unauthenticated POST /api/setup endpoint, which mints the owner user and — with
+# NB_SETUP_PAT_ENABLED=true below — returns a plaintext API token that the
+# Terraform provider then authenticates with.
+#
+# Services are staged with compose profiles so the harness can bring the stack up
+# in the order the product itself requires:
+#
+#   (default)      management + dashboard + signal + relay
+#   --profile peers   real netbird agents, registered with a setup key minted
+#                     through the API after bootstrap
+#   --profile proxy   reverse proxy, authenticated with a token minted through
+#                     the management CLI after bootstrap
 services:
   netbird-mgmt:
-    image: netbirdio/management:latest
+    image: netbirdio/management:${NETBIRD_MANAGEMENT_TAG:-latest}
     environment:
-      - NB_LOG_LEVEL=debug
+      - NB_LOG_LEVEL=${NB_LOG_LEVEL:-info}
       - NETBIRD_STORE_ENGINE=sqlite
+      # Lets POST /api/setup return a plaintext PAT for the owner it creates.
+      # Without this the server silently ignores create_pat and the harness has
+      # no way to authenticate.
+      - NB_SETUP_PAT_ENABLED=true
+      # Geolocation stays enabled on purpose: the posture-check tests create
+      # geo_location_check rules, which management rejects outright when the
+      # GeoLite database was never initialized.
     volumes:
-      - ./seed_database.sql:/app/seed_database.sql
       - ./management.json:/etc/netbird/management.json
-      - ./setup_mgmt.sh:/etc/netbird/setup_mgmt.sh
       - netbird_data:/var/lib/netbird
-    entrypoint: []
     command:
-    - /bin/bash
-    - -c
-    - /etc/netbird/setup_mgmt.sh & /go/bin/netbird-mgmt management --log-file console
+      - management
+      - --port
+      - "80"
+      - --log-file
+      - console
+      - --disable-anonymous-metrics
     networks:
       transfer_net:
         ipv4_address: 192.168.1.10
     healthcheck:
+      # The image has no curl/wget, so check that something is listening on :80
+      # (hex 0050) instead of making an HTTP request.
       test: [ "CMD", "sh", "-c", "grep -q '0:0050' /proc/net/tcp*" ]
       interval: 3s
       timeout: 1s
-      retries: 10
+      retries: 20
     ports:
-      # local debugging only
-      - "8080:80"
+      - "${NETBIRD_MGMT_HOST_PORT:-8080}:80"
+
+  # The dashboard the tests point at: it is configured against the same
+  # management API the provider talks to, so a mismatch between the two shows up
+  # as a failing test rather than as a broken deployment.
+  netbird-dashboard:
+    image: netbirdio/dashboard:${NETBIRD_DASHBOARD_TAG:-latest}
+    environment:
+      - NETBIRD_MGMT_API_ENDPOINT=http://192.168.1.10:80
+      - NETBIRD_MGMT_GRPC_API_ENDPOINT=http://192.168.1.10:80
+      - AUTH_AUDIENCE=netbird-client
+      - AUTH_CLIENT_ID=netbird-client
+      - AUTH_CLIENT_SECRET=
+      - AUTH_AUTHORITY=http://192.168.1.10:80/oauth2
+      - USE_AUTH0=false
+      - AUTH_SUPPORTED_SCOPES=openid profile email offline_access api
+      - AUTH_REDIRECT_URI=/peers
+      - AUTH_SILENT_REDIRECT_URI=/add-peers
+      - NETBIRD_TOKEN_SOURCE=accessToken
+      - NGINX_SSL_PORT=443
+    depends_on:
+      netbird-mgmt:
+        condition: service_healthy
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.14
+    healthcheck:
+      test: [ "CMD", "sh", "-c", "grep -q '0:0050' /proc/net/tcp*" ]
+      interval: 3s
+      timeout: 1s
+      retries: 20
+    ports:
+      - "${NETBIRD_DASHBOARD_HOST_PORT:-8090}:80"
+
+  netbird-signal:
+    image: netbirdio/signal:${NETBIRD_SIGNAL_TAG:-latest}
+    command:
+      - --port
+      - "80"
+      - --log-file
+      - console
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.12
+    healthcheck:
+      test: [ "CMD", "sh", "-c", "grep -q '0:0050' /proc/net/tcp*" ]
+      interval: 3s
+      timeout: 1s
+      retries: 20
+
+  netbird-relay:
+    image: netbirdio/relay:${NETBIRD_RELAY_TAG:-latest}
+    environment:
+      - NB_LOG_LEVEL=${NB_LOG_LEVEL:-info}
+      - NB_LISTEN_ADDRESS=:33080
+      - NB_EXPOSED_ADDRESS=rel://192.168.1.13:33080
+      # Must match Relay.Secret in management.json.
+      - NB_AUTH_SECRET=e2e-relay-secret
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.13
+    healthcheck:
+      # 33080 == 0x8138
+      test: [ "CMD", "sh", "-c", "grep -qi '0:8138' /proc/net/tcp*" ]
+      interval: 3s
+      timeout: 1s
+      retries: 20
+
+  # Real agents. They register through the ordinary setup-key flow, so the peers
+  # the tests operate on are peers the product created — there is no peer row the
+  # test suite writes by hand. Names come from NB_HOSTNAME, which keeps the
+  # fixtures addressable by a stable name even though their IDs are random.
+  #
+  # NB_E2E_SETUP_KEY is defaulted rather than declared required: compose
+  # interpolates every service in the file whatever profile is selected, so a
+  # required variable here would break `up`, `logs` and `pull` for the rest of
+  # the stack too. The harness always supplies it when it starts these.
+  netbird-peer1: &peer
+    image: netbirdio/netbird:${NETBIRD_CLIENT_TAG:-latest}
+    profiles: [ "peers" ]
+    environment: &peer_env
+      - NB_MANAGEMENT_URL=http://192.168.1.10:80
+      - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
+      - NB_LOG_LEVEL=${NB_LOG_LEVEL:-info}
+      - NB_HOSTNAME=peer1
+    cap_add: &peer_caps
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_RESOURCE
+    devices: &peer_devices
+      - /dev/net/tun:/dev/net/tun
+    depends_on: &peer_deps
+      netbird-mgmt:
+        condition: service_healthy
+      netbird-signal:
+        condition: service_healthy
+      netbird-relay:
+        condition: service_healthy
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.20
+
+  netbird-peer2:
+    <<: *peer
+    environment:
+      - NB_MANAGEMENT_URL=http://192.168.1.10:80
+      - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
+      - NB_LOG_LEVEL=${NB_LOG_LEVEL:-info}
+      - NB_HOSTNAME=peer2
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.21
+
+  netbird-peer3:
+    <<: *peer
+    environment:
+      - NB_MANAGEMENT_URL=http://192.168.1.10:80
+      - NB_SETUP_KEY=${NB_E2E_SETUP_KEY:-}
+      - NB_LOG_LEVEL=${NB_LOG_LEVEL:-info}
+      - NB_HOSTNAME=peer3
+    networks:
+      transfer_net:
+        ipv4_address: 192.168.1.22
 
   netbird-proxy:
-    image: netbirdio/reverse-proxy:latest
+    image: netbirdio/reverse-proxy:${NETBIRD_PROXY_TAG:-latest}
+    profiles: [ "proxy" ]
     entrypoint:
       - sh
       - -c
@@ -59,7 +207,7 @@ services:
       test: [ "CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090" ]
       interval: 3s
       timeout: 1s
-      retries: 10
+      retries: 20
 
 networks:
   transfer_net:

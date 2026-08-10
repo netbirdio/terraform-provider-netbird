@@ -11,6 +11,7 @@ import (
 )
 
 func Test_ReverseProxyClusters_DataSource(t *testing.T) {
+	testE2E(t)
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
@@ -32,6 +33,7 @@ func Test_ReverseProxyClusters_DataSource(t *testing.T) {
 }
 
 func Test_ReverseProxyDomain_DataSource(t *testing.T) {
+	testE2E(t)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -51,6 +53,7 @@ func Test_ReverseProxyDomain_DataSource(t *testing.T) {
 }
 
 func Test_ReverseProxyDomain_CRUD(t *testing.T) {
+	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domainName := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_domain." + rName
@@ -107,6 +110,7 @@ func Test_ReverseProxyDomain_CRUD(t *testing.T) {
 }
 
 func Test_ReverseProxyService_DataSource(t *testing.T) {
+	testE2E(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	dsNameFull := "data.netbird_reverse_proxy_service.lookup"
@@ -117,7 +121,7 @@ func Test_ReverseProxyService_DataSource(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				// Create a service, then look it up by name via the data source
-				Config: testReverseProxyServiceWithDataSource(rName, domain, "peer1"),
+				Config: testReverseProxyServiceWithDataSource(rName, domain, testPeerID(t, "peer1")),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(dsNameFull, "name", rName),
 					resource.TestCheckResourceAttr(dsNameFull, "domain", domain),
@@ -134,10 +138,11 @@ func Test_ReverseProxyService_DataSource(t *testing.T) {
 }
 
 func Test_ReverseProxyService_PasswordAuth(t *testing.T) {
+	testE2E(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "peer1"
+	peerID := testPeerID(t, "peer1")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -215,10 +220,11 @@ func Test_ReverseProxyService_PasswordAuth(t *testing.T) {
 }
 
 func Test_ReverseProxyService_PinAuth(t *testing.T) {
+	testE2E(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "peer1"
+	peerID := testPeerID(t, "peer1")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -248,11 +254,12 @@ func Test_ReverseProxyService_PinAuth(t *testing.T) {
 }
 
 func Test_ReverseProxyService_BearerAuth(t *testing.T) {
+	testE2E(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID := "peer1"
-	groupID := "group-all"
+	peerID := testPeerID(t, "peer1")
+	groupID := e2eGroupAllID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -286,11 +293,12 @@ func Test_ReverseProxyService_BearerAuth(t *testing.T) {
 }
 
 func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
+	testE2E(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + ".external.test"
 	rNameFull := "netbird_reverse_proxy_service." + rName
-	peerID1 := "peer1"
-	peerID2 := "peer2"
+	peerID1 := testPeerID(t, "peer1")
+	peerID2 := testPeerID(t, "peer2")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -319,7 +327,8 @@ func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
 }
 
 func Test_AccountSettings_PeerExpose(t *testing.T) {
-	groupID := "group-all"
+	testE2E(t)
+	groupID := e2eGroupAllID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },

@@ -40,6 +40,7 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 }
 
 func Test_AgentNetworkProvider_Create(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -78,6 +79,7 @@ func Test_AgentNetworkProvider_Create(t *testing.T) {
 // provider omits is dropped. Changing only the name must not wipe extra_values
 // or reset metadata_disabled.
 func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -121,6 +123,7 @@ func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
 // forced replacement would have to delete the provider first, which the server
 // refuses while a policy still references it.
 func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -165,6 +168,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 }
 
 func Test_AgentNetworkGuardrail_Create(t *testing.T) {
+	testE2E(t)
 	rName := "ang" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_guardrail." + rName
 
@@ -209,6 +213,7 @@ func Test_AgentNetworkGuardrail_Create(t *testing.T) {
 }
 
 func Test_AgentNetworkPolicy_Create(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_policy." + rName
 
@@ -274,6 +279,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 // The server rejects an enabled limit whose caps are all zero. That must be
 // caught during plan rather than failing partway through an apply.
 func Test_AgentNetworkPolicy_EnabledLimitNeedsACap(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	config := fmt.Sprintf(`
@@ -306,6 +312,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 
 // Required lists must be rejected at plan time when empty.
 func Test_AgentNetworkPolicy_EmptySourceGroupsRejected(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	config := fmt.Sprintf(`resource "netbird_agent_network_policy" "%[1]s" {
@@ -331,6 +338,7 @@ func Test_AgentNetworkPolicy_EmptySourceGroupsRejected(t *testing.T) {
 // mutable field on PUT. Managing only one field must leave the others at their
 // existing account values instead of resetting them to the schema defaults.
 func Test_AgentNetworkSettings_AdoptsExistingValues(t *testing.T) {
+	testE2E(t)
 	rName := "ans" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
@@ -405,6 +413,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // test already bootstrapped — on a fresh compose environment it runs when
 // scheduled before the provider tests.
 func Test_AgentNetworkSettings_BootstrapViaCluster(t *testing.T) {
+	testE2E(t)
 	rName := "ansboot" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
