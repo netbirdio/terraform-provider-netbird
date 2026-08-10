@@ -749,7 +749,9 @@ func (r *ReverseProxyService) Delete(ctx context.Context, req resource.DeleteReq
 		return
 	}
 
-	if err := r.client.ReverseProxyServices.Delete(ctx, data.Id.ValueString()); err != nil {
+	// An object already removed out-of-band is not an error: the desired
+	// end state (gone) is satisfied, so let the destroy succeed.
+	if err := r.client.ReverseProxyServices.Delete(ctx, data.Id.ValueString()); err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting reverse proxy service", err.Error())
 	}
 }

@@ -338,7 +338,9 @@ func (r *SetupKey) Delete(ctx context.Context, req resource.DeleteRequest, resp 
 	}
 
 	err := r.client.SetupKeys.Delete(ctx, data.Id.ValueString())
-	if err != nil {
+	// An object already removed out-of-band is not an error: the desired
+	// end state (gone) is satisfied, so let the destroy succeed.
+	if err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting SetupKey", err.Error())
 	}
 }

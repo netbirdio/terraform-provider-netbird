@@ -199,7 +199,9 @@ func (r *IdentityProvider) Delete(ctx context.Context, req resource.DeleteReques
 	}
 
 	err := r.client.IdentityProviders.Delete(ctx, data.Id.ValueString())
-	if err != nil {
+	// An object already removed out-of-band is not an error: the desired
+	// end state (gone) is satisfied, so let the destroy succeed.
+	if err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting Identity Provider", err.Error())
 	}
 }
