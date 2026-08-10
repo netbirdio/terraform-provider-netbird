@@ -86,8 +86,16 @@ go build -o /tmp/nb/netbird-proxy ./proxy/cmd/proxy
 Run signal, relay and management (each needs its own `--metrics-port`; they all
 default to 9090), point `Datadir` at `/var/lib/netbird` so the `token create` CLI
 and the server agree on the store path, then mint a proxy token and start the
-proxy exactly as the compose file does. Peer-dependent tests still skip: real
-agents are the one component this shortcut cannot supply.
+proxy exactly as the compose file does.
+
+The client builds the same way (`go build -o /tmp/nb/netbird ./client`), so the
+agents can be supplied too: run `agent-entrypoint.sh` once per peer with
+`NETBIRD_BIN` pointed at that binary. The client profile lives at a fixed path
+rather than under `--config`, so on a single host the peers have to be registered
+one at a time, wiping `/var/lib/netbird/default.json` in between. Wrap each one in
+`unshare -u --fork sh -c "hostname peerN && exec …"` so it gets its own hostname,
+the way `hostname: peerN` does for the containers — without that all three peers
+register under the host's name and the harness cannot tell them apart.
 
 ## Things worth knowing
 
@@ -99,3 +107,12 @@ agents are the one component this shortcut cannot supply.
   rest of the suite bootstraps the account's settings row.
 - **A warm stack makes iteration bearable.** Bootstrapping costs minutes, so the
   suite leaves the deployment running unless `NB_E2E_TEARDOWN=1` is set.
+- **The agents do not use the image's entrypoint.** `agent-entrypoint.sh` runs
+  `netbird up` first and falls back to a foreground `netbird login` when that
+  fails to register, because some client builds drop the setup key on the
+  daemon's login path. The script documents the three non-obvious couplings that
+  make the fallback work; the short version is that the order of daemon start,
+  daemon stop and `NB_LOG_FILE=console` all matter.
+- **Each agent needs `hostname: peerN`.** The reconnect after a fallback login
+  takes the peer name from the system hostname, and the harness looks its peer
+  fixtures up by name.
