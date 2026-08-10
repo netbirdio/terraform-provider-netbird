@@ -115,6 +115,7 @@ func Test_networkResourceAPIToTerraform(t *testing.T) {
 }
 
 func Test_NetworkResource_Create(t *testing.T) {
+	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_resource." + rName
 	resource.Test(t, resource.TestCase{
@@ -123,7 +124,7 @@ func Test_NetworkResource_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall", "group-all"]`, rName),
+				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, fmt.Sprintf("[%q, %q]", e2eGroupNotAllID(), e2eGroupAllID()), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "address", "example.com"),
@@ -131,7 +132,7 @@ func Test_NetworkResource_Create(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					func(s *terraform.State) error {
 						nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
-						resource, err := testClient().Networks.Resources("network1").Get(context.Background(), nreID)
+						resource, err := testClient().Networks.Resources(e2eNetworkID()).Get(context.Background(), nreID)
 						if err != nil {
 							return err
 						}
@@ -140,8 +141,8 @@ func Test_NetworkResource_Create(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected example.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
-							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
+						if !sameIDSet(resource.Groups, e2eGroupNotAllID(), e2eGroupAllID()) {
+							return fmt.Errorf("NetworkResource Groups mismatch, expected [%s %s], found %#v on management server", e2eGroupNotAllID(), e2eGroupAllID(), resource.Groups)
 						}
 
 						if resource.Name != rName {
@@ -157,6 +158,7 @@ func Test_NetworkResource_Create(t *testing.T) {
 }
 
 func Test_NetworkResource_Update(t *testing.T) {
+	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_resource." + rName
 	resource.Test(t, resource.TestCase{
@@ -165,21 +167,21 @@ func Test_NetworkResource_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `example.com`, `["group-notall"]`, rName),
+				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testNetworkResourceResource(rName, "network1", `google.com`, `["group-all", "group-notall"]`, rName+"Updated"),
+				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `google.com`, fmt.Sprintf("[%q, %q]", e2eGroupAllID(), e2eGroupNotAllID()), rName+"Updated"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "address", "google.com"),
 					resource.TestCheckResourceAttr(rNameFull, "groups.#", "2"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName+"Updated"),
 					func(s *terraform.State) error {
 						nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
-						resource, err := testClient().Networks.Resources("network1").Get(context.Background(), nreID)
+						resource, err := testClient().Networks.Resources(e2eNetworkID()).Get(context.Background(), nreID)
 						if err != nil {
 							return err
 						}
@@ -188,8 +190,8 @@ func Test_NetworkResource_Update(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected google.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
-							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
+						if !sameIDSet(resource.Groups, e2eGroupNotAllID(), e2eGroupAllID()) {
+							return fmt.Errorf("NetworkResource Groups mismatch, expected [%s %s], found %#v on management server", e2eGroupNotAllID(), e2eGroupAllID(), resource.Groups)
 						}
 
 						if resource.Name != rName+"Updated" {

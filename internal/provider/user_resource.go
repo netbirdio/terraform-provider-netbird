@@ -98,7 +98,10 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 			"status": schema.StringAttribute{
 				MarkdownDescription: "User status (active or invited)",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				// No UseStateForUnknown: the server derives status from
+				// is_blocked, so carrying the prior value into the plan makes
+				// blocking a user fail with "provider produced inconsistent
+				// result after apply" (planned "active", applied "blocked").
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "User issue method",

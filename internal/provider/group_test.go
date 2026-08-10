@@ -88,6 +88,7 @@ func Test_groupAPIToTerraform(t *testing.T) {
 }
 
 func Test_Group_Create(t *testing.T) {
+	testE2E(t)
 	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_group." + rName
 	resource.Test(t, resource.TestCase{
@@ -118,6 +119,7 @@ func Test_Group_Create(t *testing.T) {
 }
 
 func Test_Group_Update(t *testing.T) {
+	testE2E(t)
 	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_group." + rName
 	resource.Test(t, resource.TestCase{
@@ -146,12 +148,12 @@ func Test_Group_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testGroupResource(rName, `["peer1"]`),
+				Config:       testGroupResource(rName, fmt.Sprintf("[%q]", testPeerID(t, "peer1"))),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "peers.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "peers.0", "peer1"),
+					resource.TestCheckResourceAttr(rNameFull, "peers.0", testPeerID(t, "peer1")),
 					func(s *terraform.State) error {
 						gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						group, err := testClient().Groups.Get(context.Background(), gID)
@@ -161,7 +163,7 @@ func Test_Group_Update(t *testing.T) {
 						if len(group.Peers) != 1 {
 							return fmt.Errorf("Group Peers not updated in management")
 						}
-						if group.Peers[0].Id != "peer1" {
+						if group.Peers[0].Id != testPeerID(t, "peer1") {
 							return fmt.Errorf("Group Peers incorrect")
 						}
 						return nil
