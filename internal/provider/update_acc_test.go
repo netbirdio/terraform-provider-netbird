@@ -156,7 +156,7 @@ resource "netbird_agent_network_settings" %[1]q {
   access_log_retention_days = %[3]d
   redact_pii                = %[4]t
   depends_on                = [netbird_agent_network_provider.%[1]s]
-}`, rName, testBootstrapCluster, retention, redactPII)
+}`, rName, testBootstrapCluster(), retention, redactPII)
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -236,7 +236,7 @@ resource "netbird_agent_network_policy" %[1]q {
     group_cap      = %[4]d
     window_seconds = 86400
   }
-}`, rName, testBootstrapCluster, description, groupCap)
+}`, rName, testBootstrapCluster(), description, groupCap)
 	}
 
 	resource.Test(t, resource.TestCase{

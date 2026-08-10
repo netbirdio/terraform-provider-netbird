@@ -13,11 +13,27 @@ import (
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
-// The acceptance tests below run against the dockerized management server
-// started by testEnsureManagementRunning. Agent Network needs a proxy cluster
-// address to bootstrap the account's settings row, but the server stores that
-// string verbatim without validating it, so a placeholder is enough.
-const testBootstrapCluster = "acc.test.invalid"
+// Agent Network needs a proxy cluster address to bootstrap the account's
+// settings row. Prefer the address of a proxy that is actually attached to this
+// deployment, so the bootstrap resolves against a cluster that exists and the
+// endpoint the server derives is a real one. The server stores the string
+// verbatim without validating it, so a placeholder still works when no proxy is
+// running — the agent-network tests are then exercising the same code path
+// against a cluster that merely does not answer.
+const testBootstrapClusterFallback = "acc.test.invalid"
+
+func testBootstrapCluster() string {
+	clusters, err := testClient().ReverseProxyClusters.List(context.Background())
+	if err != nil {
+		return testBootstrapClusterFallback
+	}
+	for _, c := range clusters {
+		if c.Online && c.Address != "" {
+			return c.Address
+		}
+	}
+	return testBootstrapClusterFallback
+}
 
 func testAgentNetworkClient() *netbird.AgentNetworkAPI {
 	return testClient().AgentNetwork
@@ -36,7 +52,7 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 	bootstrap_cluster = "%s"
 	extra_values      = %s
 	metadata_disabled = %s
-}`, rName, name, testBootstrapCluster, extraValues, metadataDisabled)
+}`, rName, name, testBootstrapCluster(), extraValues, metadataDisabled)
 }
 
 func Test_AgentNetworkProvider_Create(t *testing.T) {
@@ -134,7 +150,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 	upstream_url      = "%s"
 	api_key           = "sk-acc-test"
 	bootstrap_cluster = "%s"
-}`, rName, providerID, rName, upstream, testBootstrapCluster)
+}`, rName, providerID, rName, upstream, testBootstrapCluster())
 	}
 
 	var firstID string
@@ -252,7 +268,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 		group_cap      = 1000000
 		window_seconds = 86400
 	}
-}`, rName, testBootstrapCluster)
+}`, rName, testBootstrapCluster())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -357,7 +373,7 @@ resource "netbird_agent_network_provider" "%[1]s" {
 resource "netbird_agent_network_settings" "%[1]s" {
 	access_log_retention_days = 45
 	depends_on                = [netbird_agent_network_provider.%[1]s]
-}`, rName, testBootstrapCluster)
+}`, rName, testBootstrapCluster())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -422,7 +438,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 	cluster               = "%[2]s"
 	enable_log_collection = true
 	redact_pii            = true
-}`, rName, testBootstrapCluster)
+}`, rName, testBootstrapCluster())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -444,10 +460,10 @@ resource "netbird_agent_network_settings" "%[1]s" {
 				ResourceName: rName,
 				Config:       config,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "cluster", testBootstrapCluster),
+					resource.TestCheckResourceAttr(rNameFull, "cluster", testBootstrapCluster()),
 					resource.TestCheckResourceAttrSet(rNameFull, "subdomain"),
 					resource.TestMatchResourceAttr(rNameFull, "endpoint",
-						regexp.MustCompile(`\.`+regexp.QuoteMeta(testBootstrapCluster)+`$`)),
+						regexp.MustCompile(`\.`+regexp.QuoteMeta(testBootstrapCluster())+`$`)),
 					resource.TestCheckResourceAttr(rNameFull, "enable_log_collection", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "redact_pii", "true"),
 					func(s *terraform.State) error {
@@ -455,7 +471,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 						if err != nil {
 							return err
 						}
-						if got.Cluster != testBootstrapCluster {
+						if got.Cluster != testBootstrapCluster() {
 							return fmt.Errorf("cluster not pinned by the settings bootstrap, found %q", got.Cluster)
 						}
 						if got.Endpoint == "" {

@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -134,6 +136,72 @@ func testPeerID(t *testing.T, hostname string) string {
 		t.Skipf("no registered agent named %q in this deployment", hostname)
 	}
 	return id
+}
+
+// testRequireProxyCluster returns the reverse proxy cluster the deployment has
+// registered, skipping the test when no proxy is attached. Reverse proxy
+// services need a cluster to be assigned to.
+func testRequireProxyCluster(t *testing.T) api.ProxyCluster {
+	t.Helper()
+	testE2E(t)
+	clusters, err := testClient().ReverseProxyClusters.List(context.Background())
+	if err != nil {
+		t.Skipf("reverse proxy clusters unavailable: %v", err)
+	}
+	for _, c := range clusters {
+		if c.Online {
+			return c
+		}
+	}
+	t.Skip("no online reverse proxy cluster in this deployment")
+	return api.ProxyCluster{}
+}
+
+// checkAttrsMatchAPI asserts that the given attributes of a resource or data
+// source hold exactly what the management API reports. Comparing Terraform state
+// against Terraform state only shows the provider is self-consistent; the
+// contract that matters is between the provider and the API, so `want` reads the
+// object back from management and returns the values it holds.
+func checkAttrsMatchAPI(addr string, want func(attrs map[string]string) (map[string]string, error)) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[addr]
+		if !ok {
+			return fmt.Errorf("not found in state: %s", addr)
+		}
+		expected, err := want(rs.Primary.Attributes)
+		if err != nil {
+			return fmt.Errorf("reading %s back from the management API: %w", addr, err)
+		}
+		for attr, wantValue := range expected {
+			got := rs.Primary.Attributes[attr]
+			// A null list has no "#" entry at all, which is the same zero items
+			// as an empty one. See apiListCount for why that is not uniform.
+			if strings.HasSuffix(attr, ".#") && got == "" && wantValue == "0" {
+				continue
+			}
+			if got != wantValue {
+				return fmt.Errorf("%s: %s is %q in Terraform state but %q on the management server",
+					addr, attr, got, wantValue)
+			}
+		}
+		return nil
+	}
+}
+
+// apiListCount is the number of items the API reported for a collection. A nil
+// collection counts as zero: neither management nor the provider is consistent
+// about null versus empty, so the count is the part worth asserting.
+//
+// Management returns "routers": null from GET /api/networks/{id} but
+// "routers": [] from LIST /api/networks for the same network, and the provider
+// mirrors whichever it read — the resource uses Get, the data source uses List.
+// On top of that the provider's own conversions differ: the ones that build a
+// list element by element (groups) turn null into an empty list, while the ones
+// that hand the raw slice to types.ListValueFrom (networks) keep it null. So
+// length() works on some attributes and errors on others. Tests here assert the
+// item count and leave the representation alone.
+func apiListCount[T any](items []T) string {
+	return fmt.Sprint(len(items))
 }
 
 // mustE2E returns the bootstrapped stack for the HCL builders, which have no
