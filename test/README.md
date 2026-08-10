@@ -71,6 +71,24 @@ registered agents skip when the deployment has none.
 TF_ACC=1 NB_E2E_MANAGEMENT_URL=http://127.0.0.1:18080 go test ./internal/provider/
 ```
 
+That deployment does not have to be the compose one. Where Docker is unavailable,
+the server components build straight out of the pinned netbird module and cover
+everything except the agents:
+
+```sh
+NB=$(go env GOMODCACHE)/github.com/netbirdio/netbird@<version-from-go.mod>
+cp -r "$NB" /tmp/nbsrc && chmod -R u+w /tmp/nbsrc   # build inside the module: it
+cd /tmp/nbsrc                                       # carries the replace directives
+for c in management signal relay; do go build -o /tmp/nb/netbird-$c ./$c; done
+go build -o /tmp/nb/netbird-proxy ./proxy/cmd/proxy
+```
+
+Run signal, relay and management (each needs its own `--metrics-port`; they all
+default to 9090), point `Datadir` at `/var/lib/netbird` so the `token create` CLI
+and the server agree on the store path, then mint a proxy token and start the
+proxy exactly as the compose file does. Peer-dependent tests still skip: real
+agents are the one component this shortcut cannot supply.
+
 ## Things worth knowing
 
 - **Geolocation stays enabled.** The posture-check tests create
