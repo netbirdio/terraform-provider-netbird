@@ -403,7 +403,9 @@ func (r *Peer) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 	// Do not delete actual peers in acceptance tests to make running locally easier
 	if _, ok := os.LookupEnv("TF_ACC"); !ok {
 		err := r.client.Peers.Delete(ctx, data.Id.ValueString())
-		if err != nil {
+		// An object already removed out-of-band is not an error: the desired
+		// end state (gone) is satisfied, so let the destroy succeed.
+		if err != nil && !netbird.IsNotFound(err) {
 			resp.Diagnostics.AddError("Error deleting Peer", err.Error())
 		}
 	}
