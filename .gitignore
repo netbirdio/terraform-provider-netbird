@@ -36,3 +36,6 @@ website/vendor
 
 # e2e harness state (bootstrap token for a running test deployment)
 test/.e2e-state.json
+
+# ACME lock files, if a reverse proxy is ever run from the repo root
+/certs/
