@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -94,6 +95,18 @@ data "netbird_group" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "issued", "api"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "name", dsAddr, "name"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						g, err := testClient().Groups.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":        g.Name,
+							"issued":      string(valOr(g.Issued, "")),
+							"peers.#":     apiListCount(g.Peers),
+							"resources.#": apiListCount(g.Resources),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -131,6 +144,18 @@ data "netbird_network" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "description", "data source lookup"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "name", dsAddr, "name"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						n, err := testClient().Networks.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":        n.Name,
+							"description": valOr(n.Description, ""),
+							"routers.#":   apiListCount(n.Routers),
+							"resources.#": apiListCount(n.Resources),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -175,6 +200,18 @@ data "netbird_network_resource" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "groups.#", "1"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "address", dsAddr, "address"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						r, err := testClient().Networks.Resources(attrs["network_id"]).Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":     r.Name,
+							"address":  r.Address,
+							"enabled":  fmt.Sprint(r.Enabled),
+							"groups.#": apiListCount(r.Groups),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -214,6 +251,18 @@ data "netbird_network_router" %[1]q {
 					resource.TestCheckResourceAttr(dsAddr, "masquerade", "true"),
 					resource.TestCheckResourceAttr(dsAddr, "peer_groups.#", "1"),
 					resource.TestCheckResourceAttr(dsAddr, "peer_groups.0", e2eGroupNotAllID()),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						r, err := testClient().Networks.Routers(attrs["network_id"]).Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"metric":        fmt.Sprint(r.Metric),
+							"masquerade":    fmt.Sprint(r.Masquerade),
+							"enabled":       fmt.Sprint(r.Enabled),
+							"peer_groups.#": apiListCount(valOr(r.PeerGroups, []string{})),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -292,6 +341,23 @@ data "netbird_policy" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "rule.0.destinations.0", e2eGroupNotAllID()),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "description", dsAddr, "description"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						pol, err := testClient().Policies.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						out := map[string]string{
+							"name":        pol.Name,
+							"description": valOr(pol.Description, ""),
+							"enabled":     fmt.Sprint(pol.Enabled),
+							"rule.#":      fmt.Sprint(len(pol.Rules)),
+						}
+						if len(pol.Rules) > 0 {
+							out["rule.0.action"] = string(pol.Rules[0].Action)
+							out["rule.0.protocol"] = string(pol.Rules[0].Protocol)
+						}
+						return out, nil
+					}),
 				),
 			},
 		},
@@ -336,6 +402,20 @@ data "netbird_posture_check" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "netbird_version_check.min_version", "0.35.0"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "description", dsAddr, "description"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						pc, err := testClient().PostureChecks.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						out := map[string]string{
+							"name":        pc.Name,
+							"description": valOr(pc.Description, ""),
+						}
+						if pc.Checks.NbVersionCheck != nil {
+							out["netbird_version_check.min_version"] = pc.Checks.NbVersionCheck.MinVersion
+						}
+						return out, nil
+					}),
 				),
 			},
 		},
@@ -382,6 +462,21 @@ data "netbird_route" "%[1]s_by_network" {
 					resource.TestCheckResourceAttr(dsAddr, "groups.0", e2eGroupAllID()),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_network", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_network", "description", dsAddr, "description"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						r, err := testClient().Routes.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"network_id":  r.NetworkId,
+							"description": r.Description,
+							"metric":      fmt.Sprint(r.Metric),
+							"enabled":     fmt.Sprint(r.Enabled),
+							"masquerade":  fmt.Sprint(r.Masquerade),
+							"domains.#":   apiListCount(valOr(r.Domains, []string{})),
+							"groups.#":    apiListCount(r.Groups),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -429,6 +524,24 @@ data "netbird_setup_key" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "auto_groups.0", e2eGroupNotAllID()),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "type", dsAddr, "type"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						k, err := testClient().SetupKeys.Get(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":                   k.Name,
+							"type":                   k.Type,
+							"state":                  k.State,
+							"valid":                  fmt.Sprint(k.Valid),
+							"revoked":                fmt.Sprint(k.Revoked),
+							"ephemeral":              fmt.Sprint(k.Ephemeral),
+							"usage_limit":            fmt.Sprint(k.UsageLimit),
+							"used_times":             fmt.Sprint(k.UsedTimes),
+							"allow_extra_dns_labels": fmt.Sprint(k.AllowExtraDnsLabels),
+							"auto_groups.#":          apiListCount(k.AutoGroups),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -469,6 +582,16 @@ data "netbird_token" "%[1]s_by_id" {
 					resource.TestCheckResourceAttrSet(dsAddr, "created_at"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "name", dsAddr, "name"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						tok, err := testClient().Tokens.Get(context.Background(), attrs["user_id"], attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":    tok.Name,
+							"user_id": env.UserID,
+						}, nil
+					}),
 				),
 			},
 		},
@@ -504,6 +627,22 @@ data "netbird_user" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "is_blocked", "false"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "email", dsAddr, "email"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						me, err := testClient().Users.Current(context.Background())
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"id":              me.Id,
+							"email":           me.Email,
+							"name":            me.Name,
+							"role":            me.Role,
+							"status":          string(me.Status),
+							"is_blocked":      fmt.Sprint(me.IsBlocked),
+							"is_service_user": fmt.Sprint(valOr(me.IsServiceUser, false)),
+							"auto_groups.#":   apiListCount(me.AutoGroups),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -551,6 +690,26 @@ data "netbird_nameserver_group" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "groups.0", e2eGroupAllID()),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "nameservers.#", dsAddr, "nameservers.#"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						ns, err := testClient().DNS.GetNameserverGroup(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						out := map[string]string{
+							"name":                   ns.Name,
+							"description":            ns.Description,
+							"enabled":                fmt.Sprint(ns.Enabled),
+							"primary":                fmt.Sprint(ns.Primary),
+							"search_domains_enabled": fmt.Sprint(ns.SearchDomainsEnabled),
+							"nameservers.#":          apiListCount(ns.Nameservers),
+							"groups.#":               apiListCount(ns.Groups),
+						}
+						if len(ns.Nameservers) > 0 {
+							out["nameservers.0.ip"] = ns.Nameservers[0].Ip
+							out["nameservers.0.port"] = fmt.Sprint(ns.Nameservers[0].Port)
+						}
+						return out, nil
+					}),
 				),
 			},
 		},
@@ -584,6 +743,19 @@ data "netbird_agent_network_provider" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "upstream_url", "https://api.openai.com"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "provider_id", dsAddr, "provider_id"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						pr, err := testGetProvider(attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":              pr.Name,
+							"provider_id":       pr.ProviderId,
+							"upstream_url":      pr.UpstreamUrl,
+							"enabled":           fmt.Sprint(pr.Enabled),
+							"metadata_disabled": fmt.Sprint(pr.MetadataDisabled),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -631,6 +803,20 @@ data "netbird_agent_network_guardrail" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "prompt_capture.redact_pii", "true"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "description", dsAddr, "description"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						g, err := testAgentNetworkClient().GetGuardrail(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":                      g.Name,
+							"description":               g.Description,
+							"model_allowlist.enabled":   fmt.Sprint(g.Checks.ModelAllowlist.Enabled),
+							"model_allowlist.models.#":  fmt.Sprint(len(g.Checks.ModelAllowlist.Models)),
+							"prompt_capture.enabled":    fmt.Sprint(g.Checks.PromptCapture.Enabled),
+							"prompt_capture.redact_pii": fmt.Sprint(g.Checks.PromptCapture.RedactPii),
+						}, nil
+					}),
 				),
 			},
 		},
@@ -692,7 +878,7 @@ data "netbird_agent_network_policy" %[1]q {
 # direct GET instead of listing and scanning.
 data "netbird_agent_network_policy" "%[1]s_by_id" {
   id = netbird_agent_network_policy.%[1]s.id
-}`, rName, testBootstrapCluster),
+}`, rName, testBootstrapCluster()),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrPair(dsAddr, "id", "netbird_agent_network_policy."+rName, "id"),
 					resource.TestCheckResourceAttr(dsAddr, "source_groups.#", "1"),
@@ -702,6 +888,21 @@ data "netbird_agent_network_policy" "%[1]s_by_id" {
 					resource.TestCheckResourceAttr(dsAddr, "token_limit.group_cap", "1000000"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "id", dsAddr, "id"),
 					resource.TestCheckResourceAttrPair(dsAddr+"_by_id", "source_groups.#", dsAddr, "source_groups.#"),
+					checkAttrsMatchAPI(dsAddr, func(attrs map[string]string) (map[string]string, error) {
+						pol, err := testAgentNetworkClient().GetPolicy(context.Background(), attrs["id"])
+						if err != nil {
+							return nil, err
+						}
+						return map[string]string{
+							"name":                       pol.Name,
+							"enabled":                    fmt.Sprint(pol.Enabled),
+							"source_groups.#":            apiListCount(pol.SourceGroups),
+							"destination_provider_ids.#": apiListCount(pol.DestinationProviderIds),
+							"guardrail_ids.#":            apiListCount(pol.GuardrailIds),
+							"token_limit.enabled":        fmt.Sprint(pol.Limits.TokenLimit.Enabled),
+							"token_limit.group_cap":      fmt.Sprint(pol.Limits.TokenLimit.GroupCap),
+						}, nil
+					}),
 				),
 			},
 		},
