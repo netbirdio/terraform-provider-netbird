@@ -4,20 +4,100 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 // The acceptance tests below run against the dockerized management server
-// started by testEnsureManagementRunning. Agent Network needs a proxy cluster
-// address to bootstrap the account's settings row, but the server stores that
-// string verbatim without validating it, so a placeholder is enough.
-const testBootstrapCluster = "acc.test.invalid"
+// started by testEnsureManagementRunning. Bootstrapping the account's gateway
+// needs a proxy cluster address, but the server stores that string verbatim
+// without validating that a proxy answers there, so a placeholder is enough.
+const testProxyAddress = "acc.test.invalid"
+
+// movedProxyAddress is where a replacement test moves the gateway to, so the
+// endpoint it allocates is visibly beneath a different address.
+const movedProxyAddress = "moved.acc.test.invalid"
+
+// routeMissing reports whether an error is the management server answering that
+// it does not serve an endpoint at all.
+//
+// A 404 arrives in two shapes. A handler's 404 carries a JSON body and reaches
+// the caller as a typed error; the router's carries plain text, which the REST
+// client cannot unmarshal, so it surfaces as a parse failure naming the status
+// instead. Only the second shape means the route is absent, but matching both is
+// harmless here: no endpoint this file calls answers a typed 404.
+func routeMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	return netbird.IsNotFound(err) || strings.Contains(err.Error(), "error code 404")
+}
+
+// testRequireGatewayBootstrap skips when the server does not serve the gateway
+// bootstrap endpoint, which a server predating it does not.
+//
+// The probe is a create with neither address: a server serving the route rejects
+// it with a typed 422 for the missing address, one that does not answers the
+// router's 404. Nothing is created either way, so this leaves the account alone.
+func testRequireGatewayBootstrap(t *testing.T) {
+	t.Helper()
+	_, err := testAgentNetworkClient().CreateSettings(context.Background(), api.AgentNetworkSettingsCreateRequest{})
+	if routeMissing(err) {
+		t.Skip("management server predates the Agent Network gateway bootstrap API")
+	}
+}
+
+// testBootstrapGateway makes sure the account has a gateway, which providers no
+// longer create as a side effect: bootstrapping is a settings create of its own.
+// Idempotent, so every test that needs an endpoint can call it.
+func testBootstrapGateway(t *testing.T) {
+	t.Helper()
+	c := testAgentNetworkClient()
+	if s, err := c.GetSettings(context.Background()); err == nil && s.Endpoint != "" {
+		return
+	}
+	_, err := c.CreateSettings(context.Background(), api.AgentNetworkSettingsCreateRequest{
+		ProxyAddress: valPtr(testProxyAddress),
+	})
+	if routeMissing(err) {
+		t.Skip("management server predates the Agent Network gateway bootstrap API")
+	}
+	if err != nil {
+		t.Fatalf("bootstrap the agent network gateway: %v", err)
+	}
+}
+
+// testReleaseGateway takes the account back to having no gateway, so a bootstrap
+// test exercises the create path whatever ran before it. Releasing is refused
+// while providers still route through the gateway; a test that finds the account
+// in that state has nothing it can do, so it skips.
+func testReleaseGateway(t *testing.T) {
+	t.Helper()
+	c := testAgentNetworkClient()
+	s, err := c.GetSettings(context.Background())
+	if err != nil {
+		if netbird.IsNotFound(err) {
+			t.Skip("management server predates the agent-network settings defaults contract")
+		}
+		t.Fatalf("read agent network settings: %v", err)
+	}
+	if s.Endpoint == "" {
+		return
+	}
+	if err := c.DeleteSettings(context.Background()); err != nil {
+		if routeMissing(err) {
+			t.Skip("management server predates the Agent Network gateway bootstrap API")
+		}
+		t.Skipf("the account's gateway cannot be released: %v", err)
+	}
+}
 
 func testAgentNetworkClient() *netbird.AgentNetworkAPI {
 	return testClient().AgentNetwork
@@ -33,10 +113,9 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 	name              = "%s"
 	upstream_url      = "https://api.openai.com"
 	api_key           = "sk-acc-test"
-	bootstrap_cluster = "%s"
 	extra_values      = %s
 	metadata_disabled = %s
-}`, rName, name, testBootstrapCluster, extraValues, metadataDisabled)
+}`, rName, name, extraValues, metadataDisabled)
 }
 
 func Test_AgentNetworkProvider_Create(t *testing.T) {
@@ -130,8 +209,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 	name              = "%s"
 	upstream_url      = "%s"
 	api_key           = "sk-acc-test"
-	bootstrap_cluster = "%s"
-}`, rName, providerID, rName, upstream, testBootstrapCluster)
+}`, rName, providerID, rName, upstream)
 	}
 
 	var firstID string
@@ -222,7 +300,6 @@ resource "netbird_agent_network_provider" "%[1]s" {
 	name              = "%[1]s-provider"
 	upstream_url      = "https://api.openai.com"
 	api_key           = "sk-acc-test"
-	bootstrap_cluster = "%[2]s"
 }
 
 resource "netbird_agent_network_guardrail" "%[1]s" {
@@ -247,7 +324,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 		group_cap      = 1000000
 		window_seconds = 86400
 	}
-}`, rName, testBootstrapCluster)
+}`, rName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -334,34 +411,41 @@ func Test_AgentNetworkSettings_AdoptsExistingValues(t *testing.T) {
 	rName := "ans" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
-	// The provider create bootstraps the settings row, which the server seeds
-	// with log collection enabled. The settings resource manages only the
-	// retention, so log collection must survive.
+	// The account's gateway is bootstrapped with log collection enabled. This
+	// resource manages only the retention, so log collection must survive.
+	//
+	// The provider depends on the settings, not the other way round: the server
+	// refuses to release a gateway while providers still route through it, so the
+	// gateway has to be created first and destroyed last.
 	config := fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	access_log_retention_days = 45
+}
+
 resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id       = "openai_api"
 	name              = "%[1]s-provider"
 	upstream_url      = "https://api.openai.com"
 	api_key           = "sk-acc-test"
-	bootstrap_cluster = "%[2]s"
-}
-
-resource "netbird_agent_network_settings" "%[1]s" {
-	access_log_retention_days = 45
-	depends_on                = [netbird_agent_network_provider.%[1]s]
-}`, rName, testBootstrapCluster)
+	depends_on        = [netbird_agent_network_settings.%[1]s]
+}`, rName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
+			// The settings resource adopts an existing gateway rather than
+			// creating one, so the account needs to have been bootstrapped.
+			testBootstrapGateway(t)
 			// Normalize the singleton so the assertion does not depend on
-			// whatever a previous run left behind.
+			// whatever a previous run left behind. The addresses are echoed
+			// because the update requires them unchanged.
 			c := testAgentNetworkClient()
 			if cur, err := c.GetSettings(context.Background()); err == nil && !cur.EnableLogCollection {
-				retention := 30
 				if _, err := c.UpdateSettings(context.Background(), api.AgentNetworkSettingsRequest{
+					Endpoint:               cur.Endpoint,
+					ProxyAddress:           cur.ProxyAddress,
 					EnableLogCollection:    true,
-					AccessLogRetentionDays: &retention,
+					AccessLogRetentionDays: 30,
 				}); err != nil {
 					t.Fatalf("failed to normalize agent-network settings: %v", err)
 				}
@@ -396,38 +480,27 @@ resource "netbird_agent_network_settings" "%[1]s" {
 	})
 }
 
-// Test_AgentNetworkSettings_BootstrapViaCluster covers the settings-first
-// bootstrap path: a settings resource carrying `cluster` creates the
-// account's settings row without any provider existing. It needs a
-// management server with the settings-defaults contract AND an account that
-// has never been bootstrapped, so it self-skips against older servers (where
-// the unbootstrapped read surfaces as not-found) and on accounts a previous
-// test already bootstrapped — on a fresh compose environment it runs when
-// scheduled before the provider tests.
-func Test_AgentNetworkSettings_BootstrapViaCluster(t *testing.T) {
+// Test_AgentNetworkSettings_BootstrapViaProxyAddress covers the bootstrap path:
+// a settings resource carrying `proxy_address` creates the account's gateway,
+// allocating an endpoint one label beneath that cluster. Nothing else bootstraps
+// an account, so the gateway is released first and the create path is what runs,
+// whatever ran before this test.
+func Test_AgentNetworkSettings_BootstrapViaProxyAddress(t *testing.T) {
 	rName := "ansboot" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
 	config := fmt.Sprintf(`
 resource "netbird_agent_network_settings" "%[1]s" {
-	cluster               = "%[2]s"
+	proxy_address         = "%[2]s"
 	enable_log_collection = true
 	redact_pii            = true
-}`, rName, testBootstrapCluster)
+}`, rName, testProxyAddress)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
-			s, err := testAgentNetworkClient().GetSettings(context.Background())
-			if err != nil {
-				if netbird.IsNotFound(err) {
-					t.Skip("management server predates the agent-network settings defaults contract")
-				}
-				t.Fatalf("failed to read agent-network settings: %v", err)
-			}
-			if s.Endpoint != "" {
-				t.Skip("account already bootstrapped; the settings cluster bootstrap needs a fresh account")
-			}
+			testRequireGatewayBootstrap(t)
+			testReleaseGateway(t)
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -435,10 +508,11 @@ resource "netbird_agent_network_settings" "%[1]s" {
 				ResourceName: rName,
 				Config:       config,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "cluster", testBootstrapCluster),
-					resource.TestCheckResourceAttrSet(rNameFull, "subdomain"),
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", testProxyAddress),
+					// An endpoint beneath a shared cluster, so not dedicated.
+					resource.TestCheckResourceAttr(rNameFull, "dedicated", "false"),
 					resource.TestMatchResourceAttr(rNameFull, "endpoint",
-						regexp.MustCompile(`\.`+regexp.QuoteMeta(testBootstrapCluster)+`$`)),
+						regexp.MustCompile(`^[^.]+\.`+regexp.QuoteMeta(testProxyAddress)+`$`)),
 					resource.TestCheckResourceAttr(rNameFull, "enable_log_collection", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "redact_pii", "true"),
 					func(s *terraform.State) error {
@@ -446,28 +520,248 @@ resource "netbird_agent_network_settings" "%[1]s" {
 						if err != nil {
 							return err
 						}
-						if got.Cluster != testBootstrapCluster {
-							return fmt.Errorf("cluster not pinned by the settings bootstrap, found %q", got.Cluster)
+						if got.ProxyAddress != testProxyAddress {
+							return fmt.Errorf("proxy address not pinned by the bootstrap, found %q", got.ProxyAddress)
 						}
 						if got.Endpoint == "" {
 							return fmt.Errorf("account still reads as unbootstrapped after the settings apply")
+						}
+						attrs := s.RootModule().Resources[rNameFull].Primary.Attributes
+						if attrs["endpoint"] != got.Endpoint {
+							return fmt.Errorf("endpoint mismatch: state %q, API %q", attrs["endpoint"], got.Endpoint)
 						}
 						return nil
 					},
 				),
 			},
 			{
-				// The cluster is pinned for good: a change must fail at plan
-				// time, before any destroy or API call can run.
+				// The addresses are assigned once, so a configured change is a
+				// replacement: the gateway is released and a new endpoint
+				// allocated beneath the address that was asked for. Applied
+				// rather than planned only, because the release is the half that
+				// can fail.
 				ResourceName: rName,
 				Config: fmt.Sprintf(`
 resource "netbird_agent_network_settings" "%[1]s" {
-	cluster               = "changed.cluster.invalid"
+	proxy_address         = "%[2]s"
 	enable_log_collection = true
 	redact_pii            = true
+}`, rName, movedProxyAddress),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(rNameFull, plancheck.ResourceActionReplace),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", movedProxyAddress),
+					resource.TestMatchResourceAttr(rNameFull, "endpoint",
+						regexp.MustCompile(`^[^.]+\.`+regexp.QuoteMeta(movedProxyAddress)+`$`)),
+					func(s *terraform.State) error {
+						got, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if got.ProxyAddress != movedProxyAddress {
+							return fmt.Errorf("management still serves from %q after the replacement", got.ProxyAddress)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// An address interpolated from a resource that is itself being replaced is
+// unknown at plan time even when it resolves to the same string. That must not
+// replace the gateway: releasing it allocates a new endpoint beneath the cluster,
+// silently moving the hostname agents call while the address never changed.
+//
+// terraform_data stands in for any such resource: triggers_replace forces it to
+// be replaced while its output stays the value it was given.
+func Test_AgentNetworkSettings_UnknownAddressDoesNotReplace(t *testing.T) {
+	rName := "ansunk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_agent_network_settings." + rName
+
+	config := func(trigger string) string {
+		return fmt.Sprintf(`
+resource "terraform_data" "%[1]s" {
+	input            = %[2]q
+	triggers_replace = %[3]q
+}
+
+resource "netbird_agent_network_settings" "%[1]s" {
+	proxy_address = terraform_data.%[1]s.output
+}`, rName, testProxyAddress, trigger)
+	}
+
+	var bootstrapped string
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
+			testReleaseGateway(t)
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       config("first"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", testProxyAddress),
+					func(s *terraform.State) error {
+						bootstrapped = s.RootModule().Resources[rNameFull].Primary.Attributes["endpoint"]
+						if bootstrapped == "" {
+							return fmt.Errorf("no endpoint recorded after the bootstrap")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				// The trigger changes, so terraform_data is replaced and its
+				// output is unknown while planning. The address it resolves to is
+				// the same, so the gateway has to survive.
+				ResourceName: rName,
+				Config:       config("second"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(rNameFull, plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					func(s *terraform.State) error {
+						got := s.RootModule().Resources[rNameFull].Primary.Attributes["endpoint"]
+						if got != bootstrapped {
+							return fmt.Errorf("the gateway was reallocated: endpoint was %q, now %q", bootstrapped, got)
+						}
+						current, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if current.Endpoint != bootstrapped {
+							return fmt.Errorf("management holds endpoint %q, expected the original %q", current.Endpoint, bootstrapped)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// The two addresses are mutually exclusive, and saying so at plan time names the
+// real problem instead of letting the apply report a missing bootstrap address.
+func Test_AgentNetworkSettings_BothAddressesRejected(t *testing.T) {
+	rName := "ansboth" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	endpoint      = "gw.acc.test.invalid"
+	proxy_address = "acc.test.invalid"
 }`, rName),
-				PlanOnly:    true,
-				ExpectError: regexp.MustCompile(`Cluster is immutable once assigned`),
+				ExpectError: regexp.MustCompile(`(?s)Invalid Attribute Combination|cannot be specified when`),
+			},
+		},
+	})
+}
+
+// The server stores an address lowercased and trimmed, so a configured value that
+// is not already in that shape has to be refused rather than applied and then
+// reported back differently.
+func Test_AgentNetworkSettings_AddressMustBeNormalized(t *testing.T) {
+	rName := "ansnorm" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	proxy_address = "Acc.Test.INVALID"
+}`, rName),
+				ExpectError: regexp.MustCompile(`must be a lowercase hostname`),
+			},
+		},
+	})
+}
+
+// A gateway can also be claimed by hostname, which makes it dedicated: the proxy
+// at that address is the account's gateway, so endpoint and proxy_address are the
+// same. Only reachable on an account with no gateway yet.
+func Test_AgentNetworkSettings_BootstrapDedicatedEndpoint(t *testing.T) {
+	rName := "ansded" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_agent_network_settings." + rName
+	endpoint := rName + ".acc.test.invalid"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
+			testReleaseGateway(t)
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	endpoint = "%[2]s"
+}`, rName, endpoint),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "endpoint", endpoint),
+					// A claimed hostname is served by a proxy declaring exactly
+					// that address, so the two addresses coincide.
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", endpoint),
+					resource.TestCheckResourceAttr(rNameFull, "dedicated", "true"),
+					func(s *terraform.State) error {
+						got, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if got.Endpoint != endpoint || got.ProxyAddress != endpoint {
+							return fmt.Errorf("management holds endpoint %q / proxy address %q, expected both to be %q",
+								got.Endpoint, got.ProxyAddress, endpoint)
+						}
+						if !got.Dedicated {
+							return fmt.Errorf("a self-addressed gateway should report dedicated")
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// Bootstrapping needs one of the two addresses. Without either, the apply has to
+// say so rather than reach an API that would refuse it.
+func Test_AgentNetworkSettings_BootstrapRequiresAnAddress(t *testing.T) {
+	rName := "ansreq" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
+			testReleaseGateway(t)
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	enable_log_collection = true
+}`, rName),
+				ExpectError: regexp.MustCompile(`Agent Network not bootstrapped`),
 			},
 		},
 	})

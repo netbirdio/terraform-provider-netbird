@@ -55,10 +55,6 @@ func (d *AgentNetworkProviderDataSource) Schema(_ context.Context, _ datasource.
 				Computed:            true,
 				Sensitive:           true,
 			},
-			"bootstrap_cluster": schema.StringAttribute{
-				MarkdownDescription: "Bootstrap cluster (only relevant on create)",
-				Computed:            true,
-			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the provider is enabled",
 				Computed:            true,

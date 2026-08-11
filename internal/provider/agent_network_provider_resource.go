@@ -39,7 +39,6 @@ type AgentNetworkProviderModel struct {
 	Name                 types.String `tfsdk:"name"`
 	UpstreamUrl          types.String `tfsdk:"upstream_url"`
 	ApiKey               types.String `tfsdk:"api_key"`
-	BootstrapCluster     types.String `tfsdk:"bootstrap_cluster"`
 	Enabled              types.Bool   `tfsdk:"enabled"`
 	SkipTlsVerification  types.Bool   `tfsdk:"skip_tls_verification"`
 	IdentityHeaderUserId types.String `tfsdk:"identity_header_user_id"`
@@ -97,14 +96,6 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 				MarkdownDescription: "Upstream provider API key. Sealed at rest; never returned in responses. Required on create; omit on update to keep the existing key.",
 				Required:            true,
 				Sensitive:           true,
-			},
-			"bootstrap_cluster": schema.StringAttribute{
-				MarkdownDescription: "Proxy cluster that fronts this account's Agent Network endpoint. Setting this on a provider create " +
-					"bootstraps the account's Agent Network settings row (cluster, subdomain and endpoint); **an account with no " +
-					"providers created with `bootstrap_cluster` set is never bootstrapped**, leaving agents with no endpoint to call " +
-					"and `netbird_agent_network_settings` unmanageable. Ignored once the account is bootstrapped, and on all updates. " +
-					"Use the `netbird_reverse_proxy_clusters` data source to find valid cluster addresses.",
-				Optional: true,
 			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the provider is enabled",
@@ -227,9 +218,6 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 	if !data.ApiKey.IsNull() && !data.ApiKey.IsUnknown() {
 		req.ApiKey = data.ApiKey.ValueStringPointer()
 	}
-	if !data.BootstrapCluster.IsNull() && !data.BootstrapCluster.IsUnknown() {
-		req.BootstrapCluster = data.BootstrapCluster.ValueStringPointer()
-	}
 	if !data.IdentityHeaderUserId.IsNull() && !data.IdentityHeaderUserId.IsUnknown() {
 		req.IdentityHeaderUserId = data.IdentityHeaderUserId.ValueStringPointer()
 	}
@@ -284,7 +272,7 @@ func (r *AgentNetworkProvider) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Error creating Agent Network Provider", err.Error())
 		return
 	}
-	r.warnIfAccountUnbootstrapped(ctx, &data, &resp.Diagnostics)
+	r.warnIfAccountUnbootstrapped(ctx, &resp.Diagnostics)
 	resp.Diagnostics.Append(agentNetworkProviderAPIToTerraform(ctx, p, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -293,16 +281,10 @@ func (r *AgentNetworkProvider) Create(ctx context.Context, req resource.CreateRe
 }
 
 // warnIfAccountUnbootstrapped flags the silent dead end where providers exist but
-// the account has no agent-network settings row, so there is no endpoint for
-// agents to call. The server only bootstraps that row when a provider is created
-// with bootstrap_cluster set, and it reports failures at debug level only, so
-// without this the misconfiguration is invisible until the settings resource
-// errors out. Only checked when bootstrap_cluster was omitted, so accounts that
-// are already bootstrapped (where the field is ignored) stay quiet.
-func (r *AgentNetworkProvider) warnIfAccountUnbootstrapped(ctx context.Context, data *AgentNetworkProviderModel, diags *diag.Diagnostics) {
-	if !data.BootstrapCluster.IsNull() && !data.BootstrapCluster.IsUnknown() && data.BootstrapCluster.ValueString() != "" {
-		return
-	}
+// the account has no Agent Network gateway, so there is no endpoint for agents to
+// call. Creating a provider no longer bootstraps one, so without this the
+// misconfiguration is invisible until an agent has nowhere to connect.
+func (r *AgentNetworkProvider) warnIfAccountUnbootstrapped(ctx context.Context, diags *diag.Diagnostics) {
 	settings, err := r.client.GetSettings(ctx)
 	if err != nil && !netbird.IsNotFound(err) {
 		// The check itself failed — this is advisory only and must never
@@ -317,10 +299,10 @@ func (r *AgentNetworkProvider) warnIfAccountUnbootstrapped(ctx context.Context, 
 	}
 	diags.AddWarning(
 		"Agent Network account not bootstrapped",
-		"This provider was created but the account has no Agent Network settings row, so there is no "+
-			"endpoint for agents to call. Set `bootstrap_cluster` on an Agent Network provider or `cluster` "+
-			"on a netbird_agent_network_settings resource to bootstrap the account; the "+
-			"`netbird_reverse_proxy_clusters` data source lists valid cluster addresses.",
+		"This provider was created but the account has no Agent Network gateway, so there is no endpoint for "+
+			"agents to call. Add a netbird_agent_network_settings resource with `proxy_address` set, to allocate an "+
+			"endpoint beneath a shared proxy cluster, or `endpoint` set, to claim a hostname served by a dedicated "+
+			"proxy; the `netbird_reverse_proxy_clusters` data source lists cluster addresses.",
 	)
 }
 

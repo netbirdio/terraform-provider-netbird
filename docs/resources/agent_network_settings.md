@@ -3,21 +3,43 @@
 page_title: "netbird_agent_network_settings Resource - netbird"
 subcategory: ""
 description: |-
-  Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting cluster bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.
+  Manage the account's Agent Network gateway: the endpoint agents call, and the collection settings (log collection, prompt capture, PII redaction).
+  Set exactly one of proxy_address or endpoint to bootstrap an account that has none yet. proxy_address allocates a hostname one label beneath a shared proxy cluster; endpoint claims a hostname outright, served by a proxy dedicated to this account. Both are assigned once and immutable afterwards, so changing either replaces the resource: the endpoint is released and a new one allocated. Omit both to adopt whatever the account already has.
 ---
 
 # netbird_agent_network_settings (Resource)
 
-Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting `cluster` bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.
+Manage the account's Agent Network gateway: the endpoint agents call, and the collection settings (log collection, prompt capture, PII redaction).
+
+Set exactly one of `proxy_address` or `endpoint` to bootstrap an account that has none yet. `proxy_address` allocates a hostname one label beneath a shared proxy cluster; `endpoint` claims a hostname outright, served by a proxy dedicated to this account. Both are assigned once and immutable afterwards, so changing either replaces the resource: the endpoint is released and a new one allocated. Omit both to adopt whatever the account already has.
 
 ## Example Usage
 
 ```terraform
+# Bootstrapping the account's Agent Network gateway. Set exactly one address:
+#
+#   proxy_address — allocate an endpoint one label beneath a shared proxy
+#                   cluster, which is the usual choice.
+#   endpoint      — claim a hostname outright, served by a proxy dedicated to
+#                   this account.
+#
+# Both are assigned once and immutable afterwards, so changing either replaces
+# the resource: the endpoint is released and a new one allocated, which requires
+# the account's Agent Network providers to be destroyed first.
+data "netbird_reverse_proxy_clusters" "all" {}
+
 resource "netbird_agent_network_settings" "main" {
+  proxy_address = data.netbird_reverse_proxy_clusters.all.clusters[0].address
+
   enable_log_collection     = true
   enable_prompt_collection  = false
   redact_pii                = false
   access_log_retention_days = 90
+}
+
+# The hostname agents are configured with.
+output "agent_network_endpoint" {
+  value = netbird_agent_network_settings.main.endpoint
 }
 ```
 
@@ -27,12 +49,12 @@ resource "netbird_agent_network_settings" "main" {
 ### Optional
 
 - `access_log_retention_days` (Number) Days to retain full access-log rows (0 or less = keep indefinitely). Omit to leave the account's current value unchanged.
-- `cluster` (String) Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned: changing it is rejected at plan time, since the settings row cannot be deleted or re-created on another cluster. Omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.
 - `enable_log_collection` (Boolean) Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.
 - `enable_prompt_collection` (Boolean) Master switch for request/response prompt capture (effective only when a policy guardrail also enables it). Omit to leave the account's current value unchanged.
+- `endpoint` (String) Hostname agents call for this account. Set it to claim that hostname outright, which makes the gateway dedicated: only a proxy declaring exactly this address serves it, and it is rejected when another account already holds it. Mutually exclusive with `proxy_address`. Assigned by the server when `proxy_address` is used instead. Immutable once assigned: changing it releases the current endpoint and allocates anew, which requires the account's Agent Network providers to be destroyed first.
+- `proxy_address` (String) Cluster address of the proxy serving this account's gateway. Set it to allocate an endpoint one label beneath a shared cluster — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Mutually exclusive with `endpoint`, and equal to it when the gateway is dedicated. Immutable once assigned, with the same replacement semantics as `endpoint`.
 - `redact_pii` (Boolean) Redact PII from captured prompts. Omit to leave the account's current value unchanged.
 
 ### Read-Only
 
-- `endpoint` (String) Full agent-network endpoint hostname (`<subdomain>.<cluster>`), read-only
-- `subdomain` (String) DNS-safe subdomain prefix (read-only)
+- `dedicated` (Boolean) Whether a proxy dedicated to this account serves the gateway, which is the case when `endpoint` and `proxy_address` are the same address (read-only).

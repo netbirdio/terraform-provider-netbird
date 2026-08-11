@@ -1,16 +1,14 @@
-# The account's Agent Network settings row — which supplies the endpoint agents
-# call — is created only when a provider is created with `bootstrap_cluster` set.
-# Creating providers without it leaves the account unbootstrapped, so set it on
-# at least the first provider. It is ignored once the account is bootstrapped.
-data "netbird_reverse_proxy_clusters" "all" {}
-
+# The account needs an Agent Network gateway before agents have anywhere to send
+# traffic, and creating a provider does not make one. Bootstrap it with a
+# netbird_agent_network_settings resource (see its example) and depend on it, so
+# the endpoint exists before the provider that routes through it.
 resource "netbird_agent_network_provider" "openai" {
   provider_id  = "openai_api"
   name         = "OpenAI Production"
   upstream_url = "https://api.openai.com"
   api_key      = var.openai_api_key
 
-  bootstrap_cluster = data.netbird_reverse_proxy_clusters.all.clusters[0].address
+  depends_on = [netbird_agent_network_settings.main]
 
   models = [
     {
