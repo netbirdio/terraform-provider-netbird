@@ -41,15 +41,31 @@ if [ -z "$src" ] || [ ! -d "$src" ]; then
   exit 1
 fi
 
-# resolve_image echoes the image to use for a component and builds it when
-# needed. $1 component, $2 override env value, $3 default local tag,
-# $4 dockerfile (relative to the build context, or absolute).
+# pull_image fetches a registry reference so the tag exists locally, which is
+# what lets a caller `docker save` every image this script reports. An image that
+# is already present is left alone: it may be a tag built here and never pushed.
+pull_image() {
+  local component="$1" image="$2"
+
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    echo "$component: reusing $image" >&2
+  else
+    echo "$component: pulling $image" >&2
+    docker pull --quiet "$image" >&2
+  fi
+  echo "$component=$image"
+}
+
+# resolve_image echoes the image to use for a component and makes sure it is
+# present locally, building it when it is ours to build. $1 component,
+# $2 override env value, $3 default local tag, $4 dockerfile (relative to the
+# build context, or absolute).
 resolve_image() {
   local component="$1" override="$2" tag="$3" dockerfile="$4"
 
   if [ -n "$override" ]; then
     if [[ "$override" == */* ]]; then
-      echo "$component=$override"
+      pull_image "$component" "$override"
       return
     fi
     tag="$override"
@@ -71,4 +87,4 @@ resolve_image proxy "${NB_E2E_PROXY_IMAGE:-}" "netbird-reverse-proxy:$version" \
 resolve_image client "${NB_E2E_CLIENT_IMAGE:-}" "netbird-client:$version" \
   "$repo_root/test/Dockerfile.client"
 
-echo "dashboard=${NB_E2E_DASHBOARD_IMAGE:-$default_dashboard_image}"
+pull_image dashboard "${NB_E2E_DASHBOARD_IMAGE:-$default_dashboard_image}"

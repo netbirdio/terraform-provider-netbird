@@ -56,7 +56,7 @@ resource "netbird_user" "real_user" {
 - `is_current` (Boolean) Set to true if the caller user is the same as the resource user
 - `issued` (String) User issue method
 - `last_login` (String) User Last Login timedate
-- `status` (String) User status (active or invited)
+- `status` (String) User status (active, invited or blocked)
 
 ## Import
 

@@ -1,10 +1,12 @@
-# Terraform Provider testing workflow.
+# Build, lint, generated documentation and the tests that need nothing but Go.
+# The end-to-end suite lives in e2e.yml: it stands up a NetBird deployment in
+# containers, so it is slower by an order of magnitude and has no business
+# gating the checks that answer in a minute.
 name: Tests
 
 # Runs for every pull request, and once more on main after a merge. Pushes to
 # other branches are not built: a branch that is not in a pull request yet gets
-# nothing out of a run, and each run stands up a full NetBird deployment per
-# Terraform version.
+# nothing out of a run.
 on:
   pull_request:
     paths-ignore:
@@ -20,7 +22,6 @@ permissions:
   contents: read
 
 jobs:
-  # Ensure project builds before running testing matrix
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -56,14 +57,15 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
 
-  # Build the deployment images once from the netbird version pinned in go.mod
-  # and hand them to the matrix, so the acceptance jobs compile the server once
-  # between them rather than once each.
-  images:
-    name: Build NetBird images
+  # Everything that runs without a deployment: the conversion and matching
+  # functions, and the provider's own configuration against a stub server. TF_ACC
+  # is deliberately unset, which is what makes the acceptance tests skip, so this
+  # job needs neither Docker nor a Terraform CLI.
+  unit:
+    name: Unit and integration tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -71,76 +73,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - run: go mod download
-      - name: Build and save
-        run: |
-          # The script prints "component=image" per line on stdout and logs to
-          # stderr, so the tags can be collected from the same run that builds.
-          test/build-images.sh | cut -d= -f2 > images.txt
-          cat images.txt
-          docker save $(tr '\n' ' ' < images.txt) | gzip > images.tar.gz
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: netbird-images
-          path: |
-            images.tar.gz
-            images.txt
-          retention-days: 1
-
-  # Run acceptance tests in a matrix with Terraform CLI versions. Each job starts
-  # its own deployment (netbird-server, dashboard, reverse proxy, agents) from the
-  # images above; the suite activates the account through POST /api/setup and
-  # drives Terraform against it.
-  test:
-    name: Terraform Provider Acceptance Tests
-    needs: images
-    runs-on: ubuntu-latest
-    # Above the sum of the step budgets below plus setup, so a job that overruns
-    # fails on the step that overran instead of being cancelled, which would skip
-    # the diagnostics.
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        # Supporting latest 6 minor versions of Terraform
-        terraform:
-          - '1.7.*'
-          - '1.8.*'
-          - '1.9.*'
-          - '1.10.*'
-          - '1.11.*'
-          - '1.12.*'
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
-        with:
-          terraform_version: ${{ matrix.terraform }}
-          terraform_wrapper: false
-      - run: go mod download
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: netbird-images
-      # Loaded under the tags the harness resolves to, so it reuses them instead
-      # of rebuilding.
-      - name: Load NetBird images
-        run: gzip -dc images.tar.gz | docker load
-        timeout-minutes: 5
-      # Needs an account that was never bootstrapped, so it runs first, against
-      # its own fresh deployment.
-      - env:
-          TF_ACC: "1"
-        run: go test -v -timeout 15m -run Test_AgentNetworkSettings_BootstrapViaCluster ./internal/provider/
-        timeout-minutes: 15
-      - env:
-          TF_ACC: "1"
-        run: go test -v -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/
-        timeout-minutes: 35
-      - name: Coverage summary
-        if: always()
-        run: |
-          if [ -f coverage.out ]; then
-            go tool cover -func=coverage.out | tail -n 1
-          fi
+      # Under the race detector: these tests are cheap, and the stub servers they
+      # drive run their handlers on another goroutine.
+      - run: go test -race -timeout 5m ./...
