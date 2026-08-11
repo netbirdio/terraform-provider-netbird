@@ -14,19 +14,21 @@ func Test_agentNetworkSettingsAPIToTerraform(t *testing.T) {
 		expected AgentNetworkSettingsModel
 	}{
 		{
+			// A gateway beneath a shared cluster: the endpoint hangs one label
+			// below the proxy address, so the two differ and it is not dedicated.
 			resource: &api.AgentNetworkSettings{
-				Cluster:                "c1",
-				Subdomain:              "sub",
 				Endpoint:               "sub.c1",
+				ProxyAddress:           "c1",
+				Dedicated:              false,
 				EnableLogCollection:    true,
 				EnablePromptCollection: true,
 				RedactPii:              true,
 				AccessLogRetentionDays: valPtr(90),
 			},
 			expected: AgentNetworkSettingsModel{
-				Cluster:                types.StringValue("c1"),
-				Subdomain:              types.StringValue("sub"),
 				Endpoint:               types.StringValue("sub.c1"),
+				ProxyAddress:           types.StringValue("c1"),
+				Dedicated:              types.BoolValue(false),
 				EnableLogCollection:    types.BoolValue(true),
 				EnablePromptCollection: types.BoolValue(true),
 				RedactPii:              types.BoolValue(true),
@@ -34,19 +36,21 @@ func Test_agentNetworkSettingsAPIToTerraform(t *testing.T) {
 			},
 		},
 		{
-			// Absent retention means "keep indefinitely" and maps to null.
+			// A claimed hostname: endpoint and proxy address coincide, and the
+			// gateway is dedicated.
 			resource: &api.AgentNetworkSettings{
-				Cluster:   "c1",
-				Subdomain: "sub",
-				Endpoint:  "sub.c1",
+				Endpoint:     "gw.example",
+				ProxyAddress: "gw.example",
+				Dedicated:    true,
 			},
 			expected: AgentNetworkSettingsModel{
-				Cluster:                types.StringValue("c1"),
-				Subdomain:              types.StringValue("sub"),
-				Endpoint:               types.StringValue("sub.c1"),
+				Endpoint:               types.StringValue("gw.example"),
+				ProxyAddress:           types.StringValue("gw.example"),
+				Dedicated:              types.BoolValue(true),
 				EnableLogCollection:    types.BoolValue(false),
 				EnablePromptCollection: types.BoolValue(false),
 				RedactPii:              types.BoolValue(false),
+				// Absent retention means "keep indefinitely" and maps to null.
 				AccessLogRetentionDays: types.Int64Null(),
 			},
 		},
@@ -65,9 +69,12 @@ func Test_agentNetworkSettingsAPIToTerraform(t *testing.T) {
 // The settings row is a server-managed singleton and the API replaces every
 // mutable field on PUT. Fields the configuration does not set must therefore
 // adopt the account's current value; sending schema defaults instead would
-// silently disable log/prompt collection or drop access-log retention.
+// silently disable log/prompt collection or drop access-log retention. The two
+// addresses are echoed unchanged, because the API rejects any other value.
 func Test_settingsUpdateRequest(t *testing.T) {
 	current := &api.AgentNetworkSettings{
+		Endpoint:               "sub.c1",
+		ProxyAddress:           "c1",
 		EnableLogCollection:    true,
 		EnablePromptCollection: true,
 		RedactPii:              true,
@@ -88,10 +95,12 @@ func Test_settingsUpdateRequest(t *testing.T) {
 				AccessLogRetentionDays: types.Int64Null(),
 			},
 			expected: api.AgentNetworkSettingsRequest{
+				Endpoint:               "sub.c1",
+				ProxyAddress:           "c1",
 				EnableLogCollection:    true,
 				EnablePromptCollection: true,
 				RedactPii:              true,
-				AccessLogRetentionDays: valPtr(90),
+				AccessLogRetentionDays: 90,
 			},
 		},
 		{
@@ -103,10 +112,12 @@ func Test_settingsUpdateRequest(t *testing.T) {
 				AccessLogRetentionDays: types.Int64Value(30),
 			},
 			expected: api.AgentNetworkSettingsRequest{
+				Endpoint:               "sub.c1",
+				ProxyAddress:           "c1",
 				EnableLogCollection:    false,
 				EnablePromptCollection: false,
 				RedactPii:              false,
-				AccessLogRetentionDays: valPtr(30),
+				AccessLogRetentionDays: 30,
 			},
 		},
 		{
@@ -118,10 +129,29 @@ func Test_settingsUpdateRequest(t *testing.T) {
 				AccessLogRetentionDays: types.Int64Null(),
 			},
 			expected: api.AgentNetworkSettingsRequest{
+				Endpoint:               "sub.c1",
+				ProxyAddress:           "c1",
 				EnableLogCollection:    true,
 				EnablePromptCollection: true,
 				RedactPii:              false,
-				AccessLogRetentionDays: valPtr(90),
+				AccessLogRetentionDays: 90,
+			},
+		},
+		{
+			// A configured address is never sent as such: the assigned value is,
+			// so a stale configuration cannot turn into a rejected request.
+			name: "configured addresses do not override the assigned ones",
+			data: AgentNetworkSettingsModel{
+				Endpoint:     types.StringValue("other.example"),
+				ProxyAddress: types.StringValue("other"),
+			},
+			expected: api.AgentNetworkSettingsRequest{
+				Endpoint:               "sub.c1",
+				ProxyAddress:           "c1",
+				EnableLogCollection:    true,
+				EnablePromptCollection: true,
+				RedactPii:              true,
+				AccessLogRetentionDays: 90,
 			},
 		},
 	}
@@ -136,27 +166,85 @@ func Test_settingsUpdateRequest(t *testing.T) {
 	}
 }
 
-// Test_clusterChangeForbidden pins the plan-time immutability gate: only a
-// known, non-empty planned cluster that differs from a known, non-empty
-// assigned one is rejected. Creates, interpolated (unknown) values, and
-// omitted attributes must all pass — the server remains the backstop there.
-func Test_clusterChangeForbidden(t *testing.T) {
+// Bootstrap sends only what the configuration set, so the server applies its own
+// defaults to the rest rather than this provider inventing them. Exactly one of
+// the two addresses travels, which is what selects the gateway's shape.
+func Test_settingsCreateRequest(t *testing.T) {
 	cases := []struct {
-		name      string
-		state     types.String
-		plan      types.String
-		forbidden bool
+		name     string
+		data     AgentNetworkSettingsModel
+		expected api.AgentNetworkSettingsCreateRequest
 	}{
-		{"create: null state", types.StringNull(), types.StringValue("eu.proxy"), false},
-		{"create: empty state", types.StringValue(""), types.StringValue("eu.proxy"), false},
-		{"omitted: plan copies state", types.StringValue("eu.proxy"), types.StringValue("eu.proxy"), false},
-		{"interpolated: unknown plan", types.StringValue("eu.proxy"), types.StringUnknown(), false},
-		{"null plan", types.StringValue("eu.proxy"), types.StringNull(), false},
-		{"change is forbidden", types.StringValue("eu.proxy"), types.StringValue("us.proxy"), true},
+		{
+			name: "proxy address only, no collection fields",
+			data: AgentNetworkSettingsModel{
+				ProxyAddress:           types.StringValue("c1"),
+				Endpoint:               types.StringNull(),
+				EnableLogCollection:    types.BoolNull(),
+				EnablePromptCollection: types.BoolUnknown(),
+				RedactPii:              types.BoolNull(),
+				AccessLogRetentionDays: types.Int64Null(),
+			},
+			expected: api.AgentNetworkSettingsCreateRequest{
+				ProxyAddress: valPtr("c1"),
+			},
+		},
+		{
+			name: "endpoint claim with collection fields",
+			data: AgentNetworkSettingsModel{
+				Endpoint:               types.StringValue("gw.example"),
+				ProxyAddress:           types.StringUnknown(),
+				EnableLogCollection:    types.BoolValue(true),
+				EnablePromptCollection: types.BoolValue(false),
+				RedactPii:              types.BoolValue(true),
+				AccessLogRetentionDays: types.Int64Value(45),
+			},
+			expected: api.AgentNetworkSettingsCreateRequest{
+				Endpoint:               valPtr("gw.example"),
+				EnableLogCollection:    valPtr(true),
+				EnablePromptCollection: valPtr(false),
+				RedactPii:              valPtr(true),
+				AccessLogRetentionDays: valPtr(45),
+			},
+		},
+		{
+			// An empty string is an omitted address, not a claim on "".
+			name: "empty addresses are omitted",
+			data: AgentNetworkSettingsModel{
+				Endpoint:     types.StringValue(""),
+				ProxyAddress: types.StringValue(""),
+			},
+			expected: api.AgentNetworkSettingsCreateRequest{},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := settingsCreateRequest(&c.data)
+			if !reflect.DeepEqual(out, c.expected) {
+				t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
+			}
+		})
+	}
+}
+
+// configured is what decides whether an address travels in a bootstrap request,
+// so the states that must not count as configured are pinned here: an omitted
+// attribute, one that is interpolated and still unknown, and an empty string.
+func Test_configured(t *testing.T) {
+	cases := []struct {
+		name  string
+		value types.String
+		want  bool
+	}{
+		{"null", types.StringNull(), false},
+		{"unknown", types.StringUnknown(), false},
+		{"empty", types.StringValue(""), false},
+		{"set", types.StringValue("c1"), true},
 	}
 	for _, c := range cases {
-		if got := clusterChangeForbidden(c.state, c.plan); got != c.forbidden {
-			t.Errorf("%s: clusterChangeForbidden = %v, want %v", c.name, got, c.forbidden)
+		if got := configured(c.value); got != c.want {
+			t.Errorf("%s: configured = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

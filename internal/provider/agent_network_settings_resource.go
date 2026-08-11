@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	_ resource.Resource               = &AgentNetworkSettings{}
-	_ resource.ResourceWithModifyPlan = &AgentNetworkSettings{}
+	_ resource.Resource = &AgentNetworkSettings{}
 )
 
 func NewAgentNetworkSettings() resource.Resource {
@@ -35,12 +34,13 @@ type AgentNetworkSettings struct {
 	client *netbird.AgentNetworkAPI
 }
 
-// AgentNetworkSettingsModel mirrors the mutable + read-only fields of AgentNetworkSettings.
+// AgentNetworkSettingsModel mirrors the identity, mutable and read-only fields of
+// AgentNetworkSettings.
 type AgentNetworkSettingsModel struct {
-	// computed / read-only
-	Cluster   types.String `tfsdk:"cluster"`
-	Subdomain types.String `tfsdk:"subdomain"`
-	Endpoint  types.String `tfsdk:"endpoint"`
+	// identity — assigned at bootstrap, immutable afterwards
+	Endpoint     types.String `tfsdk:"endpoint"`
+	ProxyAddress types.String `tfsdk:"proxy_address"`
+	Dedicated    types.Bool   `tfsdk:"dedicated"`
 	// mutable
 	EnableLogCollection    types.Bool  `tfsdk:"enable_log_collection"`
 	EnablePromptCollection types.Bool  `tfsdk:"enable_prompt_collection"`
@@ -54,26 +54,50 @@ func (r *AgentNetworkSettings) Metadata(_ context.Context, req resource.Metadata
 
 func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manage account-level Agent Network gateway settings (log collection, prompt capture, PII redaction). Setting `cluster` bootstraps the account when it has no settings row yet; cluster and subdomain are immutable once assigned.",
+		MarkdownDescription: "Manage the account's Agent Network gateway: the endpoint agents call, and the collection " +
+			"settings (log collection, prompt capture, PII redaction).\n\n" +
+			"Set exactly one of `proxy_address` or `endpoint` to bootstrap an account that has none yet. " +
+			"`proxy_address` allocates a hostname one label beneath a shared proxy cluster; `endpoint` claims a " +
+			"hostname outright, served by a proxy dedicated to this account. Both are assigned once and immutable " +
+			"afterwards, so changing either replaces the resource: the endpoint is released and a new one allocated. " +
+			"Omit both to adopt whatever the account already has.",
 		Attributes: map[string]schema.Attribute{
-			"cluster": schema.StringAttribute{
-				MarkdownDescription: "Proxy cluster address fronting this account's agent-network endpoint. Set it to bootstrap the account when it has no Agent Network settings row yet — the `netbird_reverse_proxy_clusters` data source lists valid addresses. Immutable once assigned: changing it is rejected at plan time, since the settings row cannot be deleted or re-created on another cluster. Omit to adopt the cluster assigned when a provider was created with `bootstrap_cluster`.",
-				Optional:            true,
-				Computed:            true,
-				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
+			"endpoint": schema.StringAttribute{
+				MarkdownDescription: "Hostname agents call for this account. Set it to claim that hostname outright, " +
+					"which makes the gateway dedicated: only a proxy declaring exactly this address serves it, and it " +
+					"is rejected when another account already holds it. Mutually exclusive with `proxy_address`. " +
+					"Assigned by the server when `proxy_address` is used instead. Immutable once assigned: changing it " +
+					"releases the current endpoint and allocates anew, which requires the account's Agent Network " +
+					"providers to be destroyed first.",
+				Optional:   true,
+				Computed:   true,
+				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
+					// Only a configured change forces a replacement: once the
+					// server has assigned an endpoint, state carries it and a
+					// configuration that omits it must keep it.
+					stringplanmodifier.RequiresReplaceIfConfigured(),
 				},
 			},
-			"subdomain": schema.StringAttribute{
-				MarkdownDescription: "DNS-safe subdomain prefix (read-only)",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			"proxy_address": schema.StringAttribute{
+				MarkdownDescription: "Cluster address of the proxy serving this account's gateway. Set it to allocate an " +
+					"endpoint one label beneath a shared cluster — the `netbird_reverse_proxy_clusters` data source lists " +
+					"valid addresses. Mutually exclusive with `endpoint`, and equal to it when the gateway is dedicated. " +
+					"Immutable once assigned, with the same replacement semantics as `endpoint`.",
+				Optional:   true,
+				Computed:   true,
+				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+					stringplanmodifier.RequiresReplaceIfConfigured(),
+				},
 			},
-			"endpoint": schema.StringAttribute{
-				MarkdownDescription: "Full agent-network endpoint hostname (`<subdomain>.<cluster>`), read-only",
-				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			"dedicated": schema.BoolAttribute{
+				MarkdownDescription: "Whether a proxy dedicated to this account serves the gateway, which is the case when " +
+					"`endpoint` and `proxy_address` are the same address (read-only).",
+				Computed:      true,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"enable_log_collection": schema.BoolAttribute{
 				MarkdownDescription: "Collect per-request access-log entries for this account. Omit to leave the account's current value unchanged.",
@@ -103,49 +127,6 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 	}
 }
 
-// clusterChangeForbidden reports whether the plan attempts to change an
-// already-assigned cluster. Unknown or empty values never trip it: creates
-// (no assigned cluster yet), interpolated values (unknown until apply), and
-// omitted attributes (the plan copies state) are all legitimate.
-func clusterChangeForbidden(state, plan types.String) bool {
-	if state.IsNull() || state.IsUnknown() || state.ValueString() == "" {
-		return false
-	}
-	if plan.IsNull() || plan.IsUnknown() || plan.ValueString() == "" {
-		return false
-	}
-	return plan.ValueString() != state.ValueString()
-}
-
-// ModifyPlan rejects changes to an already-assigned cluster at plan time. The
-// server pins the cluster forever (there is no settings delete), so neither
-// an in-place update nor a replace can ever satisfy such a plan — failing
-// early beats a half-executed apply.
-func (r *AgentNetworkSettings) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	// Nothing to guard on destroy (null plan) or create (null state — the
-	// bootstrap path may pin any cluster).
-	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
-		return
-	}
-
-	var stateCluster, planCluster types.String
-	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("cluster"), &stateCluster)...)
-	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("cluster"), &planCluster)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if clusterChangeForbidden(stateCluster, planCluster) {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("cluster"),
-			"Cluster is immutable once assigned",
-			fmt.Sprintf("The account's Agent Network cluster is pinned to %q and cannot be changed or replaced — "+
-				"the settings row cannot be deleted or re-created on another cluster. Remove `cluster` from the "+
-				"configuration or set it back to the assigned value.", stateCluster.ValueString()),
-		)
-	}
-}
-
 func (r *AgentNetworkSettings) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
@@ -160,9 +141,9 @@ func (r *AgentNetworkSettings) Configure(_ context.Context, req resource.Configu
 }
 
 func agentNetworkSettingsAPIToTerraform(s *api.AgentNetworkSettings, data *AgentNetworkSettingsModel) {
-	data.Cluster = types.StringValue(s.Cluster)
-	data.Subdomain = types.StringValue(s.Subdomain)
 	data.Endpoint = types.StringValue(s.Endpoint)
+	data.ProxyAddress = types.StringValue(s.ProxyAddress)
+	data.Dedicated = types.BoolValue(s.Dedicated)
 	data.EnableLogCollection = types.BoolValue(s.EnableLogCollection)
 	data.EnablePromptCollection = types.BoolValue(s.EnablePromptCollection)
 	data.RedactPii = types.BoolValue(s.RedactPii)
@@ -173,20 +154,30 @@ func agentNetworkSettingsAPIToTerraform(s *api.AgentNetworkSettings, data *Agent
 	}
 }
 
+// configured reports whether the configuration set a string attribute to a
+// usable value, as opposed to omitting it or leaving it to be interpolated.
+func configured(v types.String) bool {
+	return !v.IsNull() && !v.IsUnknown() && v.ValueString() != ""
+}
+
 // settingsUpdateRequest builds an UpdateSettings request that starts from the
 // current server-side values and overrides only the fields the plan explicitly
 // set. The server replaces every mutable field on PUT, so without this merge an
 // omitted attribute would reset the account's value (turning off log/prompt
 // collection, or dropping access-log retention) instead of leaving it alone.
+//
+// The endpoint and proxy address are echoed from what the server holds: the PUT
+// requires them and rejects anything other than the assigned values.
 func settingsUpdateRequest(data *AgentNetworkSettingsModel, current *api.AgentNetworkSettings) api.AgentNetworkSettingsRequest {
 	req := api.AgentNetworkSettingsRequest{
+		Endpoint:               current.Endpoint,
+		ProxyAddress:           current.ProxyAddress,
 		EnableLogCollection:    current.EnableLogCollection,
 		EnablePromptCollection: current.EnablePromptCollection,
 		RedactPii:              current.RedactPii,
 	}
 	if current.AccessLogRetentionDays != nil {
-		v := *current.AccessLogRetentionDays
-		req.AccessLogRetentionDays = &v
+		req.AccessLogRetentionDays = *current.AccessLogRetentionDays
 	}
 
 	if !data.EnableLogCollection.IsNull() && !data.EnableLogCollection.IsUnknown() {
@@ -199,58 +190,94 @@ func settingsUpdateRequest(data *AgentNetworkSettingsModel, current *api.AgentNe
 		req.RedactPii = data.RedactPii.ValueBool()
 	}
 	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
+		req.AccessLogRetentionDays = int(data.AccessLogRetentionDays.ValueInt64())
+	}
+	return req
+}
+
+// settingsCreateRequest builds the bootstrap request. Only the collection fields
+// the configuration set are sent, so the server applies its own defaults to the
+// rest rather than this resource inventing them.
+func settingsCreateRequest(data *AgentNetworkSettingsModel) api.AgentNetworkSettingsCreateRequest {
+	req := api.AgentNetworkSettingsCreateRequest{}
+	if configured(data.Endpoint) {
+		req.Endpoint = data.Endpoint.ValueStringPointer()
+	}
+	if configured(data.ProxyAddress) {
+		req.ProxyAddress = data.ProxyAddress.ValueStringPointer()
+	}
+	if !data.EnableLogCollection.IsNull() && !data.EnableLogCollection.IsUnknown() {
+		req.EnableLogCollection = data.EnableLogCollection.ValueBoolPointer()
+	}
+	if !data.EnablePromptCollection.IsNull() && !data.EnablePromptCollection.IsUnknown() {
+		req.EnablePromptCollection = data.EnablePromptCollection.ValueBoolPointer()
+	}
+	if !data.RedactPii.IsNull() && !data.RedactPii.IsUnknown() {
+		req.RedactPii = data.RedactPii.ValueBoolPointer()
+	}
+	if !data.AccessLogRetentionDays.IsNull() && !data.AccessLogRetentionDays.IsUnknown() {
 		v := int(data.AccessLogRetentionDays.ValueInt64())
 		req.AccessLogRetentionDays = &v
 	}
 	return req
 }
 
-// applySettings reads the current server-managed singleton, merges the planned
-// overrides onto it, and PUTs the result. When the account has no settings
-// row yet, a configured cluster bootstraps it in the same call.
+// applySettings bootstraps the account when it has no gateway yet, and otherwise
+// updates the settings it already has.
+//
+// An empty endpoint on the read is the server's not-bootstrapped signal. In that
+// state only the create endpoint works — the update refuses with not-found — so
+// the two are not interchangeable.
 func (r *AgentNetworkSettings) applySettings(ctx context.Context, data *AgentNetworkSettingsModel, diags *diag.Diagnostics) {
 	current, err := r.client.GetSettings(ctx)
-	if err != nil {
-		if !netbird.IsNotFound(err) {
-			diags.AddError("Error reading Agent Network Settings", err.Error())
+	switch {
+	case err == nil && current.Endpoint != "":
+		if configured(data.Endpoint) && data.Endpoint.ValueString() != current.Endpoint {
+			diags.AddAttributeError(path.Root("endpoint"), "Endpoint is immutable once assigned",
+				fmt.Sprintf("The account's gateway endpoint is %q. Changing it means releasing that endpoint and "+
+					"allocating a new one, which this resource does by replacement; the account's Agent Network "+
+					"providers have to be destroyed first.", current.Endpoint))
 			return
 		}
-		// Management servers predating the defaults response answer the
-		// unbootstrapped state with a null body (translated to not-found by
-		// the client); fall back to the same defaults those servers apply at
-		// bootstrap so the merge below has a base either way.
-		retention := 30
-		current = &api.AgentNetworkSettings{EnableLogCollection: true, AccessLogRetentionDays: &retention}
-	}
+		if configured(data.ProxyAddress) && data.ProxyAddress.ValueString() != current.ProxyAddress {
+			diags.AddAttributeError(path.Root("proxy_address"), "Proxy address is immutable once assigned",
+				fmt.Sprintf("The account's gateway is served from %q. Changing it means releasing the endpoint and "+
+					"allocating a new one, which this resource does by replacement; the account's Agent Network "+
+					"providers have to be destroyed first.", current.ProxyAddress))
+			return
+		}
 
-	apiReq := settingsUpdateRequest(data, current)
+		updated, err := r.client.UpdateSettings(ctx, settingsUpdateRequest(data, current))
+		if err != nil {
+			diags.AddError("Error applying Agent Network Settings", err.Error())
+			return
+		}
+		agentNetworkSettingsAPIToTerraform(updated, data)
 
-	clusterConfigured := !data.Cluster.IsNull() && !data.Cluster.IsUnknown() && data.Cluster.ValueString() != ""
-	if clusterConfigured {
-		apiReq.Cluster = data.Cluster.ValueStringPointer()
-	}
-	// An empty endpoint is the server's not-bootstrapped signal.
-	if current.Endpoint == "" && !clusterConfigured {
-		diags.AddError(
-			"Agent Network not bootstrapped",
-			"The account has no Agent Network settings row yet. Set `cluster` on this resource to bootstrap it — "+
-				"the `netbird_reverse_proxy_clusters` data source lists valid cluster addresses — or create an "+
-				"Agent Network provider with `bootstrap_cluster` set and re-apply.",
-		)
-		return
-	}
+	case err == nil || netbird.IsNotFound(err):
+		// Not bootstrapped: exactly one of the two addresses picks the shape.
+		if configured(data.Endpoint) == configured(data.ProxyAddress) {
+			diags.AddError(
+				"Agent Network not bootstrapped",
+				"The account has no Agent Network gateway yet. Set exactly one of `proxy_address`, to allocate an "+
+					"endpoint beneath a shared proxy cluster, or `endpoint`, to claim a hostname served by a proxy "+
+					"dedicated to this account. The `netbird_reverse_proxy_clusters` data source lists cluster addresses.",
+			)
+			return
+		}
 
-	s, err := r.client.UpdateSettings(ctx, apiReq)
-	if err != nil {
-		diags.AddError("Error applying Agent Network Settings", err.Error())
-		return
-	}
+		created, err := r.client.CreateSettings(ctx, settingsCreateRequest(data))
+		if err != nil {
+			diags.AddError("Error bootstrapping Agent Network Settings", err.Error())
+			return
+		}
+		agentNetworkSettingsAPIToTerraform(created, data)
 
-	agentNetworkSettingsAPIToTerraform(s, data)
+	default:
+		diags.AddError("Error reading Agent Network Settings", err.Error())
+	}
 }
 
-// Create adopts the server-managed settings singleton, overriding only the
-// fields the configuration sets (singleton — no actual create).
 func (r *AgentNetworkSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AgentNetworkSettingsModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -281,8 +308,8 @@ func (r *AgentNetworkSettings) Read(ctx context.Context, req resource.ReadReques
 		resp.Diagnostics.AddError("Error reading Agent Network Settings", err.Error())
 		return
 	}
-	// An empty endpoint is the server's not-bootstrapped signal: the row this
-	// resource manages does not exist (yet), so drop it from state.
+	// An empty endpoint is the server's not-bootstrapped signal: the gateway this
+	// resource manages does not exist (any more), so drop it from state.
 	if s.Endpoint == "" {
 		resp.State.RemoveResource(ctx)
 		return
@@ -307,6 +334,15 @@ func (r *AgentNetworkSettings) Update(ctx context.Context, req resource.UpdateRe
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Delete is a no-op — the settings row always exists, we just stop managing it.
-func (r *AgentNetworkSettings) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
+// Delete releases the account's gateway, which is what makes a change of
+// endpoint or proxy address expressible as a replacement.
+//
+// The server guards the release: it refuses while the account still has Agent
+// Network providers, and while a proxy is actively serving a dedicated endpoint.
+// Those refusals are surfaced as they are — a gateway that is still in use is
+// not something to delete quietly. An already-released gateway is not an error.
+func (r *AgentNetworkSettings) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	if err := r.client.DeleteSettings(ctx); err != nil && !netbird.IsNotFound(err) {
+		resp.Diagnostics.AddError("Error deleting Agent Network Settings", err.Error())
+	}
 }
