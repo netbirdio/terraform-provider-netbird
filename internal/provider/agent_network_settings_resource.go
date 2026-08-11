@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -71,13 +72,10 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 					"providers to be destroyed first.",
 				Optional:   true,
 				Computed:   true,
-				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators: addressValidators("proxy_address"),
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
-					// Only a configured change forces a replacement: once the
-					// server has assigned an endpoint, state carries it and a
-					// configuration that omits it must keep it.
-					stringplanmodifier.RequiresReplaceIfConfigured(),
+					requiresReplaceIfAddressChanged(),
 				},
 			},
 			"proxy_address": schema.StringAttribute{
@@ -87,10 +85,10 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 					"Immutable once assigned, with the same replacement semantics as `endpoint`.",
 				Optional:   true,
 				Computed:   true,
-				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators: addressValidators("endpoint"),
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplaceIfConfigured(),
+					requiresReplaceIfAddressChanged(),
 				},
 			},
 			"dedicated": schema.BoolAttribute{
@@ -125,6 +123,54 @@ func (r *AgentNetworkSettings) Schema(_ context.Context, _ resource.SchemaReques
 			},
 		},
 	}
+}
+
+// hostnamePattern is the shape the server stores an address in: lowercase
+// labels of letters, digits and inner hyphens, separated by single dots.
+var hostnamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
+
+// addressValidators guards the two gateway addresses. conflictsWith names the
+// other one, since exactly one of them bootstraps a gateway.
+//
+// The pattern is not only about catching typos early. The server lowercases and
+// trims the address before storing it, and Terraform requires a configured value
+// to come back from apply unchanged, so `Example.COM ` would be planned as
+// written and stored normalized — an inconsistent-result error naming the
+// provider as buggy. Refusing it at plan time says what is actually wrong.
+func addressValidators(conflictsWith string) []validator.String {
+	return []validator.String{
+		stringvalidator.LengthAtLeast(1),
+		stringvalidator.RegexMatches(hostnamePattern,
+			"must be a lowercase hostname: letters, digits and inner hyphens in each label, "+
+				"single dots between labels, and no surrounding whitespace"),
+		stringvalidator.ConflictsWith(path.MatchRoot(conflictsWith)),
+	}
+}
+
+// requiresReplaceIfAddressChanged replaces the resource when the configuration
+// moves an address the server has already assigned: the endpoint is released and
+// a new one allocated, which is the only way to express that change.
+//
+// Only a value the configuration actually states counts. Once assigned, state
+// carries the address, so a configuration that omits it must keep it — that much
+// stringplanmodifier.RequiresReplaceIfConfigured would also give. What it would
+// not give is the unknown case: an address interpolated from a value that is not
+// resolvable until apply (an attribute of a resource being replaced, say) reaches
+// this point unknown, which is neither null nor equal to state, so it would force
+// a replacement on every plan. Releasing the gateway allocates a new endpoint
+// under a shared cluster, so that would silently move the hostname agents call
+// while the address itself never changed.
+//
+// An unknown address is therefore left alone. applySettings is what catches the
+// case where it does resolve to a different value at apply time.
+func requiresReplaceIfAddressChanged() planmodifier.String {
+	return stringplanmodifier.RequiresReplaceIf(
+		func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+			resp.RequiresReplace = configured(req.ConfigValue)
+		},
+		"If the configured address changes, the endpoint is released and a new one allocated.",
+		"If the configured address changes, the endpoint is released and a new one allocated.",
+	)
 }
 
 func (r *AgentNetworkSettings) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -19,6 +20,10 @@ import (
 // needs a proxy cluster address, but the server stores that string verbatim
 // without validating that a proxy answers there, so a placeholder is enough.
 const testProxyAddress = "acc.test.invalid"
+
+// movedProxyAddress is where a replacement test moves the gateway to, so the
+// endpoint it allocates is visibly beneath a different address.
+const movedProxyAddress = "moved.acc.test.invalid"
 
 // routeMissing reports whether an error is the management server answering that
 // it does not serve an endpoint at all.
@@ -530,17 +535,160 @@ resource "netbird_agent_network_settings" "%[1]s" {
 				),
 			},
 			{
-				// The addresses are assigned once. A different one has to be
-				// reported as a replacement, not applied in place.
+				// The addresses are assigned once, so a configured change is a
+				// replacement: the gateway is released and a new endpoint
+				// allocated beneath the address that was asked for. Applied
+				// rather than planned only, because the release is the half that
+				// can fail.
 				ResourceName: rName,
 				Config: fmt.Sprintf(`
 resource "netbird_agent_network_settings" "%[1]s" {
-	proxy_address         = "changed.cluster.invalid"
+	proxy_address         = "%[2]s"
 	enable_log_collection = true
 	redact_pii            = true
+}`, rName, movedProxyAddress),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(rNameFull, plancheck.ResourceActionReplace),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", movedProxyAddress),
+					resource.TestMatchResourceAttr(rNameFull, "endpoint",
+						regexp.MustCompile(`^[^.]+\.`+regexp.QuoteMeta(movedProxyAddress)+`$`)),
+					func(s *terraform.State) error {
+						got, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if got.ProxyAddress != movedProxyAddress {
+							return fmt.Errorf("management still serves from %q after the replacement", got.ProxyAddress)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// An address interpolated from a resource that is itself being replaced is
+// unknown at plan time even when it resolves to the same string. That must not
+// replace the gateway: releasing it allocates a new endpoint beneath the cluster,
+// silently moving the hostname agents call while the address never changed.
+//
+// terraform_data stands in for any such resource: triggers_replace forces it to
+// be replaced while its output stays the value it was given.
+func Test_AgentNetworkSettings_UnknownAddressDoesNotReplace(t *testing.T) {
+	rName := "ansunk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_agent_network_settings." + rName
+
+	config := func(trigger string) string {
+		return fmt.Sprintf(`
+resource "terraform_data" "%[1]s" {
+	input            = %[2]q
+	triggers_replace = %[3]q
+}
+
+resource "netbird_agent_network_settings" "%[1]s" {
+	proxy_address = terraform_data.%[1]s.output
+}`, rName, testProxyAddress, trigger)
+	}
+
+	var bootstrapped string
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
+			testReleaseGateway(t)
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       config("first"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "proxy_address", testProxyAddress),
+					func(s *terraform.State) error {
+						bootstrapped = s.RootModule().Resources[rNameFull].Primary.Attributes["endpoint"]
+						if bootstrapped == "" {
+							return fmt.Errorf("no endpoint recorded after the bootstrap")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				// The trigger changes, so terraform_data is replaced and its
+				// output is unknown while planning. The address it resolves to is
+				// the same, so the gateway has to survive.
+				ResourceName: rName,
+				Config:       config("second"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(rNameFull, plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					func(s *terraform.State) error {
+						got := s.RootModule().Resources[rNameFull].Primary.Attributes["endpoint"]
+						if got != bootstrapped {
+							return fmt.Errorf("the gateway was reallocated: endpoint was %q, now %q", bootstrapped, got)
+						}
+						current, err := testAgentNetworkClient().GetSettings(context.Background())
+						if err != nil {
+							return err
+						}
+						if current.Endpoint != bootstrapped {
+							return fmt.Errorf("management holds endpoint %q, expected the original %q", current.Endpoint, bootstrapped)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// The two addresses are mutually exclusive, and saying so at plan time names the
+// real problem instead of letting the apply report a missing bootstrap address.
+func Test_AgentNetworkSettings_BothAddressesRejected(t *testing.T) {
+	rName := "ansboth" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	endpoint      = "gw.acc.test.invalid"
+	proxy_address = "acc.test.invalid"
 }`, rName),
-				PlanOnly:           true,
-				ExpectNonEmptyPlan: true,
+				ExpectError: regexp.MustCompile(`(?s)Invalid Attribute Combination|cannot be specified when`),
+			},
+		},
+	})
+}
+
+// The server stores an address lowercased and trimmed, so a configured value that
+// is not already in that shape has to be refused rather than applied and then
+// reported back differently.
+func Test_AgentNetworkSettings_AddressMustBeNormalized(t *testing.T) {
+	rName := "ansnorm" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config: fmt.Sprintf(`
+resource "netbird_agent_network_settings" "%[1]s" {
+	proxy_address = "Acc.Test.INVALID"
+}`, rName),
+				ExpectError: regexp.MustCompile(`must be a lowercase hostname`),
 			},
 		},
 	})
