@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -19,6 +20,35 @@ import (
 // without validating that a proxy answers there, so a placeholder is enough.
 const testProxyAddress = "acc.test.invalid"
 
+// routeMissing reports whether an error is the management server answering that
+// it does not serve an endpoint at all.
+//
+// A 404 arrives in two shapes. A handler's 404 carries a JSON body and reaches
+// the caller as a typed error; the router's carries plain text, which the REST
+// client cannot unmarshal, so it surfaces as a parse failure naming the status
+// instead. Only the second shape means the route is absent, but matching both is
+// harmless here: no endpoint this file calls answers a typed 404.
+func routeMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	return netbird.IsNotFound(err) || strings.Contains(err.Error(), "error code 404")
+}
+
+// testRequireGatewayBootstrap skips when the server does not serve the gateway
+// bootstrap endpoint, which a server predating it does not.
+//
+// The probe is a create with neither address: a server serving the route rejects
+// it with a typed 422 for the missing address, one that does not answers the
+// router's 404. Nothing is created either way, so this leaves the account alone.
+func testRequireGatewayBootstrap(t *testing.T) {
+	t.Helper()
+	_, err := testAgentNetworkClient().CreateSettings(context.Background(), api.AgentNetworkSettingsCreateRequest{})
+	if routeMissing(err) {
+		t.Skip("management server predates the Agent Network gateway bootstrap API")
+	}
+}
+
 // testBootstrapGateway makes sure the account has a gateway, which providers no
 // longer create as a side effect: bootstrapping is a settings create of its own.
 // Idempotent, so every test that needs an endpoint can call it.
@@ -28,9 +58,13 @@ func testBootstrapGateway(t *testing.T) {
 	if s, err := c.GetSettings(context.Background()); err == nil && s.Endpoint != "" {
 		return
 	}
-	if _, err := c.CreateSettings(context.Background(), api.AgentNetworkSettingsCreateRequest{
+	_, err := c.CreateSettings(context.Background(), api.AgentNetworkSettingsCreateRequest{
 		ProxyAddress: valPtr(testProxyAddress),
-	}); err != nil {
+	})
+	if routeMissing(err) {
+		t.Skip("management server predates the Agent Network gateway bootstrap API")
+	}
+	if err != nil {
 		t.Fatalf("bootstrap the agent network gateway: %v", err)
 	}
 }
@@ -53,6 +87,9 @@ func testReleaseGateway(t *testing.T) {
 		return
 	}
 	if err := c.DeleteSettings(context.Background()); err != nil {
+		if routeMissing(err) {
+			t.Skip("management server predates the Agent Network gateway bootstrap API")
+		}
 		t.Skipf("the account's gateway cannot be released: %v", err)
 	}
 }
@@ -457,6 +494,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
 			testReleaseGateway(t)
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -519,6 +557,7 @@ func Test_AgentNetworkSettings_BootstrapDedicatedEndpoint(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
 			testReleaseGateway(t)
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -563,6 +602,7 @@ func Test_AgentNetworkSettings_BootstrapRequiresAnAddress(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
+			testRequireGatewayBootstrap(t)
 			testReleaseGateway(t)
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
