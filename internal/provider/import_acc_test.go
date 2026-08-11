@@ -403,7 +403,7 @@ resource "netbird_agent_network_policy" %[1]q {
     group_cap      = 1000000
     window_seconds = 86400
   }
-}`, rName, testBootstrapCluster)},
+}`, rName, testBootstrapCluster())},
 			{ResourceName: addr, ImportState: true, ImportStateVerify: true},
 		},
 	})
