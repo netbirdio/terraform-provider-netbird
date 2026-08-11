@@ -85,6 +85,7 @@ func Test_dnsRecordAPIToTerraform(t *testing.T) {
 }
 
 func Test_DNSRecord_Create(t *testing.T) {
+	testE2E(t)
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
@@ -114,6 +115,7 @@ func Test_DNSRecord_Create(t *testing.T) {
 }
 
 func Test_DNSRecord_Update(t *testing.T) {
+	testE2E(t)
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
@@ -142,6 +144,7 @@ func Test_DNSRecord_Update(t *testing.T) {
 }
 
 func Test_DNSRecord_CNAME(t *testing.T) {
+	testE2E(t)
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
@@ -162,6 +165,7 @@ func Test_DNSRecord_CNAME(t *testing.T) {
 }
 
 func Test_DNSRecord_DataSource(t *testing.T) {
+	testE2E(t)
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	dsNameFull := "data.netbird_dns_record." + rName
@@ -188,7 +192,7 @@ func testDNSRecordResource(zoneName, domain, recordName, recordSubdomain, record
 resource "netbird_dns_zone" "%s" {
   name                = "%s"
   domain              = "%s"
-  distribution_groups = ["group-all"]
+  distribution_groups = [%q]
 }
 
 resource "netbird_dns_record" "%s" {
@@ -198,7 +202,7 @@ resource "netbird_dns_record" "%s" {
   content = "%s"
   ttl     = %d
 }
-`, zoneName, zoneName, domain, recordName, zoneName, recordSubdomain, domain, recordType, recordContent, ttl)
+`, zoneName, zoneName, domain, e2eGroupAllID(), recordName, zoneName, recordSubdomain, domain, recordType, recordContent, ttl)
 }
 
 func testDNSRecordResourceAndDataSource(zoneName, domain, recordName, recordSubdomain, recordType, recordContent string, ttl int) string {

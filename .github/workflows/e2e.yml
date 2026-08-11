@@ -1,0 +1,115 @@
+# End-to-end tests: the acceptance suite against a NetBird deployment the tests
+# stand up in containers (see test/README.md). Everything that runs without a
+# deployment lives in test.yml.
+#
+# The Terraform CLI matrix is what the deployment is worth running more than once
+# for, since it is the provider's protocol surface that differs between CLI
+# versions. Paying for six deployments on every pull request buys little, so a
+# pull request runs the newest CLI only and the full matrix runs on main, where a
+# version-specific break still surfaces before a release.
+name: End-to-end
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+  # For running the full matrix on a branch before merging it.
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: 'Run every supported Terraform version'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the deployment images once from the netbird version pinned in go.mod, so
+  # the acceptance jobs share one compile of the server rather than one each.
+  images:
+    name: Build NetBird images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go mod download
+      - name: Build and save
+        run: |
+          # pipefail so a failure inside the pipeline fails the step: `docker save
+          # | gzip` otherwise reports gzip's exit status and ships an artifact that
+          # only breaks in the jobs downstream.
+          set -o pipefail
+          # The script prints "component=image" per line on stdout and its build
+          # logs to stderr, so the tags can be collected from the run that builds.
+          test/build-images.sh | cut -d= -f2 > images.txt
+          cat images.txt
+          docker save $(tr '\n' ' ' < images.txt) | gzip > images.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: netbird-images
+          path: |
+            images.tar.gz
+            images.txt
+          retention-days: 1
+
+  # Each job starts its own deployment (netbird-server, dashboard, reverse proxy,
+  # agents) from the images above, activates the account through POST /api/setup
+  # and drives Terraform against it.
+  acceptance:
+    name: Acceptance tests
+    needs: images
+    runs-on: ubuntu-latest
+    # Above the step budget below plus setup, so a job that overruns fails on the
+    # step that overran instead of being cancelled, which would skip the
+    # diagnostics.
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        # The latest six minor versions on main and on a dispatch that asks for
+        # them; the newest supported CLI everywhere else.
+        terraform: ${{ fromJSON((github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix)) && '["1.7.*","1.8.*","1.9.*","1.10.*","1.11.*","1.12.*"]' || '["1.12.*"]') }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      - run: go mod download
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: netbird-images
+      # Loaded under the tags the harness resolves to, so it reuses them instead
+      # of building or pulling anything itself.
+      - name: Load NetBird images
+        run: |
+          set -o pipefail
+          gzip -dc images.tar.gz | docker load
+        timeout-minutes: 5
+      # -tags e2e is what compiles the harness in; TF_ACC is
+      # terraform-plugin-testing's own switch. Both are needed, and neither on its
+      # own runs anything against the deployment.
+      - env:
+          TF_ACC: "1"
+        run: go test -v -tags e2e -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/
+        timeout-minutes: 35
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage.out ]; then
+            go tool cover -func=coverage.out | tail -n 1
+          fi

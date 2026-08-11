@@ -116,6 +116,7 @@ func Test_identityProviderTerraformToAPI(t *testing.T) {
 }
 
 func Test_IdentityProvider_Create(t *testing.T) {
+	testE2E(t)
 	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_identity_provider." + rName
 	resource.Test(t, resource.TestCase{
@@ -153,6 +154,7 @@ func Test_IdentityProvider_Create(t *testing.T) {
 }
 
 func Test_IdentityProvider_Update(t *testing.T) {
+	testE2E(t)
 	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_identity_provider." + rName
 	resource.Test(t, resource.TestCase{

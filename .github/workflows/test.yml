@@ -1,13 +1,19 @@
-# Terraform Provider testing workflow.
+# Build, lint, generated documentation and the tests that need nothing but Go.
+# The end-to-end suite lives in e2e.yml: it stands up a NetBird deployment in
+# containers, so it is slower by an order of magnitude and has no business
+# gating the checks that answer in a minute.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
+# Runs for every pull request, and once more on main after a merge. Pushes to
+# other branches are not built: a branch that is not in a pull request yet gets
+# nothing out of a run.
 on:
   pull_request:
     paths-ignore:
       - 'README.md'
   push:
+    branches:
+      - main
     paths-ignore:
       - 'README.md'
 
@@ -16,7 +22,6 @@ permissions:
   contents: read
 
 jobs:
-  # Ensure project builds before running testing matrix
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -33,6 +38,14 @@ jobs:
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: latest
+      # The harness is behind the `e2e` tag, so the pass above never sees it. Lint
+      # it here rather than in e2e.yml: a lint failure is not worth building images
+      # for, and this keeps every lint result in one job.
+      - name: Run linters (e2e)
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          version: latest
+          args: --build-tags e2e
 
   generate:
     runs-on: ubuntu-latest
@@ -52,37 +65,23 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions
-  test:
-    name: Terraform Provider Acceptance Tests
+  # Everything that runs without a deployment: the conversion and matching
+  # functions, and the provider's own configuration against a stub server. Built
+  # without the `e2e` tag, so the harness and its Docker client are not compiled
+  # and the acceptance tests report as skipped — this job needs neither Docker nor
+  # a Terraform CLI.
+  unit:
+    name: Unit and integration tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # Supporting latest 6 minor versions of Terraform
-        terraform:
-          - '1.7.*'
-          - '1.8.*'
-          - '1.9.*'
-          - '1.10.*'
-          - '1.11.*'
-          - '1.12.*'
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
           cache: true
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
-        with:
-          terraform_version: ${{ matrix.terraform }}
-          terraform_wrapper: false
       - run: go mod download
-      # The gateway bootstrap tests release the account's gateway themselves, so
-      # they no longer have to run before anything else in their own invocation.
-      - env:
-          TF_ACC: "1"
-        run: go test -v -cover ./internal/provider/
-        timeout-minutes: 10
+      # Under the race detector: these tests are cheap, and the stub servers they
+      # drive run their handlers on another goroutine.
+      - run: go test -race -timeout 5m ./...
