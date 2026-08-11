@@ -8,12 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
-	"path"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -21,13 +18,20 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
-
-const apiToken = "nbp_apTmlmUXHSC4PKmHwtIZNaGr8eqcVI2gMURp"
-const managementURL = "http://127.0.0.1:8080"
 
 func valPtr[T any](s T) *T {
 	return &s
+}
+
+// valOr dereferences an optional API field, falling back to a zero-ish default
+// when the server omitted it.
+func valOr[T any](p *T, fallback T) T {
+	if p == nil {
+		return fallback
+	}
+	return *p
 }
 
 // GetProjectDir will return the directory where the project is.
@@ -40,46 +44,6 @@ func GetProjectDir() (string, error) {
 	return wd, nil
 }
 
-func testEnsureManagementRunning(t *testing.T) {
-	_, err := testClient().Accounts.List(context.Background())
-	if err == nil {
-		t.Log("Management API Up")
-		t.Setenv("NB_PAT", apiToken)
-		t.Setenv("NB_MANAGEMENT_URL", managementURL)
-		return
-	}
-
-	cmd := exec.Command("docker", "compose", "up", "-d")
-	curDir, err := GetProjectDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd.Dir = path.Join(curDir, "test")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Log(string(out))
-		t.Fatal(err)
-	}
-
-	attempts := 0
-	backoff := 1 * time.Second
-	for attempts < 5 {
-		_, err = testClient().Accounts.List(context.Background())
-		if err == nil {
-			t.Log("Management API Up")
-			t.Setenv("NB_PAT", apiToken)
-			t.Setenv("NB_MANAGEMENT_URL", managementURL)
-			return
-		}
-
-		time.Sleep(backoff)
-
-		backoff *= 2
-	}
-
-	t.Fatal("Management Server not started")
-}
-
 // testAccProtoV6ProviderFactories is used to instantiate a provider during acceptance testing.
 // The factory function is called for each Terraform CLI command to create a provider
 // server that the CLI can connect to and interact with.
@@ -87,8 +51,33 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 	"netbird": providerserver.NewProtocol6WithError(New("test")()),
 }
 
+// testClient talks to the deployment the suite bootstrapped. It is called from
+// Check functions that have no *testing.T to hand, so it reads the stack that
+// testEnsureManagementRunning already brought up rather than starting one.
 func testClient() *netbird.Client {
-	return netbird.New(managementURL, apiToken)
+	if e2eEnv == nil {
+		panic("testClient called before the e2e stack was bootstrapped; the test's PreCheck must call testEnsureManagementRunning")
+	}
+	return netbird.New(e2eEnv.ManagementURL, e2eEnv.Token)
+}
+
+// sameIDSet reports whether the group references the server returned are exactly
+// the wanted IDs, regardless of order — the API does not promise one.
+func sameIDSet(got []api.GroupMinimum, want ...string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	remaining := make(map[string]int, len(want))
+	for _, w := range want {
+		remaining[w]++
+	}
+	for _, g := range got {
+		if remaining[g.Id] == 0 {
+			return false
+		}
+		remaining[g.Id]--
+	}
+	return true
 }
 
 func matchPairs(pairs map[string][]any) error {

@@ -33,3 +33,6 @@ website/vendor
 
 # Keep windows files with windows line endings
 *.winfile eol=crlf
+
+# e2e harness state (bootstrap token for a running test deployment)
+test/.e2e-state.json
