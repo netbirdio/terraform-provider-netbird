@@ -416,19 +416,17 @@ func Test_Network_DataSource_MultipleMatchesIsAnError(t *testing.T) {
 	ctx := context.Background()
 	shared := "dup" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 
-	var ids []string
+	// Registered inside the loop: if the second create fails, the first network
+	// still has to be cleaned up, or it stays on the account and makes later
+	// duplicate-name assertions ambiguous.
 	for i := 0; i < 2; i++ {
 		n, err := testClient().Networks.Create(ctx, api.PostApiNetworksJSONRequestBody{Name: shared})
 		if err != nil {
 			t.Fatalf("creating fixture network %d: %v", i, err)
 		}
-		ids = append(ids, n.Id)
+		id := n.Id
+		t.Cleanup(func() { _ = testClient().Networks.Delete(ctx, id) })
 	}
-	t.Cleanup(func() {
-		for _, id := range ids {
-			_ = testClient().Networks.Delete(ctx, id)
-		}
-	})
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },

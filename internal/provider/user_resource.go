@@ -96,7 +96,7 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				Validators:          []validator.String{stringvalidator.OneOf("owner", "admin", "user", "billing_admin", "auditor", "network_admin")},
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "User status (active or invited)",
+				MarkdownDescription: "User status (active, invited or blocked)",
 				Computed:            true,
 				// No UseStateForUnknown: the server derives status from
 				// is_blocked, so carrying the prior value into the plan makes

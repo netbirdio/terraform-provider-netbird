@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -57,14 +58,26 @@ func configureProvider(t *testing.T, managementURL, token, tenantAccount *string
 		return tftypes.NewValue(tftypes.String, *s)
 	}
 
+	// An object value has to carry every attribute of its type, so the map is
+	// built from the schema and only then filled in. Hardcoding the three
+	// attributes the provider has today would panic on the day a fourth is
+	// added, in every test that configures the provider.
+	objectType, ok := schemaResp.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	if !ok {
+		t.Fatal("the provider schema is not an object type")
+	}
+	values := map[string]tftypes.Value{}
+	for name, attrType := range objectType.AttributeTypes {
+		values[name] = tftypes.NewValue(attrType, nil)
+	}
+	values["management_url"] = value(managementURL)
+	values["token"] = value(token)
+	values["tenant_account"] = value(tenantAccount)
+
 	req := provider.ConfigureRequest{
 		TerraformVersion: "1.5.0",
 		Config: tfsdk.Config{
-			Raw: tftypes.NewValue(schemaResp.Schema.Type().TerraformType(context.Background()), map[string]tftypes.Value{
-				"management_url": value(managementURL),
-				"token":          value(token),
-				"tenant_account": value(tenantAccount),
-			}),
+			Raw:    tftypes.NewValue(objectType, values),
 			Schema: schemaResp.Schema,
 		},
 	}
@@ -74,10 +87,41 @@ func configureProvider(t *testing.T, managementURL, token, tenantAccount *string
 	return resp
 }
 
-// recordedRequest is what the stub management server saw.
+// recordedRequest is what the stub management server saw. The handler runs on
+// the server's goroutine and the assertions on the test's, and a completed HTTP
+// response is not an edge the race detector recognises, so access is locked.
 type recordedRequest struct {
-	Header http.Header
-	Query  url.Values
+	mu     sync.Mutex
+	header http.Header
+	query  url.Values
+}
+
+func (r *recordedRequest) record(header http.Header, query url.Values) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.header, r.query = header, query
+}
+
+// Header is the recorded request's headers, or an empty set if nothing was
+// recorded.
+func (r *recordedRequest) Header() http.Header {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.header == nil {
+		return http.Header{}
+	}
+	return r.header.Clone()
+}
+
+// Query is the recorded request's query parameters, or an empty set if nothing
+// was recorded.
+func (r *recordedRequest) Query() url.Values {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.query == nil {
+		return url.Values{}
+	}
+	return r.query
 }
 
 // recordingServer answers any request with an empty JSON array and records what
@@ -88,7 +132,7 @@ func recordingServer(t *testing.T, seen *recordedRequest) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if seen != nil {
-			*seen = recordedRequest{Header: r.Header.Clone(), Query: r.URL.Query()}
+			seen.record(r.Header.Clone(), r.URL.Query())
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -118,7 +162,7 @@ func TestProviderConfigure_TokenFromConfigWinsOverEnv(t *testing.T) {
 	if _, err := client.Accounts.List(context.Background()); err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	if got := seen.Header.Get("Authorization"); got != "Token config-token" {
+	if got := seen.Header().Get("Authorization"); got != "Token config-token" {
 		t.Errorf("Authorization header mismatch: %q", got)
 	}
 }
@@ -168,7 +212,7 @@ func TestProviderConfigure_ManagementURLFromConfigWinsOverEnv(t *testing.T) {
 	if _, err := client.Accounts.List(context.Background()); err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	if seen.Header.Get("Authorization") == "" {
+	if seen.Header().Get("Authorization") == "" {
 		t.Error("the request did not reach the server named in the provider block")
 	}
 }
@@ -205,8 +249,8 @@ func TestProviderConfigure_TenantAccountImpersonation(t *testing.T) {
 				t.Fatalf("request failed: %v", err)
 			}
 
-			if got := seen.Query.Get("account"); got != tc.expected {
-				t.Errorf("impersonated account mismatch: expected %q, got %q (query %v)", tc.expected, got, seen.Query)
+			if got := seen.Query().Get("account"); got != tc.expected {
+				t.Errorf("impersonated account mismatch: expected %q, got %q (query %v)", tc.expected, got, seen.Query())
 			}
 		})
 	}
@@ -232,7 +276,7 @@ func TestProviderConfigure_NoImpersonationByDefault(t *testing.T) {
 	if _, err := client.Accounts.List(context.Background()); err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	if got := seen.Query.Get("account"); got != "" {
+	if got := seen.Query().Get("account"); got != "" {
 		t.Errorf("client impersonated %q without tenant_account or NB_ACCOUNT", got)
 	}
 }
