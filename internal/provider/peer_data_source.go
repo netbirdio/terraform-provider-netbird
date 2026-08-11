@@ -173,6 +173,14 @@ func (d *PeerDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
+	// Every other data source refuses an unfiltered read rather than picking a
+	// record; without this the peer lookup matches everything with score zero and
+	// reports a confusing "Not Found".
+	if knownCount(data.Id, data.Name, data.Ip) == 0 {
+		resp.Diagnostics.AddError("No selector", "Must add at least one of (id, name, ip)")
+		return
+	}
+
 	var peer *api.Peer
 	peers, err := d.client.Peers.List(ctx)
 	if err != nil {

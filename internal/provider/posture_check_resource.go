@@ -192,10 +192,14 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 	var d diag.Diagnostics
 	data.Id = types.StringValue(postureCheck.Id)
 	data.Name = types.StringValue(postureCheck.Name)
-	if postureCheck.Description != nil {
-		data.Description = types.StringValue(*postureCheck.Description)
-	} else {
+	// Management answers with a pointer to an empty string when no description
+	// was set, so an absent description has to map back to null — storing "" makes
+	// a create without a description fail with "provider produced inconsistent
+	// result after apply". Same treatment as policyAPIToTerraform.
+	if postureCheck.Description == nil || *postureCheck.Description == "" {
 		data.Description = types.StringNull()
+	} else {
+		data.Description = types.StringValue(*postureCheck.Description)
 	}
 	if postureCheck.Checks.NbVersionCheck != nil {
 		data.NetbirdVersionCheck, d = types.ObjectValueFrom(
@@ -653,7 +657,9 @@ func (r *PostureCheck) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	err := r.client.PostureChecks.Delete(ctx, data.Id.ValueString())
-	if err != nil {
+	// An object already removed out-of-band is not an error: the desired
+	// end state (gone) is satisfied, so let the destroy succeed.
+	if err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting PostureCheck", err.Error())
 	}
 }
