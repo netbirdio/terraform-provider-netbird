@@ -119,9 +119,29 @@ func testE2E(t *testing.T) *e2eStack {
 	if e2eErr != nil {
 		t.Fatalf("e2e deployment unavailable: %v", e2eErr)
 	}
+	// The containers are gone by the time a run reports its failures, so a test
+	// that fails takes the server's own log with it. Without this, a management
+	// error reaches the report as the one sentence the API returned, and the
+	// cause has to be reproduced locally to be seen at all.
+	t.Cleanup(func() {
+		if !t.Failed() || e2eEnv.docker == nil {
+			return
+		}
+		t.Logf("netbird-server log (tail):\n%s", logTail(e2eEnv.docker.logs(context.Background(), e2eEnv.docker.server), 60))
+	})
 	t.Setenv("NB_PAT", e2eEnv.Token)
 	t.Setenv("NB_MANAGEMENT_URL", e2eEnv.ManagementURL)
 	return e2eEnv
+}
+
+// logTail is the last n lines of a container log, which is as much as a failure
+// report can carry usefully.
+func logTail(log string, n int) string {
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // testPeerID returns the management-assigned ID of the agent registered under

@@ -92,6 +92,13 @@ func serverEnv() map[string]string {
 		// Without this the setup endpoint refuses to mint the API token the
 		// whole suite authenticates with.
 		"NB_SETUP_PAT_ENABLED": "true",
+		// The store's default transaction timeout is five minutes. With the
+		// sqlite store the connection pool holds a single connection, so a
+		// request that queries the store again from inside a transaction waits
+		// out that whole timeout before failing. Bound it, so such a path costs
+		// the suite seconds and reports the server's own error rather than
+		// looking like a hung test.
+		"NB_STORE_TRANSACTION_TIMEOUT": "45s",
 	}
 	if os.Getenv("NB_E2E_DISABLE_GEOLOCATION") == "1" {
 		env["NB_DISABLE_GEOLOCATION"] = "true"
