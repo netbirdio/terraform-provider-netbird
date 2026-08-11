@@ -29,7 +29,6 @@ data "netbird_agent_network_provider" "openai" {
 ### Read-Only
 
 - `api_key` (String, Sensitive) Not returned by the API (sealed at rest)
-- `bootstrap_cluster` (String) Bootstrap cluster (only relevant on create)
 - `enabled` (Boolean) Whether the provider is enabled
 - `extra_values` (Map of String) Catalog-specific extra header values
 - `identity_header_groups` (String) Wire header for caller groups

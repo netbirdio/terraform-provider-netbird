@@ -69,10 +69,10 @@ jobs:
     name: Acceptance tests
     needs: images
     runs-on: ubuntu-latest
-    # Above the sum of the step budgets below plus setup, so a job that overruns
-    # fails on the step that overran instead of being cancelled, which would skip
-    # the diagnostics.
-    timeout-minutes: 60
+    # Above the step budget below plus setup, so a job that overruns fails on the
+    # step that overran instead of being cancelled, which would skip the
+    # diagnostics.
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -100,12 +100,8 @@ jobs:
           set -o pipefail
           gzip -dc images.tar.gz | docker load
         timeout-minutes: 5
-      # Needs an account that was never bootstrapped, so it runs first, against
-      # its own fresh deployment.
-      - env:
-          TF_ACC: "1"
-        run: go test -v -timeout 15m -run Test_AgentNetworkSettings_BootstrapViaCluster ./internal/provider/
-        timeout-minutes: 15
+      # The gateway bootstrap tests release the account's gateway themselves, so
+      # the whole suite runs in one invocation against one deployment.
       - env:
           TF_ACC: "1"
         run: go test -v -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/

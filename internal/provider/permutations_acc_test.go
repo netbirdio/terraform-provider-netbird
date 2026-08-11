@@ -209,7 +209,6 @@ resource "netbird_agent_network_provider" %[1]q {
   name              = %[1]q
   upstream_url      = "https://api.openai.com"
   api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
 
   models = [
     {
@@ -218,7 +217,7 @@ resource "netbird_agent_network_provider" %[1]q {
       output_per_1k = 0.03
     },
   ]
-}`, rName, testBootstrapCluster()),
+}`, rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(addr, "models.#", "1"),
 					resource.TestCheckResourceAttr(addr, "models.0.id", "gpt-4.1"),

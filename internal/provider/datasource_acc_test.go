@@ -843,7 +843,6 @@ resource "netbird_agent_network_provider" %[1]q {
   name              = "%[1]s-provider"
   upstream_url      = "https://api.openai.com"
   api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
 }
 
 resource "netbird_agent_network_guardrail" %[1]q {
@@ -878,7 +877,7 @@ data "netbird_agent_network_policy" %[1]q {
 # direct GET instead of listing and scanning.
 data "netbird_agent_network_policy" "%[1]s_by_id" {
   id = netbird_agent_network_policy.%[1]s.id
-}`, rName, testBootstrapCluster()),
+}`, rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrPair(dsAddr, "id", "netbird_agent_network_policy."+rName, "id"),
 					resource.TestCheckResourceAttr(dsAddr, "source_groups.#", "1"),

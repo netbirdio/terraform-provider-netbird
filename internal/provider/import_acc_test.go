@@ -327,7 +327,7 @@ func Test_AgentNetworkProvider_Import(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 				// Write-only on the API, and only meaningful at create time.
-				ImportStateVerifyIgnore: []string{"api_key", "bootstrap_cluster"},
+				ImportStateVerifyIgnore: []string{"api_key"},
 			},
 		},
 	})
@@ -378,7 +378,6 @@ resource "netbird_agent_network_provider" %[1]q {
   name              = "%[1]s-provider"
   upstream_url      = "https://api.openai.com"
   api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
 }
 
 resource "netbird_agent_network_guardrail" %[1]q {
@@ -403,7 +402,7 @@ resource "netbird_agent_network_policy" %[1]q {
     group_cap      = 1000000
     window_seconds = 86400
   }
-}`, rName, testBootstrapCluster())},
+}`, rName)},
 			{ResourceName: addr, ImportState: true, ImportStateVerify: true},
 		},
 	})

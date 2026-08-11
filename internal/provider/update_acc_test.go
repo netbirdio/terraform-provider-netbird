@@ -144,23 +144,29 @@ func Test_AgentNetworkSettings_Update(t *testing.T) {
 
 	config := func(retention int, redactPII bool) string {
 		return fmt.Sprintf(`
-resource "netbird_agent_network_provider" %[1]q {
-  provider_id       = "openai_api"
-  name              = "%[1]s-provider"
-  upstream_url      = "https://api.openai.com"
-  api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
+resource "netbird_agent_network_settings" %[1]q {
+  access_log_retention_days = %[2]d
+  redact_pii                = %[3]t
 }
 
-resource "netbird_agent_network_settings" %[1]q {
-  access_log_retention_days = %[3]d
-  redact_pii                = %[4]t
-  depends_on                = [netbird_agent_network_provider.%[1]s]
-}`, rName, testBootstrapCluster(), retention, redactPII)
+# The gateway has to outlive what routes through it: the server refuses to
+# release it while a provider still exists.
+resource "netbird_agent_network_provider" %[1]q {
+  provider_id  = "openai_api"
+  name         = "%[1]s-provider"
+  upstream_url = "https://api.openai.com"
+  api_key      = "sk-acc-test"
+  depends_on   = [netbird_agent_network_settings.%[1]s]
+}`, rName, retention, redactPII)
 	}
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			// The configuration carries no address, so it adopts the account's
+			// gateway rather than bootstrapping one. It has to exist first.
+			testBootstrapGateway(t)
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -210,7 +216,6 @@ resource "netbird_agent_network_provider" %[1]q {
   name              = "%[1]s-provider"
   upstream_url      = "https://api.openai.com"
   api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
 }
 
 resource "netbird_agent_network_guardrail" %[1]q {
@@ -226,17 +231,17 @@ resource "netbird_agent_network_guardrail" %[1]q {
 
 resource "netbird_agent_network_policy" %[1]q {
   name                     = %[1]q
-  description              = %[3]q
+  description              = %[2]q
   source_groups            = [netbird_group.%[1]s.id]
   destination_provider_ids = [netbird_agent_network_provider.%[1]s.id]
   guardrail_ids            = [netbird_agent_network_guardrail.%[1]s.id]
 
   token_limit = {
     enabled        = true
-    group_cap      = %[4]d
+    group_cap      = %[3]d
     window_seconds = 86400
   }
-}`, rName, testBootstrapCluster(), description, groupCap)
+}`, rName, description, groupCap)
 	}
 
 	resource.Test(t, resource.TestCase{

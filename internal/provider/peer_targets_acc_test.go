@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -477,8 +478,8 @@ func Test_ReverseProxyClusters_DataSourceMatchesAPI(t *testing.T) {
 	})
 }
 
-// With a proxy attached, the agent-network endpoint management derives is a real
-// one: it must sit under the cluster the provider bootstrapped against, and the
+// With a proxy attached, the gateway management allocates is a real one: the
+// endpoint must sit one label beneath the live cluster's address, and the
 // provider must surface the same values the API holds.
 func Test_AgentNetwork_EndpointDerivedFromLiveCluster(t *testing.T) {
 	testE2E(t)
@@ -489,27 +490,35 @@ func Test_AgentNetwork_EndpointDerivedFromLiveCluster(t *testing.T) {
 	settingsAddr := "netbird_agent_network_settings." + rName
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			// The gateway is bootstrapped by this test, beneath the live cluster,
+			// so release whatever an earlier test left pinned elsewhere.
+			testReleaseGateway(t)
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
+				// The provider depends on the settings: the gateway has to exist
+				// before anything routes through it, and outlive it on destroy.
 				Config: fmt.Sprintf(`
-resource "netbird_agent_network_provider" %[1]q {
-  provider_id       = "openai_api"
-  name              = "%[1]s-provider"
-  upstream_url      = "https://api.openai.com"
-  api_key           = "sk-acc-test"
-  bootstrap_cluster = %[2]q
+resource "netbird_agent_network_settings" %[1]q {
+  proxy_address             = %[2]q
+  access_log_retention_days = 30
 }
 
-resource "netbird_agent_network_settings" %[1]q {
-  access_log_retention_days = 30
-  depends_on                = [netbird_agent_network_provider.%[1]s]
+resource "netbird_agent_network_provider" %[1]q {
+  provider_id  = "openai_api"
+  name         = "%[1]s-provider"
+  upstream_url = "https://api.openai.com"
+  api_key      = "sk-acc-test"
+  depends_on   = [netbird_agent_network_settings.%[1]s]
 }`, rName, cluster.Address),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(providerAddr, "id"),
-					resource.TestCheckResourceAttrSet(settingsAddr, "endpoint"),
-					resource.TestCheckResourceAttrSet(settingsAddr, "subdomain"),
+					resource.TestCheckResourceAttr(settingsAddr, "proxy_address", cluster.Address),
+					// An endpoint beneath a shared cluster, so not dedicated.
+					resource.TestCheckResourceAttr(settingsAddr, "dedicated", "false"),
 					func(s *terraform.State) error {
 						got, err := testAgentNetworkClient().GetSettings(context.Background())
 						if err != nil {
@@ -518,24 +527,21 @@ resource "netbird_agent_network_settings" %[1]q {
 						attrs := s.RootModule().Resources[settingsAddr].Primary.Attributes
 
 						// The provider must report exactly what the API holds.
-						if attrs["cluster"] != got.Cluster {
-							return fmt.Errorf("cluster mismatch: provider %q, API %q", attrs["cluster"], got.Cluster)
-						}
 						if attrs["endpoint"] != got.Endpoint {
 							return fmt.Errorf("endpoint mismatch: provider %q, API %q", attrs["endpoint"], got.Endpoint)
 						}
-						if attrs["subdomain"] != got.Subdomain {
-							return fmt.Errorf("subdomain mismatch: provider %q, API %q", attrs["subdomain"], got.Subdomain)
+						if attrs["proxy_address"] != got.ProxyAddress {
+							return fmt.Errorf("proxy address mismatch: provider %q, API %q", attrs["proxy_address"], got.ProxyAddress)
 						}
 
-						// And the endpoint has to be derived from the cluster the
-						// account is pinned to, with the subdomain as its label.
-						if got.Cluster != cluster.Address {
-							return fmt.Errorf("account pinned to cluster %q, but the live proxy cluster is %q", got.Cluster, cluster.Address)
+						// And the endpoint has to hang one label beneath the
+						// cluster the live proxy declares.
+						if got.ProxyAddress != cluster.Address {
+							return fmt.Errorf("gateway served from %q, but the live proxy cluster is %q", got.ProxyAddress, cluster.Address)
 						}
-						want := got.Subdomain + "." + got.Cluster
-						if got.Endpoint != want {
-							return fmt.Errorf("endpoint %q is not <subdomain>.<cluster> (%q)", got.Endpoint, want)
+						label, parent, found := strings.Cut(got.Endpoint, ".")
+						if !found || label == "" || parent != cluster.Address {
+							return fmt.Errorf("endpoint %q is not a single label beneath %q", got.Endpoint, cluster.Address)
 						}
 						return nil
 					},
