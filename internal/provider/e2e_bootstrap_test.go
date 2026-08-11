@@ -40,20 +40,6 @@ import (
 //	NB_E2E_KEEP_STACK=1    leave the containers running after the suite.
 //
 // test/build-images.sh documents the knobs that select the images.
-const (
-	e2eAdminEmail    = "admin@netbird.test"
-	e2eAdminName     = "E2E Admin"
-	e2eAdminPassword = "Netbird-e2e-Passw0rd!" //nolint:gosec // throwaway credential for a disposable test deployment
-
-	// Fixture names. Names, not IDs, are the stable handle: IDs are assigned by
-	// the server at creation time and differ on every bootstrap.
-	e2eGroupAll     = "All"
-	e2eGroupNotAll  = "NotAll"
-	e2eNetworkName  = "tfaccnetwork"
-	e2eResourceHost = "resource-host"
-	e2eResourceNet  = "resource-subnet"
-	e2eResourceDom  = "resource-domain"
-)
 
 // e2ePeerNames are the hostnames the agent containers register under, in the
 // order tests expect to find them.
