@@ -1,13 +1,17 @@
 # Terraform Provider testing workflow.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
+# Runs for every pull request, and once more on main after a merge. Pushes to
+# other branches are not built: a branch that is not in a pull request yet gets
+# nothing out of a run, and each run stands up a full NetBird deployment per
+# Terraform version.
 on:
   pull_request:
     paths-ignore:
       - 'README.md'
   push:
+    branches:
+      - main
     paths-ignore:
       - 'README.md'
 
