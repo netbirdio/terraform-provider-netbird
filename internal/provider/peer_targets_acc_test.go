@@ -197,30 +197,42 @@ func Test_Peer_DataSource_AllLookupsMatchAPI(t *testing.T) {
 
 	// Every attribute the data source exposes that management also reports, so a
 	// field the provider stops mapping shows up here.
+	//
+	// The peer is read back inside the check rather than compared against the
+	// snapshot above: a live agent changes connection_ip, version, ui_version
+	// and its geolocation fields whenever it reconnects, so a snapshot taken
+	// before the apply would fail for reasons that have nothing to do with the
+	// provider.
 	sameAsAPI := func(addr string) resource.TestCheckFunc {
-		return resource.ComposeAggregateTestCheckFunc(
-			resource.TestCheckResourceAttr(addr, "id", peer.Id),
-			resource.TestCheckResourceAttr(addr, "name", peer.Name),
-			resource.TestCheckResourceAttr(addr, "hostname", peer.Hostname),
-			resource.TestCheckResourceAttr(addr, "ip", peer.Ip),
-			resource.TestCheckResourceAttr(addr, "dns_label", peer.DnsLabel),
-			resource.TestCheckResourceAttr(addr, "os", peer.Os),
-			resource.TestCheckResourceAttr(addr, "version", peer.Version),
-			resource.TestCheckResourceAttr(addr, "kernel_version", peer.KernelVersion),
-			resource.TestCheckResourceAttr(addr, "user_id", peer.UserId),
-			resource.TestCheckResourceAttr(addr, "ssh_enabled", fmt.Sprint(peer.SshEnabled)),
-			resource.TestCheckResourceAttr(addr, "login_expiration_enabled", fmt.Sprint(peer.LoginExpirationEnabled)),
-			resource.TestCheckResourceAttr(addr, "login_expired", fmt.Sprint(peer.LoginExpired)),
-			resource.TestCheckResourceAttr(addr, "approval_required", fmt.Sprint(peer.ApprovalRequired)),
-			resource.TestCheckResourceAttr(addr, "inactivity_expiration_enabled", fmt.Sprint(peer.InactivityExpirationEnabled)),
-			resource.TestCheckResourceAttr(addr, "connection_ip", peer.ConnectionIp),
-			resource.TestCheckResourceAttr(addr, "serial_number", peer.SerialNumber),
-			resource.TestCheckResourceAttr(addr, "country_code", peer.CountryCode),
-			resource.TestCheckResourceAttr(addr, "city_name", peer.CityName),
-			resource.TestCheckResourceAttr(addr, "geoname_id", fmt.Sprint(peer.GeonameId)),
-			resource.TestCheckResourceAttr(addr, "ui_version", peer.UiVersion),
-			resource.TestCheckResourceAttr(addr, "groups.#", fmt.Sprint(len(peer.Groups))),
-		)
+		return checkAttrsMatchAPI(addr, func(attrs map[string]string) (map[string]string, error) {
+			current, err := testClient().Peers.Get(context.Background(), attrs["id"])
+			if err != nil {
+				return nil, err
+			}
+			return map[string]string{
+				"id":                            current.Id,
+				"name":                          current.Name,
+				"hostname":                      current.Hostname,
+				"ip":                            current.Ip,
+				"dns_label":                     current.DnsLabel,
+				"os":                            current.Os,
+				"version":                       current.Version,
+				"kernel_version":                current.KernelVersion,
+				"user_id":                       current.UserId,
+				"ssh_enabled":                   fmt.Sprint(current.SshEnabled),
+				"login_expiration_enabled":      fmt.Sprint(current.LoginExpirationEnabled),
+				"login_expired":                 fmt.Sprint(current.LoginExpired),
+				"approval_required":             fmt.Sprint(current.ApprovalRequired),
+				"inactivity_expiration_enabled": fmt.Sprint(current.InactivityExpirationEnabled),
+				"connection_ip":                 current.ConnectionIp,
+				"serial_number":                 current.SerialNumber,
+				"country_code":                  current.CountryCode,
+				"city_name":                     current.CityName,
+				"geoname_id":                    fmt.Sprint(current.GeonameId),
+				"ui_version":                    current.UiVersion,
+				"groups.#":                      apiListCount(current.Groups),
+			}, nil
+		})
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -248,10 +260,10 @@ data "netbird_peer" "%[1]s_by_ip"   { ip   = %[4]q }`,
 // could silently break.
 func Test_ReverseProxyService_ResourceTargets(t *testing.T) {
 	env := testE2E(t)
-	testRequireProxyCluster(t)
+	cluster := testRequireProxyCluster(t)
 
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
-	domain := rName + ".external.test"
+	domain := rName + "." + cluster.Address
 	addr := "netbird_reverse_proxy_service." + rName
 
 	resource.Test(t, resource.TestCase{
@@ -345,11 +357,11 @@ resource "netbird_reverse_proxy_service" %[1]q {
 // shape a real deployment tends to have.
 func Test_ReverseProxyService_MixedPeerAndResourceTargets(t *testing.T) {
 	env := testE2E(t)
-	testRequireProxyCluster(t)
+	cluster := testRequireProxyCluster(t)
 	peerID := testPeerID(t, "peer1")
 
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
-	domain := rName + ".external.test"
+	domain := rName + "." + cluster.Address
 	addr := "netbird_reverse_proxy_service." + rName
 
 	resource.Test(t, resource.TestCase{
@@ -538,10 +550,10 @@ resource "netbird_agent_network_settings" %[1]q {
 // filled in is accepted.
 func Test_ReverseProxyService_SubnetTargetRequiresHost(t *testing.T) {
 	env := testE2E(t)
-	testRequireProxyCluster(t)
+	cluster := testRequireProxyCluster(t)
 
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
-	domain := rName + ".external.test"
+	domain := rName + "." + cluster.Address
 
 	config := func(host string) string {
 		return fmt.Sprintf(`

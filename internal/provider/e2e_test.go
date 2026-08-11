@@ -101,14 +101,14 @@ func Test_E2E_DashboardTargetsTheManagementUnderTest(t *testing.T) {
 		t.Fatal("dashboard served an empty body")
 	}
 
-	if !e2eOwned {
+	if env.docker == nil {
 		t.Skip("dashboard container is not managed by this run; served-page check only")
 	}
 
 	// Ask the dashboard container itself to call the management endpoint it was
 	// configured with. This proves the wiring, not just that two containers
 	// happen to be running.
-	out, err := composeExecHTTP(ctx, "netbird-dashboard", "http://192.168.1.10:80/api/instance")
+	out, err := env.docker.exec(ctx, env.docker.dashboard, "wget", "-q", "-O", "-", e2eServerURL+"/api/instance")
 	if err != nil {
 		t.Skipf("dashboard image has no usable HTTP client to probe with: %v", err)
 	}

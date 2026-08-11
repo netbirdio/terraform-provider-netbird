@@ -74,7 +74,7 @@ func Test_filterPeers(t *testing.T) {
 // from a real registered agent rather than hardcoded, because the OS string
 // comes from whatever image the agent containers run.
 func Test_Peers_Create(t *testing.T) {
-	env := testE2E(t)
+	testE2E(t)
 	peerID := testPeerID(t, "peer1")
 
 	reference, err := testClient().Peers.Get(context.Background(), peerID)
@@ -96,7 +96,7 @@ func Test_Peers_Create(t *testing.T) {
 		}
 	}
 	slices.Sort(wantIDs)
-	if !slices.Contains(wantIDs, env.PeerIDs["peer1"]) {
+	if !slices.Contains(wantIDs, peerID) {
 		t.Fatalf("expected the reference agent to match its own OS filter")
 	}
 

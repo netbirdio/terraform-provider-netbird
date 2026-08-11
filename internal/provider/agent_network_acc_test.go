@@ -20,19 +20,22 @@ import (
 // verbatim without validating it, so a placeholder still works when no proxy is
 // running — the agent-network tests are then exercising the same code path
 // against a cluster that merely does not answer.
+// The account's cluster is pinned by the first bootstrap and cannot be changed
+// afterwards, so this has to start the deployment's proxy rather than read
+// whatever happens to be online: a test that ran earlier would otherwise pin the
+// placeholder and every later test asserting on the live cluster would fail
+// depending on the order they ran in.
 const testBootstrapClusterFallback = "acc.test.invalid"
 
 func testBootstrapCluster() string {
-	clusters, err := testClient().ReverseProxyClusters.List(context.Background())
-	if err != nil {
+	if e2eEnv == nil {
 		return testBootstrapClusterFallback
 	}
-	for _, c := range clusters {
-		if c.Online && c.Address != "" {
-			return c.Address
-		}
+	cluster, err := e2eEnv.proxyCluster(context.Background())
+	if err != nil || cluster.Address == "" {
+		return testBootstrapClusterFallback
 	}
-	return testBootstrapClusterFallback
+	return cluster.Address
 }
 
 func testAgentNetworkClient() *netbird.AgentNetworkAPI {

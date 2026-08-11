@@ -34,8 +34,6 @@ website/vendor
 # Keep windows files with windows line endings
 *.winfile eol=crlf
 
-# e2e harness state (bootstrap token for a running test deployment)
-test/.e2e-state.json
-
-# ACME lock files, if a reverse proxy is ever run from the repo root
-/certs/
+# Saved deployment images, when test/build-images.sh output is kept around
+images.tar.gz
+images.txt
