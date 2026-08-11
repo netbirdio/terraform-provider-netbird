@@ -56,15 +56,48 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions. Each job stands
-  # up its own NetBird deployment (management, dashboard, signal, relay, agents,
-  # reverse proxy) from test/compose.yml; the suite activates the account through
-  # POST /api/setup and drives Terraform against it.
-  test:
-    name: Terraform Provider Acceptance Tests
+  # Build the deployment images once from the netbird version pinned in go.mod
+  # and hand them to the matrix, so the acceptance jobs compile the server once
+  # between them rather than once each.
+  images:
+    name: Build NetBird images
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go mod download
+      - name: Build and save
+        run: |
+          # The script prints "component=image" per line on stdout and logs to
+          # stderr, so the tags can be collected from the same run that builds.
+          test/build-images.sh | cut -d= -f2 > images.txt
+          cat images.txt
+          docker save $(tr '\n' ' ' < images.txt) | gzip > images.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: netbird-images
+          path: |
+            images.tar.gz
+            images.txt
+          retention-days: 1
+
+  # Run acceptance tests in a matrix with Terraform CLI versions. Each job starts
+  # its own deployment (netbird-server, dashboard, reverse proxy, agents) from the
+  # images above; the suite activates the account through POST /api/setup and
+  # drives Terraform against it.
+  test:
+    name: Terraform Provider Acceptance Tests
+    needs: images
+    runs-on: ubuntu-latest
+    # Above the sum of the step budgets below plus setup, so a job that overruns
+    # fails on the step that overran instead of being cancelled, which would skip
+    # the diagnostics.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -87,26 +120,27 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
-      # Pulling up front keeps a registry hiccup from being reported as a
-      # bootstrap timeout.
-      - name: Pull NetBird images
-        run: docker compose -f test/compose.yml --profile peers --profile proxy pull --quiet
-        timeout-minutes: 10
-      # Needs the never-bootstrapped account, so it runs before the suite bootstraps it.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: netbird-images
+      # Loaded under the tags the harness resolves to, so it reuses them instead
+      # of rebuilding.
+      - name: Load NetBird images
+        run: gzip -dc images.tar.gz | docker load
+        timeout-minutes: 5
+      # Needs an account that was never bootstrapped, so it runs first, against
+      # its own fresh deployment.
       - env:
           TF_ACC: "1"
-        run: go test -v -run Test_AgentNetworkSettings_BootstrapViaCluster ./internal/provider/
+        run: go test -v -timeout 15m -run Test_AgentNetworkSettings_BootstrapViaCluster ./internal/provider/
         timeout-minutes: 15
       - env:
           TF_ACC: "1"
-        run: go test -v -cover -coverprofile=coverage.out ./internal/provider/
-        timeout-minutes: 25
+        run: go test -v -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/
+        timeout-minutes: 35
       - name: Coverage summary
         if: always()
         run: |
           if [ -f coverage.out ]; then
             go tool cover -func=coverage.out | tail -n 1
           fi
-      - name: Dump container logs on failure
-        if: failure()
-        run: docker compose -p tfnetbird-e2e -f test/compose.yml --profile peers --profile proxy logs --no-color --tail=400
