@@ -2,105 +2,473 @@
 
 //go:build e2e
 
-// The acceptance tests need a live NetBird deployment, and this file is what
-// brings one up. It is compiled only under the `e2e` build tag, and so is every
-// test that calls into it — each resource's acceptance tests live in its own
+// The acceptance tests need a live NetBird deployment, and this file brings one
+// up. It is compiled only under the `e2e` build tag, and so is every test that
+// calls into it — each resource's acceptance tests live in its own
 // <resource>_acc_test.go alongside this one.
 //
-// That means a plain `go test ./...` compiles none of it: no deployment is
-// started, nothing shells out to Docker, and the only tests in the binary are the
-// ones that can answer without a server. The two suites are:
+// A plain `go test ./...` compiles none of it: no deployment is started, nothing
+// reaches for Docker, and the only tests in the binary are the ones that can
+// answer without a server. The two suites are:
 //
-//	go test ./...                            # conversion and matching functions
-//	TF_ACC=1 go test -tags e2e ./...         # everything above, against a deployment
+//	go test ./...                       # conversion and matching functions
+//	TF_ACC=1 go test -tags e2e ./...    # everything above, against a deployment
 //
 // TF_ACC is terraform-plugin-testing's own switch: without it resource.Test
 // skips, so the tag alone starts nothing.
+//
+// The deployment itself comes from netbird's own e2e harness, at the revision
+// pinned in go.mod. That matters twice over: the server under test is built from
+// the same revision as the client library the provider is compiled against, and
+// the containers are the ones NetBird tests its own product with rather than a
+// second arrangement maintained here. Nothing is written into the management
+// store — the account is created through POST /api/setup and every fixture
+// through the public API, so a change to onboarding or to the API contract fails
+// the bootstrap instead of silently diverging from a hand-written seed.
+//
+// Environment knobs:
+//
+//	NB_E2E_COMBINED_IMAGE   use these images instead of building from the pinned
+//	NB_E2E_CLIENT_IMAGE     module. A value containing a "/" is used as-is; a
+//	NB_E2E_PROXY_IMAGE      bare tag is built under that name.
+//	NB_E2E_BUILDX_CACHE     directory for buildx layer cache, so CI can persist it.
 
 package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+
+	"github.com/netbirdio/netbird/e2e/harness"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
-const apiToken = "nbp_apTmlmUXHSC4PKmHwtIZNaGr8eqcVI2gMURp"
+// The fixture the harness provisions, named rather than identified: IDs are
+// assigned by the server at creation time and differ on every bootstrap, so the
+// names are what the tests and the provisioning can agree on ahead of time.
+const (
+	e2eGroupAll    = "All"
+	e2eGroupNotAll = "NotAll"
 
-const managementURL = "http://127.0.0.1:8080"
+	e2eNetworkName  = "tfaccnetwork"
+	e2eResourceDom  = "resource-domain"
+	e2eResourceNet  = "resource-subnet"
+	e2eResourceHost = "resource-host"
+)
 
-// GetProjectDir will return the directory where the project is.
-func GetProjectDir() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return wd, err
-	}
-	wd = strings.ReplaceAll(wd, "/internal/provider", "")
-	return wd, nil
+// e2ePeerNames are the hostnames the agent containers register under, in the
+// order the tests expect to find them.
+var e2ePeerNames = []string{"peer1", "peer2", "peer3"}
+
+// e2eStack is the live deployment plus the IDs of the fixtures created on it.
+type e2eStack struct {
+	ManagementURL string
+	Token         string
+
+	AccountID string
+	UserID    string
+
+	GroupAllID    string
+	GroupNotAllID string
+
+	NetworkID        string
+	ResourceDomainID string
+	ResourceSubnetID string
+	ResourceHostID   string
+
+	srv *harness.Combined
+
+	// The reverse proxy and the agents start on first use rather than up front,
+	// so a run that only touches the API does not pay for them.
+	proxyOnce sync.Once
+	proxyErr  error
+
+	peersOnce sync.Once
+	peerIDs   map[string]string
+	peersErr  error
+
+	clients []*harness.Client
+	proxy   *harness.Proxy
 }
 
+var (
+	e2eOnce sync.Once
+	e2eEnv  *e2eStack
+	e2eErr  error
+)
+
+// testEnsureManagementRunning boots the deployment once per test binary and
+// points the provider under test at it. Every acceptance test calls this from
+// PreCheck.
 func testEnsureManagementRunning(t *testing.T) {
-	_, err := testClient().Accounts.List(context.Background())
-	if err == nil {
-		t.Log("Management API Up")
-		t.Setenv("NB_PAT", apiToken)
-		t.Setenv("NB_MANAGEMENT_URL", managementURL)
-		return
-	}
+	t.Helper()
+	testE2E(t)
+}
 
-	cmd := exec.Command("docker", "compose", "up", "-d")
-	curDir, err := GetProjectDir()
-	if err != nil {
-		t.Fatal(err)
+// testE2E returns the shared deployment, bootstrapping it on first use.
+func testE2E(t *testing.T) *e2eStack {
+	t.Helper()
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("acceptance test skipped; set TF_ACC=1 to run it against the deployment this build can start")
 	}
-	cmd.Dir = path.Join(curDir, "test")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Log(string(out))
-		t.Fatal(err)
+	e2eOnce.Do(func() {
+		e2eEnv, e2eErr = bootstrapE2E(context.Background())
+	})
+	if e2eErr != nil {
+		t.Fatalf("e2e deployment unavailable: %v", e2eErr)
 	}
-
-	// The counter has to advance, or the loop never ends and the Fatal below is
-	// unreachable: a management server that comes up but never serves would hang
-	// the run rather than failing it.
-	backoff := 1 * time.Second
-	for attempts := 0; attempts < 5; attempts++ {
-		_, err = testClient().Accounts.List(context.Background())
-		if err == nil {
-			t.Log("Management API Up")
-			t.Setenv("NB_PAT", apiToken)
-			t.Setenv("NB_MANAGEMENT_URL", managementURL)
+	// The containers are gone by the time a run reports its failures, so a test
+	// that fails takes the server's log with it. Without this a management error
+	// reaches the report as the one sentence the API returned, and the cause has
+	// to be reproduced locally to be seen at all.
+	t.Cleanup(func() {
+		if !t.Failed() {
 			return
 		}
-
-		time.Sleep(backoff)
-
-		backoff *= 2
-	}
-
-	t.Fatalf("Management Server not started; last error: %v", err)
+		t.Logf("netbird-server log (tail):\n%s", logTail(e2eEnv.srv.Logs(context.Background()), 60))
+	})
+	t.Setenv("NB_PAT", e2eEnv.Token)
+	t.Setenv("NB_MANAGEMENT_URL", e2eEnv.ManagementURL)
+	return e2eEnv
 }
 
-// testAccProtoV6ProviderFactories is used to instantiate a provider during acceptance testing.
-// The factory function is called for each Terraform CLI command to create a provider
-// server that the CLI can connect to and interact with.
+// logTail is the last n lines of a container log, which is as much as a failure
+// report can carry usefully.
+func logTail(log string, n int) string {
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// bootstrapE2E starts the deployment, activates the account through the
+// product's own onboarding, and creates every fixture through the public API.
+func bootstrapE2E(ctx context.Context) (*e2eStack, error) {
+	// Geolocation stays on: the posture-check tests assert on location rules,
+	// which management can only evaluate with the GeoLite database loaded, so
+	// turning the download off would make them pass without testing anything.
+	//
+	// The cost is that the server refuses to start when it cannot fetch the
+	// database, and the failure is opaque — the container exits before it serves,
+	// so there is no log to read. NB_E2E_DISABLE_GEOLOCATION=1 is the escape
+	// hatch for a machine that cannot reach the download, at the price of the
+	// geolocation posture checks, which then fail rather than passing vacuously.
+	opts := []harness.CombinedOption{harness.WithGeolocation()}
+	if os.Getenv("NB_E2E_DISABLE_GEOLOCATION") == "1" {
+		opts = nil
+	}
+	srv, err := harness.StartCombined(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("start the netbird deployment "+
+			"(a container that exits before serving is usually the GeoLite download failing; "+
+			"see NB_E2E_DISABLE_GEOLOCATION): %w", err)
+	}
+	env := &e2eStack{srv: srv, ManagementURL: srv.BaseURL}
+
+	//	GET  /api/instance -> setup_required
+	//	POST /api/setup    -> owner user + plaintext API token
+	//
+	// which is how an installation comes up, and the token every test
+	// authenticates with.
+	token, err := srv.Bootstrap(ctx)
+	if err != nil {
+		return nil, env.failed(ctx, fmt.Errorf("activate the account through /api/setup: %w", err))
+	}
+	env.Token = token
+
+	client := netbird.New(env.ManagementURL, env.Token)
+	if err := env.discoverAccount(ctx, client); err != nil {
+		return nil, env.failed(ctx, err)
+	}
+	if err := env.ensureFixtureGroups(ctx, client); err != nil {
+		return nil, env.failed(ctx, err)
+	}
+	if err := env.ensureFixtureNetwork(ctx, client); err != nil {
+		return nil, env.failed(ctx, err)
+	}
+	return env, nil
+}
+
+// discoverAccount records the account and owner the setup call created.
+func (env *e2eStack) discoverAccount(ctx context.Context, client *netbird.Client) error {
+	me, err := client.Users.Current(ctx)
+	if err != nil {
+		return fmt.Errorf("read the owner the setup call created: %w", err)
+	}
+	env.UserID = me.Id
+
+	accounts, err := client.Accounts.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list accounts: %w", err)
+	}
+	if len(accounts) != 1 {
+		return fmt.Errorf("expected exactly one account on a freshly activated instance, found %d", len(accounts))
+	}
+	env.AccountID = accounts[0].Id
+	return nil
+}
+
+// ensureFixtureGroups records the built-in All group and creates the second
+// group the tests need to reference something that is not everything.
+func (env *e2eStack) ensureFixtureGroups(ctx context.Context, client *netbird.Client) error {
+	all, err := client.Groups.GetByName(ctx, e2eGroupAll)
+	if err != nil {
+		return fmt.Errorf("look up the built-in %q group: %w", e2eGroupAll, err)
+	}
+	env.GroupAllID = all.Id
+
+	created, err := client.Groups.Create(ctx, api.PostApiGroupsJSONRequestBody{Name: e2eGroupNotAll})
+	if err != nil {
+		return fmt.Errorf("create the %q group: %w", e2eGroupNotAll, err)
+	}
+	env.GroupNotAllID = created.Id
+	return nil
+}
+
+// ensureFixtureNetwork creates the network and the three resources the network
+// and policy tests address.
+func (env *e2eStack) ensureFixtureNetwork(ctx context.Context, client *netbird.Client) error {
+	network, err := client.Networks.Create(ctx, api.PostApiNetworksJSONRequestBody{Name: e2eNetworkName})
+	if err != nil {
+		return fmt.Errorf("create the %q network: %w", e2eNetworkName, err)
+	}
+	env.NetworkID = network.Id
+
+	resources := client.Networks.Resources(env.NetworkID)
+	for _, r := range []struct {
+		name    string
+		address string
+		into    *string
+	}{
+		{e2eResourceDom, "mock1.com", &env.ResourceDomainID},
+		{e2eResourceNet, "192.168.0.0/16", &env.ResourceSubnetID},
+		{e2eResourceHost, "10.0.0.5/32", &env.ResourceHostID},
+	} {
+		created, err := resources.Create(ctx, api.NetworkResourceRequest{
+			Name:    r.name,
+			Address: r.address,
+			Enabled: true,
+		})
+		if err != nil {
+			return fmt.Errorf("create the %q network resource: %w", r.name, err)
+		}
+		*r.into = created.Id
+	}
+	return nil
+}
+
+// testPeerID returns the management-assigned ID of the agent registered under
+// the given hostname, starting the agents on first use.
+func testPeerID(t *testing.T, hostname string) string {
+	t.Helper()
+	env := testE2E(t)
+	if err := env.ensurePeers(context.Background()); err != nil {
+		t.Fatalf("registering the agent fixtures: %v", err)
+	}
+	id, ok := env.peerIDs[hostname]
+	if !ok {
+		t.Skipf("no registered agent named %q in this deployment", hostname)
+	}
+	return id
+}
+
+// ensurePeers starts one agent container per fixture hostname, each joining with
+// a setup key exactly the way a device does, and waits for management to report
+// them. The name reaches the container's hostname, which is what the agent
+// reports at registration and therefore the name the peer carries in the API.
+func (env *e2eStack) ensurePeers(ctx context.Context) error {
+	env.peersOnce.Do(func() {
+		client := netbird.New(env.ManagementURL, env.Token)
+		key, err := client.SetupKeys.Create(ctx, api.PostApiSetupKeysJSONRequestBody{
+			Name:       "e2e-agents",
+			Type:       "reusable",
+			ExpiresIn:  86400,
+			UsageLimit: 0,
+			AutoGroups: []string{},
+		})
+		if err != nil {
+			env.peersErr = fmt.Errorf("create a setup key for the agents: %w", err)
+			return
+		}
+		for _, name := range e2ePeerNames {
+			c, err := harness.StartClient(ctx, env.srv, key.Key, harness.WithClientName(name))
+			if err != nil {
+				env.peersErr = fmt.Errorf("start the %q agent: %w", name, err)
+				return
+			}
+			env.clients = append(env.clients, c)
+		}
+		env.peerIDs, env.peersErr = env.waitForPeers(ctx, client)
+	})
+	return env.peersErr
+}
+
+// waitForPeers polls until every agent has registered, so a test addressing
+// peer3 does not race the agent still logging in.
+func (env *e2eStack) waitForPeers(ctx context.Context, client *netbird.Client) (map[string]string, error) {
+	const timeout = 3 * time.Minute
+	deadline := time.Now().Add(timeout)
+	for {
+		found, err := registeredPeers(ctx, client)
+		if err != nil {
+			return nil, fmt.Errorf("list peers: %w", err)
+		}
+		if len(found) >= len(e2ePeerNames) {
+			return found, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("only %d of %d agents registered within %s", len(found), len(e2ePeerNames), timeout)
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+// registeredPeers maps the fixture hostnames to the peer IDs management holds.
+func registeredPeers(ctx context.Context, client *netbird.Client) (map[string]string, error) {
+	peers, err := client.Peers.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]bool{}
+	for _, n := range e2ePeerNames {
+		want[n] = true
+	}
+	found := map[string]string{}
+	for _, p := range peers {
+		if want[p.Hostname] {
+			found[p.Hostname] = p.Id
+		}
+	}
+	return found, nil
+}
+
+// testRequireProxyCluster returns an online reverse proxy cluster, starting the
+// proxy on first use. Reverse proxy services need a cluster to be assigned to.
+func testRequireProxyCluster(t *testing.T) api.ProxyCluster {
+	t.Helper()
+	env := testE2E(t)
+	cluster, err := env.proxyCluster(context.Background())
+	if err != nil {
+		t.Skipf("no reverse proxy cluster in this deployment: %v", err)
+	}
+	return cluster
+}
+
+// proxyCluster starts the reverse proxy and waits for its cluster to come
+// online. The cluster appears a moment after the proxy registers, so a single
+// read is too early.
+func (env *e2eStack) proxyCluster(ctx context.Context) (api.ProxyCluster, error) {
+	env.proxyOnce.Do(func() {
+		// A token created without an account scope is global, so the proxy
+		// serves the whole cluster.
+		token, err := env.srv.CreateProxyTokenCLI(ctx, "e2e-proxy")
+		if err != nil {
+			env.proxyErr = fmt.Errorf("mint a proxy access token: %w", err)
+			return
+		}
+		env.proxy, env.proxyErr = harness.StartProxy(ctx, env.srv, token)
+	})
+	if env.proxyErr != nil {
+		return api.ProxyCluster{}, env.proxyErr
+	}
+
+	client := netbird.New(env.ManagementURL, env.Token)
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		clusters, err := client.ReverseProxyClusters.List(ctx)
+		if err != nil {
+			return api.ProxyCluster{}, fmt.Errorf("list reverse proxy clusters: %w", err)
+		}
+		for _, c := range clusters {
+			if c.Online {
+				return c, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return api.ProxyCluster{}, errors.New("no cluster reported online")
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+// failed tears a half-built deployment down and returns the error that caused
+// it, so a bootstrap failure does not leak containers into the next run. The
+// server's log travels with the error, because by the time the run reports the
+// failure the container is gone.
+func (env *e2eStack) failed(ctx context.Context, err error) error {
+	log := logTail(env.srv.Logs(ctx), 60)
+	env.terminate(ctx)
+	return fmt.Errorf("%w\nnetbird-server log (tail):\n%s", err, log)
+}
+
+// terminate removes every container. Individual failures are ignored: there is
+// nothing useful to do about them, and the reaper cleans up whatever is left.
+func (env *e2eStack) terminate(ctx context.Context) {
+	for _, c := range env.clients {
+		_ = c.Terminate(ctx)
+	}
+	if env.proxy != nil {
+		_ = env.proxy.Terminate(ctx)
+	}
+	if env.srv != nil {
+		_ = env.srv.Terminate(ctx)
+	}
+}
+
+// mustE2E returns the bootstrapped deployment for the configuration builders,
+// which have no *testing.T to skip with. Every test reaches its configuration
+// only after testE2E has run, so this is never called before the bootstrap.
+func mustE2E() *e2eStack {
+	if e2eEnv == nil {
+		panic("the e2e deployment was read before it was bootstrapped; the test's PreCheck must call testEnsureManagementRunning")
+	}
+	return e2eEnv
+}
+
+// The fixture IDs are assigned when the deployment is provisioned, so the
+// configuration builders read them through here rather than hardcoding them.
+func e2eGroupAllID() string       { return mustE2E().GroupAllID }
+func e2eGroupNotAllID() string    { return mustE2E().GroupNotAllID }
+func e2eNetworkID() string        { return mustE2E().NetworkID }
+func e2eResourceDomainID() string { return mustE2E().ResourceDomainID }
+func e2eResourceSubnetID() string { return mustE2E().ResourceSubnetID }
+func e2eResourceHostID() string   { return mustE2E().ResourceHostID } //nolint:unused // completes the fixture set
+
+// TestMain tears the deployment down after the suite. Without this the
+// containers outlive the run whenever the reaper is disabled.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if e2eEnv != nil {
+		e2eEnv.terminate(context.Background())
+	}
+	os.Exit(code)
+}
+
+// testAccProtoV6ProviderFactories is used to instantiate a provider during
+// acceptance testing. The factory is called for each Terraform CLI command to
+// create a provider server the CLI connects to.
 var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
 	"netbird": providerserver.NewProtocol6WithError(New("test")()),
 }
 
+// testClient talks to the deployment the suite bootstrapped. It is called from
+// Check functions that have no *testing.T to hand, so it reads the deployment
+// testEnsureManagementRunning already brought up rather than starting one.
 func testClient() *netbird.Client {
-	return netbird.New(managementURL, apiToken)
+	env := mustE2E()
+	return netbird.New(env.ManagementURL, env.Token)
 }
 
 func matchPairs(pairs map[string][]any) error {
@@ -129,13 +497,18 @@ func matchPairs(pairs map[string][]any) error {
 	return nil
 }
 
-// sameGroupIDs reports whether got holds exactly the wanted group IDs, in any
-// order and with duplicates counted.
-//
-// Comparing the set matters: the assertions that call this used to be written as
-// `len(got) != 2 || (A && B)`, and && binds tighter than ||, so a single wrong ID
-// left the other one correct, made the && false, and passed.
-func sameGroupIDs(got []api.GroupMinimum, want ...string) bool {
+// valOr dereferences an optional API field, falling back to a zero-ish default
+// when the server omitted it.
+func valOr[T any](p *T, fallback T) T {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
+// sameIDSet reports whether the group references the server returned are exactly
+// the wanted IDs, regardless of order — the API does not promise one.
+func sameIDSet(got []api.GroupMinimum, want ...string) bool {
 	if len(got) != len(want) {
 		return false
 	}
@@ -152,10 +525,10 @@ func sameGroupIDs(got []api.GroupMinimum, want ...string) bool {
 	return true
 }
 
-// The case that made the original condition wrong: exactly one ID correct. The
-// old form, len(got) != 2 || (A && B), passed here because the correct ID made
-// its half of the && false.
-func Test_sameGroupIDs(t *testing.T) {
+// The case that made the original assertions wrong: exactly one ID correct. They
+// were written as len(got) != 2 || (A && B), and && binds tighter than ||, so the
+// correct ID made its half of the && false and the whole condition passed.
+func Test_sameIDSet(t *testing.T) {
 	g := func(ids ...string) []api.GroupMinimum {
 		out := make([]api.GroupMinimum, 0, len(ids))
 		for _, id := range ids {
@@ -168,18 +541,18 @@ func Test_sameGroupIDs(t *testing.T) {
 		got  []api.GroupMinimum
 		want bool
 	}{
-		{name: "both correct", got: g("group-all", "group-notall"), want: true},
-		{name: "both correct, other order", got: g("group-notall", "group-all"), want: true},
-		{name: "one wrong", got: g("group-all", "group-wrong")},
-		{name: "the other wrong", got: g("group-wrong", "group-notall")},
-		{name: "both wrong", got: g("a", "b")},
-		{name: "duplicate stands in for the missing one", got: g("group-all", "group-all")},
-		{name: "too few", got: g("group-all")},
-		{name: "too many", got: g("group-all", "group-notall", "group-all")},
+		{name: "both correct", got: g("a", "b"), want: true},
+		{name: "both correct, other order", got: g("b", "a"), want: true},
+		{name: "one wrong", got: g("a", "wrong")},
+		{name: "the other wrong", got: g("wrong", "b")},
+		{name: "both wrong", got: g("x", "y")},
+		{name: "duplicate stands in for the missing one", got: g("a", "a")},
+		{name: "too few", got: g("a")},
+		{name: "too many", got: g("a", "b", "a")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sameGroupIDs(tc.got, "group-all", "group-notall"); got != tc.want {
-				t.Errorf("sameGroupIDs(%v) = %v, want %v", tc.got, got, tc.want)
+			if got := sameIDSet(tc.got, "a", "b"); got != tc.want {
+				t.Errorf("sameIDSet(%v) = %v, want %v", tc.got, got, tc.want)
 			}
 		})
 	}

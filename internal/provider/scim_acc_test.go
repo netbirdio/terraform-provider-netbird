@@ -13,6 +13,7 @@ import (
 )
 
 func Test_Scim_Create(t *testing.T) {
+	testE2E(t)
 	t.Skip("skipping cloud test")
 	rName := "scim" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_scim." + rName
@@ -55,6 +56,7 @@ func Test_Scim_Create(t *testing.T) {
 }
 
 func Test_Scim_Update(t *testing.T) {
+	testE2E(t)
 	t.Skip("skipping cloud test")
 	rName := "scim" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_scim." + rName

@@ -13,6 +13,7 @@ import (
 )
 
 func Test_NetworkRouter_Create(t *testing.T) {
+	testE2E(t)
 	rName := "nro" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_router." + rName
 	resource.Test(t, resource.TestCase{
@@ -21,23 +22,23 @@ func Test_NetworkRouter_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkRouterResource(rName, "network1", `["group-notall"]`),
+				Config:       testNetworkRouterResource(rName, e2eNetworkID(), fmt.Sprintf("[%q]", e2eGroupNotAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", `1`),
-					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", `group-notall`),
+					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", e2eGroupNotAllID()),
 					func(s *terraform.State) error {
 						nroID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
-						router, err := testClient().Networks.Routers("network1").Get(context.Background(), nroID)
+						router, err := testClient().Networks.Routers(e2eNetworkID()).Get(context.Background(), nroID)
 						if err != nil {
 							return err
 						}
 						if router.PeerGroups == nil || len(*router.PeerGroups) == 0 {
-							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected group-notall, found nothing on management server")
+							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected %s, found nothing on management server", e2eGroupNotAllID())
 						}
 
-						if (*router.PeerGroups)[0] != "group-notall" {
-							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected group-notall, found %s on management server", (*router.PeerGroups)[0])
+						if (*router.PeerGroups)[0] != e2eGroupNotAllID() {
+							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected %s, found %s on management server", e2eGroupNotAllID(), (*router.PeerGroups)[0])
 						}
 
 						return nil
@@ -49,6 +50,7 @@ func Test_NetworkRouter_Create(t *testing.T) {
 }
 
 func Test_NetworkRouter_Update(t *testing.T) {
+	testE2E(t)
 	rName := "nro" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_router." + rName
 	resource.Test(t, resource.TestCase{
@@ -57,32 +59,32 @@ func Test_NetworkRouter_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNetworkRouterResource(rName, "network1", `["group-notall"]`),
+				Config:       testNetworkRouterResource(rName, e2eNetworkID(), fmt.Sprintf("[%q]", e2eGroupNotAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", `1`),
-					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", `group-notall`),
+					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", e2eGroupNotAllID()),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testNetworkRouterResource(rName, "network1", `["group-all"]`),
+				Config:       testNetworkRouterResource(rName, e2eNetworkID(), fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", `1`),
-					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", `group-all`),
+					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", e2eGroupAllID()),
 					func(s *terraform.State) error {
 						nroID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
-						router, err := testClient().Networks.Routers("network1").Get(context.Background(), nroID)
+						router, err := testClient().Networks.Routers(e2eNetworkID()).Get(context.Background(), nroID)
 						if err != nil {
 							return err
 						}
 						if router.PeerGroups == nil || len(*router.PeerGroups) == 0 {
-							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected group-all, found nothing on management server")
+							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected %s, found nothing on management server", e2eGroupAllID())
 						}
 
-						if (*router.PeerGroups)[0] != "group-all" {
-							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected group-all, found %s on management server", (*router.PeerGroups)[0])
+						if (*router.PeerGroups)[0] != e2eGroupAllID() {
+							return fmt.Errorf("NetworkRouter PeerGroups mismatch, expected %s, found %s on management server", e2eGroupAllID(), (*router.PeerGroups)[0])
 						}
 
 						return nil

@@ -121,6 +121,7 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 }
 
 func Test_AgentNetworkProvider_Create(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -159,6 +160,7 @@ func Test_AgentNetworkProvider_Create(t *testing.T) {
 // provider omits is dropped. Changing only the name must not wipe extra_values
 // or reset metadata_disabled.
 func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -202,6 +204,7 @@ func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
 // forced replacement would have to delete the provider first, which the server
 // refuses while a policy still references it.
 func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
+	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
 
@@ -245,6 +248,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 }
 
 func Test_AgentNetworkGuardrail_Create(t *testing.T) {
+	testE2E(t)
 	rName := "ang" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_guardrail." + rName
 
@@ -289,6 +293,7 @@ func Test_AgentNetworkGuardrail_Create(t *testing.T) {
 }
 
 func Test_AgentNetworkPolicy_Create(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_policy." + rName
 
@@ -353,6 +358,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 // The server rejects an enabled limit whose caps are all zero. That must be
 // caught during plan rather than failing partway through an apply.
 func Test_AgentNetworkPolicy_EnabledLimitNeedsACap(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	config := fmt.Sprintf(`
@@ -385,6 +391,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 
 // Required lists must be rejected at plan time when empty.
 func Test_AgentNetworkPolicy_EmptySourceGroupsRejected(t *testing.T) {
+	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	config := fmt.Sprintf(`resource "netbird_agent_network_policy" "%[1]s" {
@@ -410,6 +417,7 @@ func Test_AgentNetworkPolicy_EmptySourceGroupsRejected(t *testing.T) {
 // mutable field on PUT. Managing only one field must leave the others at their
 // existing account values instead of resetting them to the schema defaults.
 func Test_AgentNetworkSettings_AdoptsExistingValues(t *testing.T) {
+	testE2E(t)
 	rName := "ans" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
@@ -488,6 +496,7 @@ resource "netbird_agent_network_provider" "%[1]s" {
 // an account, so the gateway is released first and the create path is what runs,
 // whatever ran before this test.
 func Test_AgentNetworkSettings_BootstrapViaProxyAddress(t *testing.T) {
+	testE2E(t)
 	rName := "ansboot" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
@@ -582,6 +591,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // terraform_data stands in for any such resource: triggers_replace forces it to
 // be replaced while its output stays the value it was given.
 func Test_AgentNetworkSettings_UnknownAddressDoesNotReplace(t *testing.T) {
+	testE2E(t)
 	rName := "ansunk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 
@@ -655,6 +665,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // The two addresses are mutually exclusive, and saying so at plan time names the
 // real problem instead of letting the apply report a missing bootstrap address.
 func Test_AgentNetworkSettings_BothAddressesRejected(t *testing.T) {
+	testE2E(t)
 	rName := "ansboth" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	resource.Test(t, resource.TestCase{
@@ -678,6 +689,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // is not already in that shape has to be refused rather than applied and then
 // reported back differently.
 func Test_AgentNetworkSettings_AddressMustBeNormalized(t *testing.T) {
+	testE2E(t)
 	rName := "ansnorm" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	resource.Test(t, resource.TestCase{
@@ -700,6 +712,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // at that address is the account's gateway, so endpoint and proxy_address are the
 // same. Only reachable on an account with no gateway yet.
 func Test_AgentNetworkSettings_BootstrapDedicatedEndpoint(t *testing.T) {
+	testE2E(t)
 	rName := "ansded" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_settings." + rName
 	endpoint := rName + ".acc.test.invalid"
@@ -747,6 +760,7 @@ resource "netbird_agent_network_settings" "%[1]s" {
 // Bootstrapping needs one of the two addresses. Without either, the apply has to
 // say so rather than reach an API that would refuse it.
 func Test_AgentNetworkSettings_BootstrapRequiresAnAddress(t *testing.T) {
+	testE2E(t)
 	rName := "ansreq" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 
 	resource.Test(t, resource.TestCase{

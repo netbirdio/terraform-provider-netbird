@@ -13,6 +13,7 @@ import (
 )
 
 func Test_SetupKey_Create(t *testing.T) {
+	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
 	resource.Test(t, resource.TestCase{
@@ -57,6 +58,7 @@ func Test_SetupKey_Create(t *testing.T) {
 }
 
 func Test_SetupKey_Update_Groups(t *testing.T) {
+	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
 	resource.Test(t, resource.TestCase{
@@ -70,7 +72,7 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testSetupKeyResource(rName, `1800`, `one-off`, `true`, `["group-notall"]`, `true`, `false`, `1`),
+				Config:       testSetupKeyResource(rName, `1800`, `one-off`, `true`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `true`, `false`, `1`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expires"),
@@ -80,7 +82,7 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "type", "one-off"),
 					resource.TestCheckResourceAttr(rNameFull, "allow_extra_dns_labels", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", "group-notall"),
+					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", e2eGroupNotAllID()),
 					resource.TestCheckResourceAttr(rNameFull, "ephemeral", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "revoked", "false"),
 					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "1"),
@@ -95,7 +97,7 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 							"type":                   {"one-off", sk.Type},
 							"allow_extra_dns_labels": {true, sk.AllowExtraDnsLabels},
 							"auto_groups.#":          {int(1), len(sk.AutoGroups)},
-							"auto_groups.0":          {"group-notall", sk.AutoGroups[0]},
+							"auto_groups.0":          {e2eGroupNotAllID(), sk.AutoGroups[0]},
 							"ephemeral":              {true, sk.Ephemeral},
 							"revoked":                {false, sk.Revoked},
 							"usage_limit":            {int(1), sk.UsageLimit},
@@ -108,6 +110,7 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 }
 
 func Test_SetupKey_Update_Revoke(t *testing.T) {
+	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
 	resource.Test(t, resource.TestCase{

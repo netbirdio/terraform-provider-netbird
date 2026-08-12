@@ -11,6 +11,7 @@ import (
 )
 
 func Test_DNSZone_Create(t *testing.T) {
+	testE2E(t)
 	rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_zone." + rName
 	resource.Test(t, resource.TestCase{
@@ -19,7 +20,7 @@ func Test_DNSZone_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "test.local", true, false, `["group-all"]`),
+				Config:       testDNSZoneResource(rName, "test.local", true, false, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -38,6 +39,7 @@ func Test_DNSZone_Create(t *testing.T) {
 }
 
 func Test_DNSZone_Update(t *testing.T) {
+	testE2E(t)
 	rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_zone." + rName
 	resource.Test(t, resource.TestCase{
@@ -46,7 +48,7 @@ func Test_DNSZone_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "test.local", true, false, `["group-all"]`),
+				Config:       testDNSZoneResource(rName, "test.local", true, false, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -57,7 +59,7 @@ func Test_DNSZone_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testDNSZoneResource(rName, "test.local", false, true, `["group-all"]`),
+				Config:       testDNSZoneResource(rName, "test.local", false, true, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -71,6 +73,7 @@ func Test_DNSZone_Update(t *testing.T) {
 }
 
 func Test_DNSZone_DataSource(t *testing.T) {
+	testE2E(t)
 	rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	dsNameFull := "data.netbird_dns_zone." + rName
 	resource.Test(t, resource.TestCase{
@@ -78,7 +81,7 @@ func Test_DNSZone_DataSource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testDNSZoneResourceAndDataSource(rName, "datasource.local", true, false, `["group-all"]`),
+				Config: testDNSZoneResourceAndDataSource(rName, "datasource.local", true, false, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(dsNameFull, "id"),
 					resource.TestCheckResourceAttr(dsNameFull, "name", rName),

@@ -13,6 +13,7 @@ import (
 )
 
 func Test_NameserverGroup_Create(t *testing.T) {
+	testE2E(t)
 	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_nameserver_group." + rName
 	resource.Test(t, resource.TestCase{
@@ -21,7 +22,7 @@ func Test_NameserverGroup_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `udp`, `53`, `["group-all"]`),
+				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `53`, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -49,8 +50,8 @@ func Test_NameserverGroup_Create(t *testing.T) {
 						if len(nsGroup.Groups) != 1 {
 							return fmt.Errorf("NameserverGroup Groups mismatch, expected 1, found %d", len(nsGroup.Groups))
 						}
-						if nsGroup.Groups[0] != "group-all" {
-							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected group-all, found %s", nsGroup.Groups[0])
+						if nsGroup.Groups[0] != e2eGroupAllID() {
+							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected %s, found %s", e2eGroupAllID(), nsGroup.Groups[0])
 						}
 						return nil
 					},
@@ -61,6 +62,7 @@ func Test_NameserverGroup_Create(t *testing.T) {
 }
 
 func Test_NameserverGroup_Update(t *testing.T) {
+	testE2E(t)
 	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_nameserver_group." + rName
 	resource.Test(t, resource.TestCase{
@@ -69,14 +71,14 @@ func Test_NameserverGroup_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `udp`, `53`, `["group-all"]`),
+				Config:       testNameserverGroupResource(rName, `1.1.1.1`, `53`, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testNameserverGroupResource(rName, `8.8.8.8`, `udp`, `5353`, `["group-notall"]`),
+				Config:       testNameserverGroupResource(rName, `8.8.8.8`, `5353`, fmt.Sprintf("[%q]", e2eGroupNotAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					func(s *terraform.State) error {
@@ -103,8 +105,8 @@ func Test_NameserverGroup_Update(t *testing.T) {
 						if len(nsGroup.Groups) != 1 {
 							return fmt.Errorf("NameserverGroup Groups mismatch, expected 1, found %d", len(nsGroup.Groups))
 						}
-						if nsGroup.Groups[0] != "group-notall" {
-							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected group-notall, found %s", nsGroup.Groups[0])
+						if nsGroup.Groups[0] != e2eGroupNotAllID() {
+							return fmt.Errorf("NameserverGroup Groups.0 mismatch, expected %s, found %s", e2eGroupNotAllID(), nsGroup.Groups[0])
 						}
 						return nil
 					},
@@ -114,16 +116,19 @@ func Test_NameserverGroup_Update(t *testing.T) {
 	})
 }
 
-func testNameserverGroupResource(rName, ip, nsType, port, groups string) string {
+// ns_type is always "udp": it is the schema default and the only transport the
+// nameserver API accepts today.
+
+func testNameserverGroupResource(rName, ip, port, groups string) string {
 	return fmt.Sprintf(`resource "netbird_nameserver_group" "%s" {
 	name = "%s"
 	nameservers = [
 		{
 			ip = "%s"
-			ns_type = "%s"
+			ns_type = "udp"
 			port = %s
 		}
 	]
 	groups = %s
-}`, rName, rName, ip, nsType, port, groups)
+}`, rName, rName, ip, port, groups)
 }
