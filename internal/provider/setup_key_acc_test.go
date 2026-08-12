@@ -16,14 +16,17 @@ func Test_SetupKey_Create(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testSetupKeyResource(rName, `1800`, `reusable`, `false`, `[]`, `false`, `false`, `0`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expires"),
 					resource.TestCheckResourceAttrSet(rNameFull, "key"),
@@ -61,9 +64,11 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
@@ -74,6 +79,7 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 				ResourceName: rName,
 				Config:       testSetupKeyResource(rName, `1800`, `one-off`, `true`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `true`, `false`, `1`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expires"),
 					resource.TestCheckResourceAttrSet(rNameFull, "key"),
@@ -113,9 +119,11 @@ func Test_SetupKey_Update_Revoke(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
@@ -126,6 +134,7 @@ func Test_SetupKey_Update_Revoke(t *testing.T) {
 				ResourceName: rName,
 				Config:       testSetupKeyResource(rName, `3600`, `reusable`, `false`, `[]`, `false`, `true`, `10`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expires"),
 					resource.TestCheckResourceAttrSet(rNameFull, "key"),

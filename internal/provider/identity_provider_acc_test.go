@@ -18,14 +18,17 @@ func Test_IdentityProvider_Create(t *testing.T) {
 	testE2E(t)
 	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_identity_provider." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().IdentityProviders.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testIdentityProviderResource(rName, "jumpcloud", "oidc", "client-id", "client-secret", "https://oauth.id.jumpcloud.com/"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", "jumpcloud"),
 					resource.TestCheckResourceAttr(rNameFull, "type", "oidc"),
@@ -56,14 +59,17 @@ func Test_IdentityProvider_Update(t *testing.T) {
 	testE2E(t)
 	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_identity_provider." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().IdentityProviders.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testIdentityProviderResource(rName, "jumpcloud", "oidc", "client-id", "client-secret", "https://oauth.id.jumpcloud.com/"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},

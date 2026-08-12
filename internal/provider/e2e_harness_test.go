@@ -50,6 +50,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/netbirdio/netbird/e2e/harness"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
@@ -566,5 +568,58 @@ func Test_sameIDSet(t *testing.T) {
 				t.Errorf("sameIDSet(%v) = %v, want %v", tc.got, got, tc.want)
 			}
 		})
+	}
+}
+
+// Destroy coverage.
+//
+// The destroy half of a resource's lifecycle went almost entirely unchecked: 3
+// of 65 acceptance tests asserted anything about it, so a resource that failed
+// to delete server-side looked exactly like one that deleted cleanly. Terraform
+// removes the resource from state either way, and the next test creates its own
+// randomly named fixture, so nothing downstream notices the leak.
+//
+// Asking the server for the object by ID is stricter than listing objects and
+// matching a name. It catches a delete that removed the wrong object, and it
+// separates "the object is gone" from "the check could not tell" — a not-found
+// is the only answer that proves a delete, where any other error means the
+// check itself failed and must not be read as success.
+
+// testRecordID captures a resource's server-assigned ID from state while the
+// resource still exists. CheckDestroy runs once Terraform has forgotten the
+// resource, so the ID has to be taken during the test rather than after it.
+func testRecordID(resourceName string, into *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state, so its ID cannot be recorded for the destroy check", resourceName)
+		}
+		id := rs.Primary.Attributes["id"]
+		if id == "" {
+			return fmt.Errorf("%s has no id attribute in state", resourceName)
+		}
+		*into = id
+		return nil
+	}
+}
+
+// testCheckGone builds a CheckDestroy that requires the recorded object to be
+// absent from the management server. Pass the API's own getter, which for most
+// resources is a method value such as testClient().Groups.Get.
+func testCheckGone[T any](get func(context.Context, string) (T, error), id *string) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		if *id == "" {
+			// An empty ID means the test never reached the step that records it,
+			// so reporting success here would assert nothing at all.
+			return errors.New("the destroy check has no ID to look up; the test never recorded one")
+		}
+		_, err := get(context.Background(), *id)
+		if err == nil {
+			return fmt.Errorf("%s still exists on the management server after destroy", *id)
+		}
+		if !netbird.IsNotFound(err) {
+			return fmt.Errorf("checking that %s was deleted: %w", *id, err)
+		}
+		return nil
 	}
 }
