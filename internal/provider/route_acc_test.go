@@ -65,6 +65,10 @@ func Test_Route_Update(t *testing.T) {
 	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_route." + rName
+	// Resolved once, up front: the fixture helpers can fail the test, and doing
+	// that from inside a Check closure aborts the run mid-apply, before
+	// terraform-plugin-testing gets to its destroy step.
+	peerID := testPeerID(t, "peer1")
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -78,7 +82,7 @@ func Test_Route_Update(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       testRouteResource(rName, e2eGroupNotAllID(), fmt.Sprintf("[%q]", e2eGroupAllID()), `desc-updated`, `"100.10.0.0/16"`, `null`, `null`, fmt.Sprintf("%q", testPeerID(t, "peer1"))),
+				Config:       testRouteResource(rName, e2eGroupNotAllID(), fmt.Sprintf("[%q]", e2eGroupAllID()), `desc-updated`, `"100.10.0.0/16"`, `null`, `null`, fmt.Sprintf("%q", peerID)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "network_id", rName),
@@ -90,7 +94,7 @@ func Test_Route_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "network", "100.10.0.0/16"),
 					resource.TestCheckResourceAttr(rNameFull, "domains.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", "0"),
-					resource.TestCheckResourceAttr(rNameFull, "peer", testPeerID(t, "peer1")),
+					resource.TestCheckResourceAttr(rNameFull, "peer", peerID),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						route, err := testClient().Routes.Get(context.Background(), pID)
@@ -107,7 +111,7 @@ func Test_Route_Update(t *testing.T) {
 							"domains":                 {nil, route.Domains},
 							"network":                 {"100.10.0.0/16", route.Network},
 							"peer_group":              {nil, route.PeerGroups},
-							"peer":                    {testPeerID(t, "peer1"), route.Peer},
+							"peer":                    {peerID, route.Peer},
 						})
 					},
 				),

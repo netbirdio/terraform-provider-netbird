@@ -5,11 +5,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_Account_Create(t *testing.T) {
@@ -34,7 +37,15 @@ func Test_Account_Create(t *testing.T) {
 						if len(accounts) == 0 {
 							return fmt.Errorf("no accounts on the management server")
 						}
-						settings := accounts[0].Settings
+						// By ID rather than by position: the assertion above is
+						// about env.AccountID, so comparing settings from
+						// whichever account happened to be listed first would
+						// check a different account than the resource manages.
+						idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+						if idx < 0 {
+							return fmt.Errorf("account %s is not among the %d accounts on the management server", env.AccountID, len(accounts))
+						}
+						settings := accounts[idx].Settings
 						attrs := s.RootModule().Resources[rNameFull].Primary.Attributes
 						return matchPairs(map[string][]any{
 							"peer_login_expiration":              {attrs["peer_login_expiration"], fmt.Sprint(settings.PeerLoginExpiration)},

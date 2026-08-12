@@ -20,9 +20,11 @@ func Test_ReverseProxyClusters_DataSource(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testEnsureManagementRunning(t)
-			_, err := testClient().ReverseProxyClusters.List(context.Background())
-			if err != nil {
-				t.Skip("reverse proxy clusters endpoint not available")
+			// testRequireProxyCluster has already listed clusters and found an
+			// online one, so the endpoint is known to work by the time this runs;
+			// an error here is a real failure rather than an absent feature.
+			if _, err := testClient().ReverseProxyClusters.List(context.Background()); err != nil {
+				t.Fatalf("listing reverse proxy clusters: %v", err)
 			}
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

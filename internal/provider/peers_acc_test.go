@@ -22,7 +22,9 @@ func Test_Peers_Create(t *testing.T) {
 		t.Fatalf("read the reference agent: %v", err)
 	}
 	if reference.Os == "" {
-		t.Skip("the registered agent reports no OS, nothing to filter on")
+		// The agent reports its OS at registration, so an empty one means the
+		// fixture did not register properly. Skipping would hide that.
+		t.Fatalf("the registered agent %q reports no OS", peerID)
 	}
 
 	all, err := testClient().Peers.List(context.Background())

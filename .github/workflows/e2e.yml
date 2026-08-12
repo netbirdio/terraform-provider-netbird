@@ -90,7 +90,12 @@ jobs:
           TF_ACC: "1"
           NB_E2E_BUILDX_CACHE: /tmp/nb-buildx-cache
         run: go test -v -tags e2e -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/
-        timeout-minutes: 35
+        # Above the 35m the go test timeout allows, because that timeout only
+        # starts once the tests are running: compiling the package and building
+        # the images happen inside this step but outside it. Killing the step
+        # first would take the panic trace with it, which is the one artifact
+        # that says which test hung.
+        timeout-minutes: 40
       - name: Coverage summary
         if: always()
         run: |

@@ -39,8 +39,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -165,9 +167,9 @@ func bootstrapE2E(ctx context.Context) (*e2eStack, error) {
 	// so there is no log to read. NB_E2E_DISABLE_GEOLOCATION=1 is the escape
 	// hatch for a machine that cannot reach the download, at the price of the
 	// geolocation posture checks, which then fail rather than passing vacuously.
-	opts := []harness.CombinedOption{harness.WithGeolocation()}
-	if os.Getenv("NB_E2E_DISABLE_GEOLOCATION") == "1" {
-		opts = nil
+	var opts []harness.CombinedOption
+	if os.Getenv("NB_E2E_DISABLE_GEOLOCATION") != "1" {
+		opts = append(opts, harness.WithGeolocation())
 	}
 	srv, err := harness.StartCombined(ctx, opts...)
 	if err != nil {
@@ -279,7 +281,11 @@ func testPeerID(t *testing.T, hostname string) string {
 	}
 	id, ok := env.peerIDs[hostname]
 	if !ok {
-		t.Skipf("no registered agent named %q in this deployment", hostname)
+		// Fatal, not a skip. ensurePeers registers a fixed set of hostnames and
+		// has already reported success, so a missing one is a harness bug — and a
+		// skip here would quietly drop every test that needs that agent while CI
+		// stayed green.
+		t.Fatalf("no registered agent named %q in this deployment; ensurePeers registers %v", hostname, slices.Sorted(maps.Keys(env.peerIDs)))
 	}
 	return id
 }
