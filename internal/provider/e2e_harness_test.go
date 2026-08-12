@@ -33,6 +33,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 const apiToken = "nbp_apTmlmUXHSC4PKmHwtIZNaGr8eqcVI2gMURp"
@@ -70,9 +71,11 @@ func testEnsureManagementRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	attempts := 0
+	// The counter has to advance, or the loop never ends and the Fatal below is
+	// unreachable: a management server that comes up but never serves would hang
+	// the run rather than failing it.
 	backoff := 1 * time.Second
-	for attempts < 5 {
+	for attempts := 0; attempts < 5; attempts++ {
 		_, err = testClient().Accounts.List(context.Background())
 		if err == nil {
 			t.Log("Management API Up")
@@ -86,7 +89,7 @@ func testEnsureManagementRunning(t *testing.T) {
 		backoff *= 2
 	}
 
-	t.Fatal("Management Server not started")
+	t.Fatalf("Management Server not started; last error: %v", err)
 }
 
 // testAccProtoV6ProviderFactories is used to instantiate a provider during acceptance testing.
@@ -124,4 +127,60 @@ func matchPairs(pairs map[string][]any) error {
 		}
 	}
 	return nil
+}
+
+// sameGroupIDs reports whether got holds exactly the wanted group IDs, in any
+// order and with duplicates counted.
+//
+// Comparing the set matters: the assertions that call this used to be written as
+// `len(got) != 2 || (A && B)`, and && binds tighter than ||, so a single wrong ID
+// left the other one correct, made the && false, and passed.
+func sameGroupIDs(got []api.GroupMinimum, want ...string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	remaining := make(map[string]int, len(want))
+	for _, w := range want {
+		remaining[w]++
+	}
+	for _, g := range got {
+		if remaining[g.Id] == 0 {
+			return false
+		}
+		remaining[g.Id]--
+	}
+	return true
+}
+
+// The case that made the original condition wrong: exactly one ID correct. The
+// old form, len(got) != 2 || (A && B), passed here because the correct ID made
+// its half of the && false.
+func Test_sameGroupIDs(t *testing.T) {
+	g := func(ids ...string) []api.GroupMinimum {
+		out := make([]api.GroupMinimum, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, api.GroupMinimum{Id: id})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name string
+		got  []api.GroupMinimum
+		want bool
+	}{
+		{name: "both correct", got: g("group-all", "group-notall"), want: true},
+		{name: "both correct, other order", got: g("group-notall", "group-all"), want: true},
+		{name: "one wrong", got: g("group-all", "group-wrong")},
+		{name: "the other wrong", got: g("group-wrong", "group-notall")},
+		{name: "both wrong", got: g("a", "b")},
+		{name: "duplicate stands in for the missing one", got: g("group-all", "group-all")},
+		{name: "too few", got: g("group-all")},
+		{name: "too many", got: g("group-all", "group-notall", "group-all")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameGroupIDs(tc.got, "group-all", "group-notall"); got != tc.want {
+				t.Errorf("sameGroupIDs(%v) = %v, want %v", tc.got, got, tc.want)
+			}
+		})
+	}
 }

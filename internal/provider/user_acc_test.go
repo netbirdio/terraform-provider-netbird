@@ -46,6 +46,12 @@ func Test_User_Create(t *testing.T) {
 						if user == nil {
 							return fmt.Errorf("User not found")
 						}
+						// IsServiceUser is an optional *bool, so a server that
+						// omits it would panic the dereference below rather than
+						// failing the assertion.
+						if user.IsServiceUser == nil {
+							return fmt.Errorf("User %s has no is_service_user on management server", uID)
+						}
 						return matchPairs(map[string][]any{
 							"name":            {rName, user.Name},
 							"is_service_user": {true, *user.IsServiceUser},

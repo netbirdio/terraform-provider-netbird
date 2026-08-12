@@ -35,7 +35,13 @@ func Test_Network_Create(t *testing.T) {
 						if network.Name != rName {
 							return fmt.Errorf("Network name mismatch, expected %s, found %s on management server", rName, network.Name)
 						}
-						if network.Description == nil || *network.Description != `Test` {
+						// The nil branch has to return before the format below, which
+						// dereferences the same pointer: on a server that omits the
+						// field this panicked instead of failing the assertion.
+						if network.Description == nil {
+							return fmt.Errorf("Network description mismatch, expected Test, found none on management server")
+						}
+						if *network.Description != `Test` {
 							return fmt.Errorf("Network description mismatch, expected Test, found %s on management server", *network.Description)
 						}
 						return nil
@@ -76,7 +82,13 @@ func Test_Network_Update(t *testing.T) {
 						if network.Name != rName {
 							return fmt.Errorf("Network name mismatch, expected %s, found %s on management server", rName, network.Name)
 						}
-						if network.Description == nil || *network.Description != `Test V2` {
+						// The nil branch has to return before the format below, which
+						// dereferences the same pointer: on a server that omits the
+						// field this panicked instead of failing the assertion.
+						if network.Description == nil {
+							return fmt.Errorf("Network description mismatch, expected Test V2, found none on management server")
+						}
+						if *network.Description != `Test V2` {
 							return fmt.Errorf("Network description mismatch, expected Test V2, found %s on management server", *network.Description)
 						}
 						return nil

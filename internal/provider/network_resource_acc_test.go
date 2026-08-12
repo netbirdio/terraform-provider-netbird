@@ -38,7 +38,10 @@ func Test_NetworkResource_Create(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected example.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
+						// && binds tighter than ||, so the original condition was
+						// len != 2 || (A && B): one wrong ID left the other correct
+						// and the assertion passed. Compare the set instead.
+						if !sameGroupIDs(resource.Groups, "group-all", "group-notall") {
 							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
 						}
 
@@ -86,7 +89,10 @@ func Test_NetworkResource_Update(t *testing.T) {
 							return fmt.Errorf("NetworkResource Address mismatch, expected google.com, found %s on management server", resource.Address)
 						}
 
-						if len(resource.Groups) != 2 || (resource.Groups[0].Id != "group-notall" && resource.Groups[0].Id != "group-all") && (resource.Groups[1].Id != "group-notall" && resource.Groups[1].Id != "group-all") {
+						// && binds tighter than ||, so the original condition was
+						// len != 2 || (A && B): one wrong ID left the other correct
+						// and the assertion passed. Compare the set instead.
+						if !sameGroupIDs(resource.Groups, "group-all", "group-notall") {
 							return fmt.Errorf("NetworkResource Groups mismatch, expected [group-notall, group-all], found %#v on management server", resource.Groups)
 						}
 

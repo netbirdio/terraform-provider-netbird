@@ -27,7 +27,7 @@ func Test_Peers_Create(t *testing.T) {
 					func(s *terraform.State) error {
 						pIDCount := s.RootModule().Resources[rNameFull].Primary.Attributes["ids.#"]
 						if pIDCount != "2" {
-							return fmt.Errorf("Peer count mismatch, expected 1, found %s", pIDCount)
+							return fmt.Errorf("Peer count mismatch, expected 2, found %s", pIDCount)
 						}
 						pIDs := []string{s.RootModule().Resources[rNameFull].Primary.Attributes["ids.0"], s.RootModule().Resources[rNameFull].Primary.Attributes["ids.1"]}
 						slices.Sort(pIDs)
