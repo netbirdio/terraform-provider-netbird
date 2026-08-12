@@ -96,9 +96,12 @@ func (r *User) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				Validators:          []validator.String{stringvalidator.OneOf("owner", "admin", "user", "billing_admin", "auditor", "network_admin")},
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "User status (active or invited)",
+				MarkdownDescription: "User status (active, invited or blocked)",
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				// No UseStateForUnknown: the server derives status from
+				// is_blocked, so carrying the prior value into the plan makes
+				// blocking a user fail with "provider produced inconsistent
+				// result after apply" (planned "active", applied "blocked").
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "User issue method",
@@ -291,7 +294,9 @@ func (r *User) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 	}
 
 	err := r.client.Users.Delete(ctx, data.Id.ValueString())
-	if err != nil {
+	// An object already removed out-of-band is not an error: the desired
+	// end state (gone) is satisfied, so let the destroy succeed.
+	if err != nil && !netbird.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error deleting User", err.Error())
 	}
 }
