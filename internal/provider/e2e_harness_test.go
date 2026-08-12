@@ -361,7 +361,12 @@ func testRequireProxyCluster(t *testing.T) api.ProxyCluster {
 	env := testE2E(t)
 	cluster, err := env.proxyCluster(context.Background())
 	if err != nil {
-		t.Skipf("no reverse proxy cluster in this deployment: %v", err)
+		// Fatal, not a skip. This run owns the deployment, so every way this can
+		// fail — the token, the image build, the container, registration, the
+		// timeout waiting for the cluster — is a defect rather than a deployment
+		// that happens not to offer a proxy. Skipping would take all nine reverse
+		// proxy tests with it and leave the run green.
+		t.Fatalf("bringing up the reverse proxy: %v", err)
 	}
 	return cluster
 }
