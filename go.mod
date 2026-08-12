@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
-	github.com/netbirdio/netbird v0.76.4-0.20260812061253-2614433b9a28
+	github.com/netbirdio/netbird v0.76.4-0.20260812091925-77e5ac776bf8
 )
 
 require (
