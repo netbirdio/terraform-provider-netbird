@@ -124,15 +124,18 @@ func Test_AgentNetworkProvider_Create(t *testing.T) {
 	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
+	var createdID string
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetProvider, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testAgentNetworkProviderResource(rName, rName, `{ "x-portkey-config" = "pc-acc" }`, "true"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "provider_id", "openai_api"),
 					resource.TestCheckResourceAttr(rNameFull, "metadata_disabled", "true"),
@@ -163,6 +166,7 @@ func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
 	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
+	var createdID string
 
 	checkPersisted := func(s *terraform.State) error {
 		p, err := testGetProvider(s.RootModule().Resources[rNameFull].Primary.Attributes["id"])
@@ -181,6 +185,7 @@ func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetProvider, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
@@ -192,6 +197,7 @@ func Test_AgentNetworkProvider_UpdatePreservesExtraValues(t *testing.T) {
 				ResourceName: rName,
 				Config:       testAgentNetworkProviderResource(rName, rName+"-renamed", `{ "x-portkey-config" = "pc-acc" }`, "true"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName+"-renamed"),
 					checkPersisted,
 				),
@@ -207,6 +213,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_provider." + rName
+	var createdID string
 
 	config := func(providerID, upstream string) string {
 		return fmt.Sprintf(`resource "netbird_agent_network_provider" "%s" {
@@ -221,6 +228,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetProvider, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
@@ -234,6 +242,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 				ResourceName: rName,
 				Config:       config("anthropic_api", "https://api.anthropic.com"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "provider_id", "anthropic_api"),
 					func(s *terraform.State) error {
 						if got := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]; got != firstID {
@@ -251,6 +260,7 @@ func Test_AgentNetworkGuardrail_Create(t *testing.T) {
 	testE2E(t)
 	rName := "ang" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_guardrail." + rName
+	var createdID string
 
 	config := func(models string, redactPii string) string {
 		return fmt.Sprintf(`resource "netbird_agent_network_guardrail" "%s" {
@@ -270,11 +280,13 @@ func Test_AgentNetworkGuardrail_Create(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetGuardrail, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       config(`["gpt-4.1"]`, "true"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "model_allowlist.models.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "prompt_capture.redact_pii", "true"),
@@ -296,6 +308,7 @@ func Test_AgentNetworkPolicy_Create(t *testing.T) {
 	testE2E(t)
 	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_agent_network_policy." + rName
+	var createdID string
 
 	config := fmt.Sprintf(`
 resource "netbird_group" "%[1]s" {
@@ -336,11 +349,13 @@ resource "netbird_agent_network_policy" "%[1]s" {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetPolicy, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       config,
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "source_groups.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "destination_provider_ids.#", "1"),
