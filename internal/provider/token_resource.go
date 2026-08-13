@@ -206,12 +206,21 @@ func (r *Token) Read(ctx context.Context, req resource.ReadRequest, resp *resour
 func (r *Token) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data TokenModel
 
+	// Read Terraform plan data into the model
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// The guard has to come after the plan is read. Checking data.Id on a
+	// zero-valued model made the condition always true, so this always called
+	// Create and the error below was unreachable.
 	if data.Id.ValueString() == "" {
 		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
 		return
 	}
-	// Read Terraform plan data into the model
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
 	resp.Diagnostics.AddError("Invalid Operation", "Personal Access Tokens can't be updated")
 }
 
