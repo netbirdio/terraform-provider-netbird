@@ -133,6 +133,62 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	return ret
 }
 
+func (r *Group) groupRequestResources(ctx context.Context, resourceIDs types.List) (*[]api.Resource, diag.Diagnostics) {
+	var ret diag.Diagnostics
+
+	if resourceIDs.IsUnknown() || resourceIDs.IsNull() {
+		return nil, ret
+	}
+
+	var ids []string
+	ret.Append(resourceIDs.ElementsAs(ctx, &ids, false)...)
+	if ret.HasError() {
+		return nil, ret
+	}
+
+	resources := make([]api.Resource, 0, len(ids))
+	if len(ids) == 0 {
+		return &resources, ret
+	}
+
+	networks, err := r.client.Networks.List(ctx)
+	if err != nil {
+		ret.AddError("Error listing networks", err.Error())
+		return nil, ret
+	}
+
+	resourceTypes := make(map[string]api.ResourceType)
+	for _, network := range networks {
+		networkResources, err := r.client.Networks.Resources(network.Id).List(ctx)
+		if err != nil {
+			ret.AddError("Error listing network resources", err.Error())
+			return nil, ret
+		}
+
+		for _, networkResource := range networkResources {
+			resourceTypes[networkResource.Id] = api.ResourceType(networkResource.Type)
+		}
+	}
+
+	for _, id := range ids {
+		resourceType, ok := resourceTypes[id]
+		if !ok {
+			ret.AddError(
+				"Unknown network resource",
+				fmt.Sprintf("Could not resolve network resource %q while preparing the group request.", id),
+			)
+			return nil, ret
+		}
+
+		resources = append(resources, api.Resource{
+			Id:   id,
+			Type: resourceType,
+		})
+	}
+
+	return &resources, ret
+}
+
 func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data GroupModel
 
@@ -143,21 +199,10 @@ func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *re
 		return
 	}
 
-	var resources *[]api.Resource
-	if len(data.Resources.Elements()) > 0 {
-		var tfVal []map[string]string
-		var resourcesVal []api.Resource
-		resp.Diagnostics.Append(data.Resources.ElementsAs(ctx, &tfVal, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, v := range tfVal {
-			resourcesVal = append(resourcesVal, api.Resource{
-				Id:   v["id"],
-				Type: api.ResourceType(v["type"]),
-			})
-		}
-		resources = &resourcesVal
+	resources, diags := r.groupRequestResources(ctx, data.Resources)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	groupReq := api.GroupRequest{
@@ -228,21 +273,10 @@ func (r *Group) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 		return
 	}
 
-	var resources *[]api.Resource
-	if len(data.Resources.Elements()) > 0 {
-		var tfVal []map[string]string
-		var resourcesVal []api.Resource
-		resp.Diagnostics.Append(data.Resources.ElementsAs(ctx, &tfVal, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, v := range tfVal {
-			resourcesVal = append(resourcesVal, api.Resource{
-				Id:   v["id"],
-				Type: api.ResourceType(v["type"]),
-			})
-		}
-		resources = &resourcesVal
+	resources, diags := r.groupRequestResources(ctx, data.Resources)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	groupReq := api.GroupRequest{
