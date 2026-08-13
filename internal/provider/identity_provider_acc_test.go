@@ -51,6 +51,12 @@ func Test_IdentityProvider_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"client_secret"},
+			},
 		},
 	})
 }

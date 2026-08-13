@@ -53,6 +53,12 @@ func Test_Scim_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth_token"},
+			},
 		},
 	})
 }

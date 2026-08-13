@@ -60,6 +60,11 @@ func Test_NameserverGroup_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }

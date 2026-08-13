@@ -58,6 +58,12 @@ func Test_NetworkResource_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: testImportIDFrom(rNameFull, "/", "network_id", "id"),
+			},
 		},
 	})
 }

@@ -60,6 +60,11 @@ func Test_Policy_Create_Groups(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }

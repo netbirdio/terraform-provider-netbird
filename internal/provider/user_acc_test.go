@@ -68,6 +68,11 @@ func Test_User_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }

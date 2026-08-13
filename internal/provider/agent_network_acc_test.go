@@ -155,6 +155,12 @@ func Test_AgentNetworkProvider_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"api_key"},
+			},
 		},
 	})
 }
@@ -300,6 +306,11 @@ func Test_AgentNetworkGuardrail_Create(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "prompt_capture.redact_pii", "false"),
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -365,6 +376,11 @@ resource "netbird_agent_network_policy" "%[1]s" {
 					// Not set in config, so it takes the schema default.
 					resource.TestCheckResourceAttr(rNameFull, "token_limit.user_cap", "0"),
 				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})

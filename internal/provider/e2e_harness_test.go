@@ -73,11 +73,19 @@ const (
 
 // e2ePeerNames are the hostnames the agent containers register under, in the
 // order the tests expect to find them.
-// peer4 exists so the delete test has an agent it can consume. Deleting a peer
-// deregisters the device, so a test that asserts deletion cannot use one of the
-// peers the other tests address by name — it would remove a fixture they need,
-// and Go runs peer_acc_test.go before peers_acc_test.go.
-var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4"}
+//
+// They are split by purpose, because a test that manages a peer through its own
+// lifecycle destroys it: peer1 and peer2 are shared and read-only, addressed by
+// name by the group, route, peers and reverse-proxy tests and expected to
+// survive the whole run, while peer3 to peer5 are consumable, one per lifecycle
+// test. One each rather than sharing, since sharing would make the later test
+// depend on the order Go compiles the files in.
+//
+// Deleting a peer does not actually deregister the device today — Peer.Delete
+// skips the API call under TF_ACC, which is what Test_Peer_Delete reports. The
+// split is what stops that from becoming a cascade of failures once the delete
+// works.
+var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4", "peer5"}
 
 // e2eStack is the live deployment plus the IDs of the fixtures created on it.
 type e2eStack struct {
@@ -665,5 +673,29 @@ func testCheckAbsentFromList[T any](list func(context.Context) ([]T, error), id 
 			}
 		}
 		return nil
+	}
+}
+
+// testImportIDFrom builds a composite import ID out of attributes in state, for
+// the resources whose ImportState expects more than the object's own ID — a
+// network resource is addressed as network_id/id, a token as user_id/id.
+//
+// The separator is a parameter because the provider is not consistent about it:
+// dns_record splits on ":" while the others split on "/".
+func testImportIDFrom(resourceName, sep string, attrs ...string) resource.ImportStateIdFunc {
+	return func(s *terraform.State) (string, error) {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return "", fmt.Errorf("%s is not in state, so no import ID can be built", resourceName)
+		}
+		parts := make([]string, 0, len(attrs))
+		for _, a := range attrs {
+			v := rs.Primary.Attributes[a]
+			if v == "" {
+				return "", fmt.Errorf("%s has no %s in state", resourceName, a)
+			}
+			parts = append(parts, v)
+		}
+		return strings.Join(parts, sep), nil
 	}
 }

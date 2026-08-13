@@ -56,6 +56,12 @@ func Test_SetupKey_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"key"},
+			},
 		},
 	})
 }

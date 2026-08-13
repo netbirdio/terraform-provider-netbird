@@ -22,7 +22,7 @@ func Test_Peer_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, testPeerID(t, "peer2"), rName),
+				Config:       testPeerResource(rName, testPeerID(t, "peer3"), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -41,6 +41,11 @@ func Test_Peer_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -55,14 +60,14 @@ func Test_Peer_Update(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, testPeerID(t, "peer3"), "meow"),
+				Config:       testPeerResource(rName, testPeerID(t, "peer4"), "meow"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testPeerResource(rName, testPeerID(t, "peer3"), rName),
+				Config:       testPeerResource(rName, testPeerID(t, "peer4"), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -95,13 +100,14 @@ func Test_Peer_Update(t *testing.T) {
 // terraform destroy reports success while the peer stays registered. Removing
 // that branch is what makes this test pass.
 //
-// It consumes peer4 rather than one of peer1-3, because deleting a peer
-// deregisters the device and the other tests address those by name.
+// It consumes peer5, one of the fixtures reserved for tests that manage a peer
+// through its own lifecycle: deleting a peer deregisters the device, and the
+// shared fixtures are addressed by name elsewhere in the suite.
 func Test_Peer_Delete(t *testing.T) {
 	testE2E(t)
 	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_peer." + rName
-	peerID := testPeerID(t, "peer4")
+	peerID := testPeerID(t, "peer5")
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

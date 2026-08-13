@@ -50,6 +50,13 @@ func Test_Token_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateIdFunc:       testImportIDFrom(rNameFull, "/", "user_id", "id"),
+				ImportStateVerifyIgnore: []string{"token"},
+			},
 		},
 	})
 }
