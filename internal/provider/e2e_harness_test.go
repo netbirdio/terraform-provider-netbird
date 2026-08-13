@@ -699,3 +699,23 @@ func testImportIDFrom(resourceName, sep string, attrs ...string) resource.Import
 		return strings.Join(parts, sep), nil
 	}
 }
+
+// testIDChanged asserts the object was replaced rather than updated in place, by
+// comparing against the ID recorded in an earlier step. It is the assertion that
+// makes a RequiresReplace declaration mean something: without it a provider that
+// quietly updated in place would look identical to one that recreated.
+func testIDChanged(resourceName string, previous *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if *previous == "" {
+			return errors.New("no earlier ID was recorded, so a replacement cannot be detected")
+		}
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state", resourceName)
+		}
+		if got := rs.Primary.Attributes["id"]; got == *previous {
+			return fmt.Errorf("%s kept id %s across a change the schema marks RequiresReplace, so it was updated in place instead of being recreated", resourceName, got)
+		}
+		return nil
+	}
+}
