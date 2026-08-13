@@ -83,6 +83,42 @@ func Test_Peer_Update(t *testing.T) {
 	})
 }
 
+// Test_Peer_Delete asserts that destroying a netbird_peer deregisters the device.
+//
+// This FAILS on the current provider, deliberately: Peer.Delete skips the API
+// call whenever TF_ACC is set in the environment, so under the acceptance suite
+// the one path this test exists to cover is switched off. The peer survives the
+// destroy and the assertion below reports it as still present.
+//
+// The switch is in shipped code rather than in a test, so it is not only a
+// coverage gap: any user with TF_ACC in their environment gets a provider whose
+// terraform destroy reports success while the peer stays registered. Removing
+// that branch is what makes this test pass.
+//
+// It consumes peer4 rather than one of peer1-3, because deleting a peer
+// deregisters the device and the other tests address those by name.
+func Test_Peer_Delete(t *testing.T) {
+	testE2E(t)
+	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_peer." + rName
+	peerID := testPeerID(t, "peer4")
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Peers.Get, &peerID),
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testPeerResource(rName, peerID, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "id", peerID),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+				),
+			},
+		},
+	})
+}
+
 func testPeerResource(rName, id, name string) string {
 	return fmt.Sprintf(`resource "netbird_peer" "%s" {
 	id = "%s"

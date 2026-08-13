@@ -14,14 +14,17 @@ func Test_DNSZone_Create(t *testing.T) {
 	testE2E(t)
 	rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_zone." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().DNSZones.GetZone, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testDNSZoneResource(rName, "test.local", true, false, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "domain", "test.local"),
@@ -42,14 +45,17 @@ func Test_DNSZone_Update(t *testing.T) {
 	testE2E(t)
 	rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_zone." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().DNSZones.GetZone, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testDNSZoneResource(rName, "test.local", true, false, fmt.Sprintf("[%q]", e2eGroupAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "domain", "test.local"),

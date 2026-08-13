@@ -73,7 +73,11 @@ const (
 
 // e2ePeerNames are the hostnames the agent containers register under, in the
 // order the tests expect to find them.
-var e2ePeerNames = []string{"peer1", "peer2", "peer3"}
+// peer4 exists so the delete test has an agent it can consume. Deleting a peer
+// deregisters the device, so a test that asserts deletion cannot use one of the
+// peers the other tests address by name — it would remove a fixture they need,
+// and Go runs peer_acc_test.go before peers_acc_test.go.
+var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4"}
 
 // e2eStack is the live deployment plus the IDs of the fixtures created on it.
 type e2eStack struct {
@@ -603,6 +607,24 @@ func testRecordID(resourceName string, into *string) resource.TestCheckFunc {
 	}
 }
 
+// testRecordAttr is testRecordID for any other attribute, which a destroy check
+// needs when the object it must ask about is addressed through a parent — a DNS
+// record lives under the zone in its zone_id, for instance.
+func testRecordAttr(resourceName, attr string, into *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state, so its %s cannot be recorded for the destroy check", resourceName, attr)
+		}
+		v := rs.Primary.Attributes[attr]
+		if v == "" {
+			return fmt.Errorf("%s has no %s attribute in state", resourceName, attr)
+		}
+		*into = v
+		return nil
+	}
+}
+
 // testCheckGone builds a CheckDestroy that requires the recorded object to be
 // absent from the management server. Pass the API's own getter, which for most
 // resources is a method value such as testClient().Groups.Get.
@@ -619,6 +641,28 @@ func testCheckGone[T any](get func(context.Context, string) (T, error), id *stri
 		}
 		if !netbird.IsNotFound(err) {
 			return fmt.Errorf("checking that %s was deleted: %w", *id, err)
+		}
+		return nil
+	}
+}
+
+// testCheckAbsentFromList is the destroy check for a resource whose API has no
+// by-ID getter, so the only way to ask is to list and look. Weaker than
+// testCheckGone — a list error is indistinguishable from an empty list only if
+// it is ignored, so it is returned instead.
+func testCheckAbsentFromList[T any](list func(context.Context) ([]T, error), id func(T) string, want *string) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		if *want == "" {
+			return errors.New("the destroy check has no ID to look for; the test never recorded one")
+		}
+		items, err := list(context.Background())
+		if err != nil {
+			return fmt.Errorf("listing to check that %s was deleted: %w", *want, err)
+		}
+		for _, it := range items {
+			if id(it) == *want {
+				return fmt.Errorf("%s still exists on the management server after destroy", *want)
+			}
 		}
 		return nil
 	}

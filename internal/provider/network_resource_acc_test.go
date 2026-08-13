@@ -10,20 +10,27 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_NetworkResource_Create(t *testing.T) {
 	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_resource." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkResource, error) {
+			return testClient().Networks.Resources(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, fmt.Sprintf("[%q, %q]", e2eGroupNotAllID(), e2eGroupAllID()), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "address", "example.com"),
 					resource.TestCheckResourceAttr(rNameFull, "groups.#", "2"),
@@ -59,14 +66,19 @@ func Test_NetworkResource_Update(t *testing.T) {
 	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_resource." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkResource, error) {
+			return testClient().Networks.Resources(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
