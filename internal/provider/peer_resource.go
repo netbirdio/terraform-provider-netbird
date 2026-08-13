@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -400,12 +399,8 @@ func (r *Peer) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 		return
 	}
 
-	// Do not delete actual peers in acceptance tests to make running locally easier
-	if _, ok := os.LookupEnv("TF_ACC"); !ok {
-		err := r.client.Peers.Delete(ctx, data.Id.ValueString())
-		if err != nil {
-			resp.Diagnostics.AddError("Error deleting Peer", err.Error())
-		}
+	if err := r.client.Peers.Delete(ctx, data.Id.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Error deleting Peer", err.Error())
 	}
 }
 
