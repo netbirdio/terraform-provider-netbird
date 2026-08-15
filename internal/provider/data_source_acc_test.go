@@ -127,10 +127,17 @@ func Test_User_DataSource(t *testing.T) {
 func Test_IdentityProvider_DataSource(t *testing.T) {
 	testE2E(t)
 	rName := "idp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
-	// "okta" rather than the "oidc" the resource tests use: the type validator
-	// accepts seven values and only one of them was ever exercised.
-	cfg := testIdentityProviderResource(rName, "jumpcloud", "okta", "client-id", "client-secret",
-		"https://acc.okta.example/oauth2")
+	// "google" rather than the "oidc" the resource tests use: the type validator
+	// accepts seven values and only one was ever exercised.
+	//
+	// The issuer has to be a real one. The provider fetches
+	// <issuer>/.well-known/openid-configuration before accepting the resource, so
+	// an invented hostname fails with "identity provider issuer is unreachable"
+	// rather than testing anything. That also means this resource cannot be
+	// covered on a runner without egress — the pre-existing tests only pass
+	// because their JumpCloud issuer resolves.
+	cfg := testIdentityProviderResource(rName, "jumpcloud", "google", "client-id", "client-secret",
+		"https://accounts.google.com")
 	// client_secret is write-only, so it is not comparable.
 	dsCase(t, cfg+dataSourceByID("identity_provider", rName),
 		samePair("identity_provider", rName, "name", "type", "client_id", "issuer"))
