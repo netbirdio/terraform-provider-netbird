@@ -52,7 +52,10 @@ func Test_SetupKey_Replaced(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testSetupKeyResource(rName, `1800`, `reusable`, `false`, `[]`, `false`, `false`, `0`),
+				// usage_limit is left out of both steps: the server fixes it at
+				// 1 for a one-off key, so a configuration that names 0 for both
+				// steps is asking the second one for something it cannot have.
+				Config: testSetupKeyResourceNoLimit(rName, `reusable`, `[]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testRecordID(rNameFull, &first),
 					resource.TestCheckResourceAttr(rNameFull, "type", "reusable"),
@@ -60,7 +63,7 @@ func Test_SetupKey_Replaced(t *testing.T) {
 			},
 			{
 				// type is RequiresReplace: a setup key's kind is fixed at creation.
-				Config: testSetupKeyResource(rName, `1800`, `one-off`, `false`, `[]`, `false`, `false`, `0`),
+				Config: testSetupKeyResourceNoLimit(rName, `one-off`, `[]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "type", "one-off"),
 					testIDChanged(rNameFull, &first),
