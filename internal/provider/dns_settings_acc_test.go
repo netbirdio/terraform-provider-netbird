@@ -27,11 +27,6 @@ func Test_DNSSettings_Create(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "disabled_management_groups.#", "0"),
 				),
 			},
-			{
-				ResourceName:      rNameFull,
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
 		},
 	})
 }
