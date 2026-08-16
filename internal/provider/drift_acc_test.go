@@ -378,7 +378,8 @@ resource "netbird_dns_record" "%[1]s" {
 				PreConfig: func() {
 					if _, err := testClient().DNSZones.UpdateRecord(context.Background(), zoneID, recordID,
 						api.DNSRecordRequest{
-							Name: "www", Type: api.DNSRecordTypeA, Content: "10.9.9.9", Ttl: 300,
+							Name: "www." + rName + ".local", Type: api.DNSRecordTypeA,
+							Content: "10.9.9.9", Ttl: 300,
 						}); err != nil {
 						t.Fatalf("could not change the record behind Terraform's back: %v", err)
 					}

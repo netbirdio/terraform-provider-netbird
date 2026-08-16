@@ -211,6 +211,11 @@ resource "netbird_token" "%[1]s" {
 
 // Test_Replace_DNSRecordZone moves a record between zones. A record is
 // addressed as zone plus record, so it cannot be the same object afterwards.
+//
+// The name moves with it: a record is named by its fully qualified name and the
+// server refuses one that does not sit inside its zone's domain, so the two
+// cannot be varied independently. zone_id is what forces the replacement either
+// way, since name does not.
 func Test_Replace_DNSRecordZone(t *testing.T) {
 	testE2E(t)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
@@ -231,7 +236,7 @@ resource "netbird_dns_zone" "%[1]sb" {
 
 resource "netbird_dns_record" "%[1]s" {
   zone_id = netbird_dns_zone.%[2]s.id
-  name    = "www.%[1]s.local"
+  name    = "www.%[2]s.local"
   type    = "A"
   content = "10.0.0.1"
   ttl     = 300

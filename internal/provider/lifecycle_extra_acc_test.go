@@ -133,20 +133,27 @@ func Test_Replace_UserServiceUser(t *testing.T) {
 	testE2E(t)
 	rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	address := "netbird_user." + rName
-	cfg := func(service string) string {
-		// No email: the server drops it for a service user and returns an empty
-		// one, which Terraform reports as the provider contradicting its own
-		// plan. That is a defect worth fixing on its own, and not this test's
-		// subject.
-		return fmt.Sprintf(`resource "netbird_user" "%[1]s" {
+	// The email moves with the kind of account, because the server insists on
+	// both halves: a person cannot be created without one, and a service user
+	// that is given one fails the apply — the address is dropped and returned
+	// empty, which Terraform reports as the provider contradicting its own plan.
+	// That second half is a defect in its own right, and not this test's subject.
+	serviceUser := fmt.Sprintf(`resource "netbird_user" "%[1]s" {
   name            = "%[1]s"
-  is_service_user = %[2]s
+  is_service_user = true
   role            = "user"
   auto_groups     = []
 }
-`, rName, service)
-	}
-	replaceCase(t, address, cfg("true"), cfg("false"),
+`, rName)
+	person := fmt.Sprintf(`resource "netbird_user" "%[1]s" {
+  name            = "%[1]s"
+  email           = "%[1]s@example.com"
+  is_service_user = false
+  role            = "user"
+  auto_groups     = []
+}
+`, rName)
+	replaceCase(t, address, serviceUser, person,
 		resource.TestCheckResourceAttr(address, "is_service_user", "false"),
 	)
 }
