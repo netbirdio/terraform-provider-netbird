@@ -184,7 +184,8 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 				),
 			},
 			{
-				Config: testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", notAll)),
+				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", notAll)),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
@@ -193,7 +194,8 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 				),
 			},
 			{
-				Config: testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q, %q]", notAll, all)),
+				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q, %q]", notAll, all)),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
@@ -201,7 +203,8 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 				),
 			},
 			{
-				Config: testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", all)),
+				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", all)),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
@@ -210,7 +213,8 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 				),
 			},
 			{
-				Config: testSetupKeyResourceNoLimit(rName, `one-off`, `[]`),
+				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, `[]`),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "0"),

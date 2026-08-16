@@ -48,9 +48,11 @@ import (
 	"testing"
 	"time"
 
+	tfjson "github.com/hashicorp/terraform-json"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/netbirdio/netbird/e2e/harness"
@@ -717,5 +719,56 @@ func testIDChanged(resourceName string, previous *string) resource.TestCheckFunc
 			return fmt.Errorf("%s kept id %s across a change the schema marks RequiresReplace, so it was updated in place instead of being recreated", resourceName, got)
 		}
 		return nil
+	}
+}
+
+// testExpectUpdateInPlace asserts the planned change to a resource is an update
+// rather than a replacement.
+//
+// Comparing IDs across steps proves an object was replaced, but only after the
+// fact and without saying why. This reads the plan itself, so a failure names
+// the action Terraform chose and the attributes that forced it — which is the
+// part that has to change to fix it. Only the attributes that can force a
+// replacement are reported, both because the rest cannot be the cause and
+// because a full dump of the object would carry the plaintext key with it.
+func testExpectUpdateInPlace(address string) plancheck.PlanCheck {
+	return updateInPlace{address: address}
+}
+
+type updateInPlace struct {
+	address string
+}
+
+func (c updateInPlace) CheckPlan(_ context.Context, req plancheck.CheckPlanRequest, resp *plancheck.CheckPlanResponse) {
+	for _, rc := range req.Plan.ResourceChanges {
+		if rc.Address != c.address {
+			continue
+		}
+		if slices.Equal(rc.Change.Actions, tfjson.Actions{tfjson.ActionUpdate}) {
+			return
+		}
+		resp.Error = fmt.Errorf("%s: planned %v rather than an in-place update; replacement forced by %v; %s",
+			c.address, rc.Change.Actions, rc.Change.ReplacePaths, describeReplaceable(rc.Change))
+		return
+	}
+	resp.Error = fmt.Errorf("%s is not in the plan", c.address)
+}
+
+// describeReplaceable reports the before and after of every attribute the setup
+// key schema marks RequiresReplace.
+func describeReplaceable(change *tfjson.Change) string {
+	before, _ := change.Before.(map[string]any)
+	after, _ := change.After.(map[string]any)
+	var parts []string
+	for _, attr := range []string{"name", "type", "expiry_seconds", "usage_limit", "ephemeral", "allow_extra_dns_labels"} {
+		parts = append(parts, fmt.Sprintf("%s: %v -> %v", attr, before[attr], after[attr]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// updatesInPlace is testExpectUpdateInPlace as a step's plan checks.
+func updatesInPlace(address string) resource.ConfigPlanChecks {
+	return resource.ConfigPlanChecks{
+		PreApply: []plancheck.PlanCheck{testExpectUpdateInPlace(address)},
 	}
 }
