@@ -229,3 +229,83 @@ func Test_Token_ImportThenPlan(t *testing.T) {
 		},
 	})
 }
+
+// Destroying an account-wide singleton.
+//
+// Three resources describe settings rather than objects, and destroy means
+// something different for each of them. Nothing asserted which, and the answer
+// is not what a reader would assume: two of the three do nothing at all, so
+// `terraform destroy` drops them from state and leaves the account exactly as
+// the configuration left it.
+//
+// That is defensible — an account's settings cannot be deleted, only changed,
+// and reverting to defaults would be a decision the configuration never asked
+// for. It is also a surprise worth having in a test, because it means a
+// destroyed configuration is not a clean account.
+
+func Test_Destroy_DNSSettings_KeepsTheSettings(t *testing.T) {
+	testE2E(t)
+	rName := "ds" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	group := e2eGroupNotAllID()
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(*terraform.State) error {
+			settings, err := testClient().DNS.GetSettings(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, g := range settings.DisabledManagementGroups {
+				if g == group {
+					return nil
+				}
+			}
+			return fmt.Errorf("the group the configuration disabled is no longer disabled after destroy, so something did revert it: %v",
+				settings.DisabledManagementGroups)
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testDNSSettingsResource(rName, fmt.Sprintf("[%q]", group)),
+				Check: resource.TestCheckResourceAttr("netbird_dns_settings."+rName,
+					"disabled_management_groups.#", "1"),
+			},
+		},
+	})
+}
+
+func Test_Destroy_AccountSettings_KeepsTheSettings(t *testing.T) {
+	testE2E(t)
+	rName := "as" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_account_settings." + rName
+	config := fmt.Sprintf(`resource "netbird_account_settings" "%[1]s" {
+  peer_login_expiration_enabled = true
+  peer_login_expiration         = 7200
+}`, rName)
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(*terraform.State) error {
+			accounts, err := testClient().Accounts.List(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, a := range accounts {
+				if a.Id != mustE2E().AccountID {
+					continue
+				}
+				if a.Settings.PeerLoginExpiration != 7200 {
+					return fmt.Errorf("peer_login_expiration is %d after destroy, expected the configured 7200 to still be there",
+						a.Settings.PeerLoginExpiration)
+				}
+				return nil
+			}
+			return fmt.Errorf("the account under test is not in the list")
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr(address, "peer_login_expiration", "7200"),
+			},
+		},
+	})
+}

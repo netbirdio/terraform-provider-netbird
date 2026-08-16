@@ -333,3 +333,152 @@ func Test_Drift_TokenDeletedElsewhere(t *testing.T) {
 		},
 	})
 }
+
+func Test_Drift_DNSRecord(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_dns_record." + rName
+	config := fmt.Sprintf(`
+resource "netbird_dns_zone" "%[1]s" {
+  name                = "%[1]s"
+  domain              = "%[1]s.local"
+  distribution_groups = [%[2]q]
+}
+
+resource "netbird_dns_record" "%[1]s" {
+  zone_id = netbird_dns_zone.%[1]s.id
+  name    = "www"
+  type    = "A"
+  content = "10.0.0.1"
+  ttl     = 300
+}`, rName, e2eGroupNotAllID())
+
+	// The record is addressed through its zone, so the mutation has to find the
+	// zone the configuration created rather than take one from a fixture.
+	var zoneID, recordID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// The zone resource's own ID is the zone the record hangs
+					// from, so there is no need to read it back off the record.
+					testRecordID("netbird_dns_zone."+rName, &zoneID),
+					testRecordID(address, &recordID),
+				),
+			},
+			{
+				PreConfig: func() {
+					if _, err := testClient().DNSZones.UpdateRecord(context.Background(), zoneID, recordID,
+						api.DNSRecordRequest{
+							Name: "www", Type: api.DNSRecordTypeA, Content: "10.9.9.9", Ttl: 300,
+						}); err != nil {
+						t.Fatalf("could not change the record behind Terraform's back: %v", err)
+					}
+				},
+				Config:           config,
+				ConfigPlanChecks: updatesInPlace(address),
+				Check:            resource.TestCheckResourceAttr(address, "content", "10.0.0.1"),
+			},
+		},
+	})
+}
+
+func Test_Drift_NetworkRouter(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_network_router." + rName
+	netID := e2eNetworkID()
+	cfg := fmt.Sprintf(`resource "netbird_network_router" "%[1]s" {
+  network_id  = %[2]q
+  peer_groups = [%[3]q]
+  masquerade  = true
+  metric      = 9999
+}`, rName, netID, e2eGroupNotAllID())
+	driftCase(t, address, cfg,
+		func(id string) error {
+			groups := []string{e2eGroupNotAllID()}
+			_, err := testClient().Networks.Routers(netID).Update(context.Background(), id,
+				api.NetworkRouterRequest{
+					Enabled: true, Masquerade: false, Metric: 1000, PeerGroups: &groups,
+				})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "masquerade", "true"),
+		resource.TestCheckResourceAttr(address, "metric", "9999"),
+	)
+}
+
+func Test_Drift_PostureCheck(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_posture_check." + rName
+	cfg := fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name        = "%[1]s"
+  description = "as configured"
+
+  netbird_version_check {
+    min_version = "0.40.0"
+  }
+}`, rName)
+	driftCase(t, address, cfg,
+		func(id string) error {
+			check, err := testClient().PostureChecks.Get(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			_, err = testClient().PostureChecks.Update(context.Background(), id, api.PostureCheckUpdate{
+				Name: check.Name, Description: "changed elsewhere", Checks: &check.Checks,
+			})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "description", "as configured"),
+	)
+}
+
+func Test_Drift_IdentityProvider(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_identity_provider." + rName
+	cfg := testIdentityProviderResource(rName, rName, "oidc", "client-id", "client-secret",
+		"https://oauth.id.jumpcloud.com/")
+	driftCase(t, address, cfg,
+		func(id string) error {
+			// The issuer stays as it is: the server checks it can be reached
+			// before accepting the change, so drifting it would test the network
+			// rather than the provider.
+			_, err := testClient().IdentityProviders.Update(context.Background(), id,
+				api.IdentityProviderRequest{
+					Name: rName + "-changed-elsewhere", Type: api.IdentityProviderTypeOidc,
+					ClientId: "client-id", ClientSecret: "client-secret",
+					Issuer: "https://oauth.id.jumpcloud.com/",
+				})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "name", rName),
+	)
+}
+
+func Test_Drift_AgentNetworkProvider(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_agent_network_provider." + rName
+	// metadata_disabled rather than enabled: only what the configuration states
+	// can drift, and this resource's helper does not set enabled.
+	cfg := testAgentNetworkProviderResource(rName, rName, `{ "x-portkey-config" = "pc-drift" }`, "false")
+	driftCase(t, address, cfg,
+		func(id string) error {
+			on := true
+			_, err := testAgentNetworkClient().UpdateProvider(context.Background(), id,
+				api.AgentNetworkProviderRequest{
+					ProviderId: "openai_api", Name: rName + "-changed-elsewhere",
+					UpstreamUrl: "https://api.openai.com", MetadataDisabled: &on,
+				})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "metadata_disabled", "false"),
+		resource.TestCheckResourceAttr(address, "name", rName),
+	)
+}
