@@ -122,7 +122,10 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited). A one-off key is always limited to 1 by the server, so leave this unset for one-off keys.",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Int32{
+					int32planmodifier.UseStateForUnknown(),
+					int32planmodifier.RequiresReplace(),
+				},
 			},
 			"used_times": schema.Int32Attribute{
 				MarkdownDescription: "Number of times Setup Key was used",
@@ -145,13 +148,19 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				MarkdownDescription: "Indicate that the peer will be ephemeral or not, ephemeral peers are deleted after 10 minutes of inactivity",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 			"allow_extra_dns_labels": schema.BoolAttribute{
 				MarkdownDescription: "Allow extra DNS labels to be added to the peer",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 			"valid": schema.BoolAttribute{
 				MarkdownDescription: "True if setup key can be used to create more Peers",
