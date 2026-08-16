@@ -134,29 +134,43 @@ func Test_SetupKey_Update_Groups(t *testing.T) {
 // one group is handled, or — the part that was reported broken — that any of it
 // is an update rather than a replacement.
 //
-// The key here deliberately leaves usage_limit unset, which is the only way to
-// write a one-off key: the server fixes the limit of a one-off key at 1 and
-// ignores what the request asked for. Recording the ID up front and checking it
-// after every step is what distinguishes an update from a destroy-and-recreate,
-// and a recreated setup key is a different secret — every peer still holding the
-// old one can no longer register.
+// Each step requires Terraform to have planned an in-place update, which is the
+// assertion that reports the reported bug: a replaced setup key is a different
+// secret, so every peer still holding the old one stops being able to register.
+// The ID is checked as well, since a plan can be right and the apply still wrong.
+//
+// The key deliberately leaves usage_limit unset, which is the only way to write
+// a one-off key: the server fixes the limit of a one-off key at 1 and ignores
+// what the request asked for.
 func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
+	groupA, groupB := "netbird_group."+rName+"a", "netbird_group."+rName+"b"
 	var createdID string
 	// Same ID, asserted at every step after the first.
 	sameKey := func() resource.TestCheckFunc {
 		return resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID)
 	}
-	groupsAre := func(want ...string) resource.TestCheckFunc {
+	// groupsAre reads the wanted IDs out of state rather than taking them as
+	// literals, because the groups are created by the same configuration and
+	// their IDs are not known until it has been applied.
+	groupsAre := func(addresses ...string) resource.TestCheckFunc {
 		return func(s *terraform.State) error {
+			want := make([]string, 0, len(addresses))
+			for _, a := range addresses {
+				rs, ok := s.RootModule().Resources[a]
+				if !ok {
+					return fmt.Errorf("%s is not in state", a)
+				}
+				want = append(want, rs.Primary.Attributes["id"])
+			}
 			sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
 			if err != nil {
 				return err
 			}
 			if len(sk.AutoGroups) != len(want) {
-				return fmt.Errorf("management has %d auto groups, expected %d", len(sk.AutoGroups), len(want))
+				return fmt.Errorf("management has %d auto groups %v, expected %d", len(sk.AutoGroups), sk.AutoGroups, len(want))
 			}
 			for _, id := range want {
 				if !slices.Contains(sk.AutoGroups, id) {
@@ -166,54 +180,53 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 			return nil
 		}
 	}
-	all, notAll := e2eGroupAllID(), e2eGroupNotAllID()
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
-				Config: testSetupKeyResourceNoLimit(rName, `one-off`, `[]`),
+				Config: testSetupKeyWithGroups(rName, `[]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "0"),
 					// The server pins a one-off key to a single use whatever
-					// the request said, so this is the server's value, not a
-					// configured one.
+					// the request said, so this is the server's value rather
+					// than a configured one.
 					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "1"),
 				),
 			},
 			{
-				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", notAll)),
+				Config:           testSetupKeyWithGroups(rName, fmt.Sprintf("[%s.id]", groupA)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", notAll),
-					groupsAre(notAll),
+					resource.TestCheckResourceAttrPair(rNameFull, "auto_groups.0", groupA, "id"),
+					groupsAre(groupA),
 				),
 			},
 			{
-				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q, %q]", notAll, all)),
+				Config:           testSetupKeyWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
-					groupsAre(notAll, all),
+					groupsAre(groupA, groupB),
 				),
 			},
 			{
-				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, fmt.Sprintf("[%q]", all)),
+				Config:           testSetupKeyWithGroups(rName, fmt.Sprintf("[%s.id]", groupB)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "auto_groups.0", all),
-					groupsAre(all),
+					resource.TestCheckResourceAttrPair(rNameFull, "auto_groups.0", groupB, "id"),
+					groupsAre(groupB),
 				),
 			},
 			{
-				Config:           testSetupKeyResourceNoLimit(rName, `one-off`, `[]`),
+				Config:           testSetupKeyWithGroups(rName, `[]`),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameKey(),
@@ -223,6 +236,30 @@ func Test_SetupKey_Update_Groups_AddRemove(t *testing.T) {
 			},
 		},
 	})
+}
+
+// testSetupKeyWithGroups builds a one-off key alongside the two groups it
+// attaches. They are created here rather than taken from the fixtures because
+// the account's "All" group cannot be attached to a setup key at all — the
+// server refuses it — which leaves only one fixture group to work with.
+func testSetupKeyWithGroups(rName, groups string) string {
+	return fmt.Sprintf(`resource "netbird_group" "%[1]sa" {
+  name  = "%[1]sa"
+  peers = []
+}
+
+resource "netbird_group" "%[1]sb" {
+  name  = "%[1]sb"
+  peers = []
+}
+
+resource "netbird_setup_key" "%[1]s" {
+  name           = "%[1]s"
+  expiry_seconds = 1800
+  type           = "one-off"
+  auto_groups    = %[2]s
+}
+`, rName, groups)
 }
 
 func Test_SetupKey_Update_Revoke(t *testing.T) {
@@ -279,18 +316,17 @@ func Test_SetupKey_Update_Revoke(t *testing.T) {
 }
 
 // testSetupKeyResourceNoLimit omits usage_limit, and with it the optional flags
-// the reported problem does not involve. A one-off key has to be written this
-// way: the server decides its usage limit, so naming one in the configuration
-// either contradicts the server or repeats it. The expiry is fixed at half an
-// hour because none of these tests are about expiry.
-func testSetupKeyResourceNoLimit(rName, skType, groups string) string {
+// and groups the test using it does not involve. A one-off key has to be
+// written this way: the server decides its usage limit, so naming one in the
+// configuration either contradicts the server or repeats it.
+func testSetupKeyResourceNoLimit(rName, skType string) string {
 	return fmt.Sprintf(`resource "netbird_setup_key" "%[1]s" {
   name           = "%[1]s"
   expiry_seconds = 1800
   type           = "%[2]s"
-  auto_groups    = %[3]s
+  auto_groups    = []
 }
-`, rName, skType, groups)
+`, rName, skType)
 }
 
 func testSetupKeyResource(rName, expiry, skType, allowExtraDNS, groups, ephemeral, revoked, usageLimit string) string {
