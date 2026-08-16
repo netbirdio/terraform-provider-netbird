@@ -4,9 +4,9 @@
 //
 // Two lifecycle behaviours the suite never asserted.
 //
-// Nine resources declare RequiresReplace on 22 attributes between them, which is
-// a promise that changing one recreates the object rather than updating it. No
-// test checked that, and a provider that quietly updated in place would look
+// Eight resources declare RequiresReplace on 18 attributes between them, which
+// is a promise that changing one recreates the object rather than updating it.
+// No test checked that, and a provider that quietly updated in place would look
 // identical to one that recreated — the apply succeeds either way. The tests
 // below change such an attribute and require the server-assigned ID to change
 // with it.
