@@ -237,7 +237,7 @@ func (r *Token) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 	// zero-valued model made the condition always true, so this always called
 	// Create and the error below was unreachable.
 	if data.Id.ValueString() == "" {
-		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
+		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.ProviderMeta}, (*resource.CreateResponse)(resp))
 		return
 	}
 
