@@ -96,15 +96,20 @@ func Test_Drift_DNSZone(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	cfg := fmt.Sprintf(`resource "netbird_dns_zone" "%[1]s" {
-  name    = "%[1]s"
-  domain  = "%[1]s.local"
-  enabled = true
-}`, rName)
+  name                = "%[1]s"
+  domain              = "%[1]s.local"
+  enabled             = true
+  distribution_groups = [%[2]q]
+}`, rName, e2eGroupNotAllID())
 	driftCase(t, "netbird_dns_zone."+rName, cfg,
 		func(id string) error {
 			off := false
-			_, err := testClient().DNSZones.UpdateZone(context.Background(), id, api.ZoneRequest{
-				Name: rName, Enabled: &off,
+			zone, err := testClient().DNSZones.GetZone(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			_, err = testClient().DNSZones.UpdateZone(context.Background(), id, api.ZoneRequest{
+				Name: zone.Name, Enabled: &off, DistributionGroups: zone.DistributionGroups,
 			})
 			return err
 		},
@@ -118,12 +123,19 @@ func Test_Drift_NameserverGroup(t *testing.T) {
 	cfg := testNameserverGroupResource(rName, `1.1.1.1`, `53`, fmt.Sprintf("[%q]", e2eGroupAllID()))
 	driftCase(t, "netbird_nameserver_group."+rName, cfg,
 		func(id string) error {
-			_, err := testClient().DNS.UpdateNameserverGroup(context.Background(), id, api.NameserverGroupRequest{
-				Name: rName, Description: "changed elsewhere", Enabled: false,
-				Groups: []string{e2eGroupAllID()},
-				Nameservers: []api.Nameserver{{
-					Ip: "1.1.1.1", NsType: api.NameserverNsTypeUdp, Port: 53,
-				}},
+			// Everything except the flag under test is carried over: the server
+			// refuses a nameserver group that is neither primary nor scoped to a
+			// domain, so a request built from scratch is rejected before it can
+			// drift anything.
+			ns, err := testClient().DNS.GetNameserverGroup(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			_, err = testClient().DNS.UpdateNameserverGroup(context.Background(), id, api.NameserverGroupRequest{
+				Name: ns.Name, Description: "changed elsewhere", Enabled: false,
+				Groups: ns.Groups, Nameservers: ns.Nameservers,
+				Primary: ns.Primary, Domains: ns.Domains,
+				SearchDomainsEnabled: ns.SearchDomainsEnabled,
 			})
 			return err
 		},
@@ -157,7 +169,16 @@ func Test_Drift_Route(t *testing.T) {
 func Test_Drift_SetupKey(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
-	cfg := testSetupKeyResourceNoLimit(rName, `reusable`)
+	// revoked has to be in the configuration for this to be drift at all. Left
+	// out, it is Optional and Computed, so Terraform adopts whatever the server
+	// says and a revocation made elsewhere is not a difference to put back.
+	cfg := fmt.Sprintf(`resource "netbird_setup_key" "%[1]s" {
+  name           = "%[1]s"
+  expiry_seconds = 1800
+  type           = "reusable"
+  revoked        = false
+  auto_groups    = []
+}`, rName)
 	driftCase(t, "netbird_setup_key."+rName, cfg,
 		func(id string) error {
 			// Revoking is the only change the setup key API accepts, and it is
@@ -232,9 +253,10 @@ func groupIDs(groups *[]api.GroupMinimum) *[]string {
 func Test_Drift_Peer(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
-	// peer3 is one of the consumable fixtures: this test renames it, and a
-	// shared one would leave the next test looking for a name that moved.
-	peerID := testPeerID(t, "peer3")
+	// peer6 is this test's own fixture. The step that ends it destroys the
+	// resource, which deregisters the device, so a shared peer would leave every
+	// later test looking for something that is no longer registered.
+	peerID := testPeerID(t, "peer6")
 	cfg := testPeerResource(rName, peerID, rName)
 	driftCase(t, "netbird_peer."+rName, cfg,
 		func(id string) error {

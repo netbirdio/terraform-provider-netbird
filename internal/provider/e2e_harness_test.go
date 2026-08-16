@@ -77,17 +77,14 @@ const (
 // order the tests expect to find them.
 //
 // They are split by purpose, because a test that manages a peer through its own
-// lifecycle destroys it: peer1 and peer2 are shared and read-only, addressed by
-// name by the group, route, peers and reverse-proxy tests and expected to
-// survive the whole run, while peer3 to peer5 are consumable, one per lifecycle
-// test. One each rather than sharing, since sharing would make the later test
-// depend on the order Go compiles the files in.
-//
-// Deleting a peer does not actually deregister the device today — Peer.Delete
-// skips the API call under TF_ACC, which is what Test_Peer_Delete reports. The
-// split is what stops that from becoming a cascade of failures once the delete
-// works.
-var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4", "peer5"}
+// lifecycle destroys it — and since Peer.Delete now really does deregister the
+// device, a second test reaching for the same fixture finds nothing there.
+// peer1 and peer2 are shared and read-only, addressed by name by the group,
+// route, peers and reverse-proxy tests and expected to survive the whole run.
+// peer3 to peer6 are consumable, one per test that manages a peer: create,
+// delete, update, drift. One each rather than sharing, since sharing would make
+// the later test depend on the order Go compiles the files in.
+var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4", "peer5", "peer6"}
 
 // e2eStack is the live deployment plus the IDs of the fixtures created on it.
 type e2eStack struct {

@@ -218,13 +218,15 @@ func Test_Replace_DNSRecordZone(t *testing.T) {
 	cfg := func(zone string) string {
 		return fmt.Sprintf(`
 resource "netbird_dns_zone" "%[1]sa" {
-  name   = "%[1]sa"
-  domain = "%[1]sa.local"
+  name                = "%[1]sa"
+  domain              = "%[1]sa.local"
+  distribution_groups = [%[3]q]
 }
 
 resource "netbird_dns_zone" "%[1]sb" {
-  name   = "%[1]sb"
-  domain = "%[1]sb.local"
+  name                = "%[1]sb"
+  domain              = "%[1]sb.local"
+  distribution_groups = [%[3]q]
 }
 
 resource "netbird_dns_record" "%[1]s" {
@@ -234,7 +236,7 @@ resource "netbird_dns_record" "%[1]s" {
   content = "10.0.0.1"
   ttl     = 300
 }
-`, rName, zone)
+`, rName, zone, e2eGroupNotAllID())
 	}
 	replaceCase(t, address, cfg(rName+"a"), cfg(rName+"b"),
 		resource.TestCheckResourceAttrPair(address, "zone_id", "netbird_dns_zone."+rName+"b", "id"),
