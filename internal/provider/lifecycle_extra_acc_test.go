@@ -17,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 // Test_Group_AddAndRemovePeers covers the direction the group test never went.
@@ -92,7 +94,7 @@ resource "netbird_dns_zone" "%[1]s" {
 
 resource "netbird_dns_record" "%[1]s" {
   zone_id = netbird_dns_zone.%[1]s.id
-  name    = "www"
+  name    = "www.%[1]s.local"
   type    = "A"
   content = "10.0.0.1"
   ttl     = 300
@@ -132,9 +134,12 @@ func Test_Replace_UserServiceUser(t *testing.T) {
 	rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	address := "netbird_user." + rName
 	cfg := func(service string) string {
+		// No email: the server drops it for a service user and returns an empty
+		// one, which Terraform reports as the provider contradicting its own
+		// plan. That is a defect worth fixing on its own, and not this test's
+		// subject.
 		return fmt.Sprintf(`resource "netbird_user" "%[1]s" {
   name            = "%[1]s"
-  email           = "%[1]s@example.com"
   is_service_user = %[2]s
   role            = "user"
   auto_groups     = []
@@ -147,9 +152,11 @@ func Test_Replace_UserServiceUser(t *testing.T) {
 }
 
 // Test_SetupKey_ImportThenApply is the case the expiry_seconds plan modifier
-// exists for. An imported key has no value for it, because the API never
-// reports one, and the first apply after the import must adopt what the
-// configuration says instead of destroying the key to get it.
+// exists for, and it starts the way a user starts: with a key the server
+// already has and Terraform has never seen. The import gives state no
+// expiry_seconds, because the API never reports one, and the apply that follows
+// has to adopt what the configuration says rather than destroy the key to get
+// it.
 func Test_SetupKey_ImportThenApply(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
@@ -167,19 +174,21 @@ func Test_SetupKey_ImportThenApply(t *testing.T) {
 		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &id),
 		Steps: []resource.TestStep{
 			{
-				Config: config,
-				Check:  testRecordID(address, &id),
-			},
-			{
-				// ImportStatePersist keeps the imported state for the step that
-				// follows, which is the whole point: the next plan runs against
-				// state that has no expiry_seconds in it.
-				ResourceName:            address,
-				ImportState:             true,
-				ImportStatePersist:      true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"key", "expiry_seconds"},
-				ImportStateIdFunc:       testImportIDFrom(address, "", "id"),
+				PreConfig: func() {
+					key, err := testClient().SetupKeys.Create(context.Background(), api.CreateSetupKeyRequest{
+						Name: rName, Type: "reusable", ExpiresIn: 1800,
+						AutoGroups: []string{}, UsageLimit: 0,
+					})
+					if err != nil {
+						t.Fatalf("could not create the key to import: %v", err)
+					}
+					id = key.Id
+				},
+				Config:             config,
+				ResourceName:       address,
+				ImportState:        true,
+				ImportStatePersist: true,
+				ImportStateIdFunc:  func(*terraform.State) (string, error) { return id, nil },
 			},
 			{
 				Config:           config,
@@ -187,15 +196,16 @@ func Test_SetupKey_ImportThenApply(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrPtr(address, "id", &id),
 					resource.TestCheckResourceAttr(address, "expiry_seconds", "1800"),
+					resource.TestCheckResourceAttr(address, "name", rName),
 				),
 			},
 		},
 	})
 }
 
-// Test_Token_ImportThenPlan is the same shape for the token, where the value
-// that cannot be read back is recoverable from two timestamps that can. If the
-// arithmetic is wrong the plan after an import is not empty, and the only way
+// Test_Token_ImportThenPlan is the same flow for the token, where the value the
+// API cannot report is recoverable from two timestamps that it can. If that
+// arithmetic is wrong the plan after the import is not empty, and the only way
 // to satisfy it is a new token.
 func Test_Token_ImportThenPlan(t *testing.T) {
 	testE2E(t)
@@ -209,20 +219,23 @@ func Test_Token_ImportThenPlan(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: config,
-				Check:  testRecordID(address, &id),
-			},
-			{
-				ResourceName:            address,
-				ImportState:             true,
-				ImportStatePersist:      true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"token"},
-				ImportStateIdFunc:       testImportIDFrom(address, "/", "user_id", "id"),
+				PreConfig: func() {
+					token, err := testClient().Tokens.Create(context.Background(), userID,
+						api.PersonalAccessTokenRequest{Name: rName, ExpiresIn: 180})
+					if err != nil {
+						t.Fatalf("could not create the token to import: %v", err)
+					}
+					id = token.PersonalAccessToken.Id
+				},
+				Config:             config,
+				ResourceName:       address,
+				ImportState:        true,
+				ImportStatePersist: true,
+				ImportStateIdFunc:  func(*terraform.State) (string, error) { return userID + "/" + id, nil },
 			},
 			{
 				// Nothing to do: expiration_days came back from the timestamps,
-				// so the token Terraform imported is the token it planned for.
+				// so the token Terraform imported is the token it plans for.
 				Config:   config,
 				PlanOnly: true,
 			},

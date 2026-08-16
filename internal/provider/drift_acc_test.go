@@ -109,7 +109,8 @@ func Test_Drift_DNSZone(t *testing.T) {
 				return err
 			}
 			_, err = testClient().DNSZones.UpdateZone(context.Background(), id, api.ZoneRequest{
-				Name: zone.Name, Enabled: &off, DistributionGroups: zone.DistributionGroups,
+				Name: zone.Name, Domain: zone.Domain, Enabled: &off,
+				DistributionGroups: zone.DistributionGroups,
 			})
 			return err
 		},
@@ -166,6 +167,11 @@ func Test_Drift_Route(t *testing.T) {
 	)
 }
 
+// Test_Drift_SetupKey drifts the groups rather than the revocation. Revoking is
+// the more obvious out-of-band change, and it turns out to be one Terraform
+// cannot undo: the server answers "can't un-revoke a revoked setup key", so the
+// apply that tries to put it back fails. That is the API's rule rather than a
+// provider defect, and a test that asserts it would be asserting a dead end.
 func Test_Drift_SetupKey(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
@@ -177,18 +183,17 @@ func Test_Drift_SetupKey(t *testing.T) {
   expiry_seconds = 1800
   type           = "reusable"
   revoked        = false
-  auto_groups    = []
-}`, rName)
+  auto_groups    = [%[2]q]
+}`, rName, e2eGroupNotAllID())
 	driftCase(t, "netbird_setup_key."+rName, cfg,
 		func(id string) error {
-			// Revoking is the only change the setup key API accepts, and it is
-			// also the one an operator makes by hand in a hurry.
 			_, err := testClient().SetupKeys.Update(context.Background(), id, api.SetupKeyRequest{
-				AutoGroups: []string{}, Revoked: true,
+				AutoGroups: []string{}, Revoked: false,
 			})
 			return err
 		},
-		resource.TestCheckResourceAttr("netbird_setup_key."+rName, "revoked", "false"),
+		resource.TestCheckResourceAttr("netbird_setup_key."+rName, "auto_groups.#", "1"),
+		resource.TestCheckResourceAttr("netbird_setup_key."+rName, "auto_groups.0", e2eGroupNotAllID()),
 	)
 }
 
@@ -347,7 +352,7 @@ resource "netbird_dns_zone" "%[1]s" {
 
 resource "netbird_dns_record" "%[1]s" {
   zone_id = netbird_dns_zone.%[1]s.id
-  name    = "www"
+  name    = "www.%[1]s.local"
   type    = "A"
   content = "10.0.0.1"
   ttl     = 300

@@ -231,7 +231,7 @@ resource "netbird_dns_zone" "%[1]sb" {
 
 resource "netbird_dns_record" "%[1]s" {
   zone_id = netbird_dns_zone.%[2]s.id
-  name    = "www"
+  name    = "www.%[1]s.local"
   type    = "A"
   content = "10.0.0.1"
   ttl     = 300

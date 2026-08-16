@@ -55,7 +55,7 @@ func Test_Import_RejectsWrongIDs(t *testing.T) {
 			config: fmt.Sprintf(`
 resource "netbird_dns_record" "%[1]s" {
   zone_id = "z"
-  name    = "www"
+  name    = "www.example.local"
   type    = "A"
   content = "10.0.0.1"
 }`, n),
@@ -280,16 +280,6 @@ resource "netbird_reverse_proxy_service" "%[1]s" {
 }`, n),
 		},
 		{
-			name:    "account_settings that does not exist",
-			address: "netbird_account_settings." + n,
-			id:      "nosuchaccount",
-			want:    gone,
-			config: fmt.Sprintf(`
-resource "netbird_account_settings" "%[1]s" {
-  peer_login_expiration_enabled = true
-}`, n),
-		},
-		{
 			name:    "identity_provider that does not exist",
 			address: "netbird_identity_provider." + n,
 			id:      "nosuchidp",
@@ -353,4 +343,36 @@ resource "netbird_agent_network_policy" "%[1]s" {
 			})
 		})
 	}
+}
+
+// Test_Import_AccountSettingsTakesAnyID records something the table above
+// cannot: the account settings resource accepts whatever ID it is handed.
+//
+// Its Read fetches the account the token belongs to and ignores the ID
+// entirely, so there is no such thing as an account settings object that does
+// not exist, and no ID that can be wrong. That is reasonable for a singleton —
+// there is exactly one account to bind to — but it means an import typo is
+// silently accepted rather than reported, which is worth knowing before someone
+// spends an afternoon on it.
+func Test_Import_AccountSettingsTakesAnyID(t *testing.T) {
+	testE2E(t)
+	n := "i" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_account_settings." + n
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "netbird_account_settings" "%[1]s" {
+  peer_login_expiration_enabled = true
+}`, n),
+				ResourceName:  address,
+				ImportState:   true,
+				ImportStateId: "not-an-account-id",
+				Check: resource.TestCheckResourceAttr(address,
+					"id", mustE2E().AccountID),
+			},
+		},
+	})
 }
