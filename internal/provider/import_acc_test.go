@@ -279,6 +279,61 @@ resource "netbird_reverse_proxy_service" "%[1]s" {
   }
 }`, n),
 		},
+		{
+			name:    "account_settings that does not exist",
+			address: "netbird_account_settings." + n,
+			id:      "nosuchaccount",
+			want:    gone,
+			config: fmt.Sprintf(`
+resource "netbird_account_settings" "%[1]s" {
+  peer_login_expiration_enabled = true
+}`, n),
+		},
+		{
+			name:    "identity_provider that does not exist",
+			address: "netbird_identity_provider." + n,
+			id:      "nosuchidp",
+			want:    gone,
+			config: fmt.Sprintf(`
+resource "netbird_identity_provider" "%[1]s" {
+  name          = "%[1]s"
+  type          = "oidc"
+  client_id     = "id"
+  client_secret = "secret"
+  issuer        = "https://oauth.id.jumpcloud.com/"
+}`, n),
+		},
+		{
+			name:    "agent_network_guardrail that does not exist",
+			address: "netbird_agent_network_guardrail." + n,
+			id:      "nosuchguardrail",
+			want:    gone,
+			config: fmt.Sprintf(`
+resource "netbird_agent_network_guardrail" "%[1]s" {
+  name = "%[1]s"
+
+  model_allowlist = {
+    enabled = true
+    models  = ["gpt-4.1"]
+  }
+
+  prompt_capture = {
+    enabled = false
+  }
+}`, n),
+		},
+		{
+			name:    "agent_network_policy that does not exist",
+			address: "netbird_agent_network_policy." + n,
+			id:      "nosuchagentpolicy",
+			want:    gone,
+			config: fmt.Sprintf(`
+resource "netbird_agent_network_policy" "%[1]s" {
+  name                     = "%[1]s"
+  source_groups            = [%[2]q]
+  destination_provider_ids = ["whatever"]
+}`, n, e2eGroupNotAllID()),
+		},
 	}
 
 	for _, c := range cases {
