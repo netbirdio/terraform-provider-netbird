@@ -3,14 +3,20 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_Account_Create(t *testing.T) {
+	env := testE2E(t)
 	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	rNameFull := "netbird_account_settings." + rName
 	resource.Test(t, resource.TestCase{
@@ -21,20 +27,38 @@ func Test_Account_Create(t *testing.T) {
 				ResourceName: rName,
 				Config:       testAccountResource(rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "id", "account1"),
-					resource.TestCheckResourceAttr(rNameFull, "jwt_allow_groups.#", "0"),
-					resource.TestCheckResourceAttr(rNameFull, "jwt_groups_claim_name", ""),
-					resource.TestCheckResourceAttr(rNameFull, "peer_login_expiration", "86400"),
-					resource.TestCheckResourceAttr(rNameFull, "peer_inactivity_expiration", "0"),
-					resource.TestCheckResourceAttr(rNameFull, "peer_login_expiration_enabled", "true"),
-					resource.TestCheckResourceAttr(rNameFull, "peer_inactivity_expiration_enabled", "false"),
-					resource.TestCheckResourceAttr(rNameFull, "regular_users_view_blocked", "true"),
-					resource.TestCheckResourceAttr(rNameFull, "groups_propagation_enabled", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
 					resource.TestCheckResourceAttr(rNameFull, "jwt_groups_enabled", "false"),
-					resource.TestCheckResourceAttr(rNameFull, "routing_peer_dns_resolution_enabled", "false"),
-					resource.TestCheckResourceAttr(rNameFull, "peer_approval_enabled", "false"),
-					resource.TestCheckResourceAttr(rNameFull, "network_traffic_logs_enabled", "false"),
-					resource.TestCheckResourceAttr(rNameFull, "network_traffic_packet_counter_enabled", "false"),
+					func(s *terraform.State) error {
+						accounts, err := testClient().Accounts.List(context.Background())
+						if err != nil {
+							return err
+						}
+						if len(accounts) == 0 {
+							return fmt.Errorf("no accounts on the management server")
+						}
+						// By ID rather than by position: the assertion above is
+						// about env.AccountID, so comparing settings from
+						// whichever account happened to be listed first would
+						// check a different account than the resource manages.
+						idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+						if idx < 0 {
+							return fmt.Errorf("account %s is not among the %d accounts on the management server", env.AccountID, len(accounts))
+						}
+						settings := accounts[idx].Settings
+						attrs := s.RootModule().Resources[rNameFull].Primary.Attributes
+						return matchPairs(map[string][]any{
+							"peer_login_expiration":              {attrs["peer_login_expiration"], fmt.Sprint(settings.PeerLoginExpiration)},
+							"peer_inactivity_expiration":         {attrs["peer_inactivity_expiration"], fmt.Sprint(settings.PeerInactivityExpiration)},
+							"peer_login_expiration_enabled":      {attrs["peer_login_expiration_enabled"], fmt.Sprint(settings.PeerLoginExpirationEnabled)},
+							"peer_inactivity_expiration_enabled": {attrs["peer_inactivity_expiration_enabled"], fmt.Sprint(settings.PeerInactivityExpirationEnabled)},
+							"regular_users_view_blocked":         {attrs["regular_users_view_blocked"], fmt.Sprint(settings.RegularUsersViewBlocked)},
+							"groups_propagation_enabled":         {attrs["groups_propagation_enabled"], fmt.Sprint(valOr(settings.GroupsPropagationEnabled, false))},
+							"jwt_groups_enabled":                 {attrs["jwt_groups_enabled"], fmt.Sprint(valOr(settings.JwtGroupsEnabled, false))},
+							"routing_peer_dns_resolution_enabled": {attrs["routing_peer_dns_resolution_enabled"],
+								fmt.Sprint(valOr(settings.RoutingPeerDnsResolutionEnabled, false))},
+						})
+					},
 				),
 			},
 		},
@@ -42,6 +66,7 @@ func Test_Account_Create(t *testing.T) {
 }
 
 func Test_Account_Update(t *testing.T) {
+	env := testE2E(t)
 	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	rNameFull := "netbird_account_settings." + rName
 	resource.Test(t, resource.TestCase{
@@ -52,7 +77,7 @@ func Test_Account_Update(t *testing.T) {
 				ResourceName: rName,
 				Config:       testAccountResourceWithJWT(rName, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "id", "account1"),
+					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
 					resource.TestCheckResourceAttr(rNameFull, "jwt_groups_enabled", "true"),
 				),
 				Destroy: false,
@@ -61,7 +86,7 @@ func Test_Account_Update(t *testing.T) {
 				ResourceName: rName,
 				Config:       testAccountResourceWithJWT(rName, false),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(rNameFull, "id", "account1"),
+					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
 					resource.TestCheckResourceAttr(rNameFull, "jwt_groups_enabled", "false"),
 				),
 			},

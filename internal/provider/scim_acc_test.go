@@ -13,6 +13,9 @@ import (
 )
 
 func Test_Scim_Create(t *testing.T) {
+	// Skip before testE2E: these need a cloud-only feature, and standing the
+	// deployment up for a test that never runs costs an image build and a
+	// container start for nothing.
 	t.Skip("skipping cloud test")
 	rName := "scim" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_scim." + rName
@@ -55,6 +58,9 @@ func Test_Scim_Create(t *testing.T) {
 }
 
 func Test_Scim_Update(t *testing.T) {
+	// Skip before testE2E: these need a cloud-only feature, and standing the
+	// deployment up for a test that never runs costs an image build and a
+	// container start for nothing.
 	t.Skip("skipping cloud test")
 	rName := "scim" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_scim." + rName

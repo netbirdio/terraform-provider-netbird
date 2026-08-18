@@ -13,6 +13,7 @@ import (
 )
 
 func Test_Policy_Create_Groups(t *testing.T) {
+	testE2E(t)
 	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_policy." + rName
 	resource.Test(t, resource.TestCase{
@@ -21,7 +22,7 @@ func Test_Policy_Create_Groups(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", "group-all", "group-notall", "443"),
+				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", e2eGroupAllID(), e2eGroupNotAllID(), "443"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -31,9 +32,9 @@ func Test_Policy_Create_Groups(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.0", "443"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.0", "group-all"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.0", e2eGroupAllID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.0", "group-notall"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.0", e2eGroupNotAllID()),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						policy, err := testClient().Policies.Get(context.Background(), pID)
@@ -49,9 +50,9 @@ func Test_Policy_Create_Groups(t *testing.T) {
 							"Rules[0].Ports.#":        {int(1), len(*policy.Rules[0].Ports)},
 							"Rules[0].Ports.0":        {"443", (*policy.Rules[0].Ports)[0]},
 							"Rules[0].Sources.#":      {int(1), len(*policy.Rules[0].Sources)},
-							"Rules[0].Sources.0":      {"group-all", (*policy.Rules[0].Sources)[0].Id},
+							"Rules[0].Sources.0":      {e2eGroupAllID(), (*policy.Rules[0].Sources)[0].Id},
 							"Rules[0].Destinations.#": {int(1), len(*policy.Rules[0].Destinations)},
-							"Rules[0].Destinations.0": {"group-notall", (*policy.Rules[0].Destinations)[0].Id},
+							"Rules[0].Destinations.0": {e2eGroupNotAllID(), (*policy.Rules[0].Destinations)[0].Id},
 						})
 					},
 				),
@@ -61,6 +62,7 @@ func Test_Policy_Create_Groups(t *testing.T) {
 }
 
 func Test_Policy_Create_Resources(t *testing.T) {
+	testE2E(t)
 	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_policy." + rName
 	resource.Test(t, resource.TestCase{
@@ -69,7 +71,7 @@ func Test_Policy_Create_Resources(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceResources(rName, rName, "desc", "accept", "udp", "resource2", "subnet", "resource1", "domain", "1000", "2000"),
+				Config:       testPolicyResourceResources(rName, rName, "desc", "accept", "udp", e2eResourceSubnetID(), "subnet", e2eResourceDomainID(), "domain", "1000", "2000"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -78,9 +80,9 @@ func Test_Policy_Create_Resources(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.action", "accept"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.#", "0"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.id", "resource2"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.id", e2eResourceSubnetID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.type", "subnet"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.id", "resource1"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.id", e2eResourceDomainID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.type", "domain"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.port_ranges.#", "1"),
@@ -100,8 +102,8 @@ func Test_Policy_Create_Resources(t *testing.T) {
 							"Rules[0].Action":                 {"accept", string(policy.Rules[0].Action)},
 							"Rules[0].Sources.#":              {nil, policy.Rules[0].Sources},
 							"Rules[0].Destinations.#":         {nil, policy.Rules[0].Destinations},
-							"Rules[0].SourceResource.ID":      {"resource2", policy.Rules[0].SourceResource.Id},
-							"Rules[0].DestinationResource.ID": {"resource1", policy.Rules[0].DestinationResource.Id},
+							"Rules[0].SourceResource.ID":      {e2eResourceSubnetID(), policy.Rules[0].SourceResource.Id},
+							"Rules[0].DestinationResource.ID": {e2eResourceDomainID(), policy.Rules[0].DestinationResource.Id},
 							"Rules[0].PortRanges.#":           {int(1), len(*policy.Rules[0].PortRanges)},
 							"Rules[0].PortRanges.0.Start":     {int(1000), (*policy.Rules[0].PortRanges)[0].Start},
 							"Rules[0].PortRanges.0.End":       {int(2000), (*policy.Rules[0].PortRanges)[0].End},
@@ -115,6 +117,7 @@ func Test_Policy_Create_Resources(t *testing.T) {
 }
 
 func Test_Policy_Update_Groups(t *testing.T) {
+	testE2E(t)
 	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_policy." + rName
 	resource.Test(t, resource.TestCase{
@@ -123,14 +126,14 @@ func Test_Policy_Update_Groups(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", "group-all", "group-notall", "443"),
+				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", e2eGroupAllID(), e2eGroupNotAllID(), "443"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceGroups(rName, rName, "desc-updated", "drop", "tcp", "group-notall", "group-all", "80"),
+				Config:       testPolicyResourceGroups(rName, rName, "desc-updated", "drop", "tcp", e2eGroupNotAllID(), e2eGroupAllID(), "80"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -140,9 +143,9 @@ func Test_Policy_Update_Groups(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.0", "80"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.0", "group-notall"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.0", e2eGroupNotAllID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.#", "1"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.0", "group-all"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.0", e2eGroupAllID()),
 					func(s *terraform.State) error {
 						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						policy, err := testClient().Policies.Get(context.Background(), pID)
@@ -155,9 +158,9 @@ func Test_Policy_Update_Groups(t *testing.T) {
 							"Rules.#":                 {int(1), len(policy.Rules)},
 							"Rules[0].Action":         {"drop", string(policy.Rules[0].Action)},
 							"Rules[0].Sources.#":      {int(1), len(*policy.Rules[0].Sources)},
-							"Rules[0].Sources.0":      {"group-notall", (*policy.Rules[0].Sources)[0].Id},
+							"Rules[0].Sources.0":      {e2eGroupNotAllID(), (*policy.Rules[0].Sources)[0].Id},
 							"Rules[0].Destinations.#": {int(1), len(*policy.Rules[0].Destinations)},
-							"Rules[0].Destinations.0": {"group-all", (*policy.Rules[0].Destinations)[0].Id},
+							"Rules[0].Destinations.0": {e2eGroupAllID(), (*policy.Rules[0].Destinations)[0].Id},
 							"Rules[0].Ports.#":        {int(1), len(*policy.Rules[0].Ports)},
 							"Rules[0].Ports.0":        {"80", (*policy.Rules[0].Ports)[0]},
 						})
@@ -169,6 +172,7 @@ func Test_Policy_Update_Groups(t *testing.T) {
 }
 
 func Test_Policy_Update_Resources(t *testing.T) {
+	testE2E(t)
 	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_policy." + rName
 	resource.Test(t, resource.TestCase{
@@ -177,14 +181,14 @@ func Test_Policy_Update_Resources(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", "group-all", "group-notall", "80"),
+				Config:       testPolicyResourceGroups(rName, rName, "desc", "accept", "udp", e2eGroupAllID(), e2eGroupNotAllID(), "80"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},
 			{
 				ResourceName: rName,
-				Config:       testPolicyResourceResources(rName, rName, "desc", "accept", "udp", "resource2", "subnet", "resource1", "domain", "1", "100"),
+				Config:       testPolicyResourceResources(rName, rName, "desc", "accept", "udp", e2eResourceSubnetID(), "subnet", e2eResourceDomainID(), "domain", "1", "100"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
@@ -192,9 +196,9 @@ func Test_Policy_Update_Resources(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.action", "accept"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.ports.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.sources.#", "0"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.id", "resource2"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.id", e2eResourceSubnetID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.source_resource.type", "subnet"),
-					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.id", "resource1"),
+					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.id", e2eResourceDomainID()),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destination_resource.type", "domain"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.destinations.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "rule.0.port_ranges.#", "1"),
@@ -213,8 +217,8 @@ func Test_Policy_Update_Resources(t *testing.T) {
 							"Rules[0].Action":                 {"accept", string(policy.Rules[0].Action)},
 							"Rules[0].Sources.#":              {nil, policy.Rules[0].Sources},
 							"Rules[0].Destinations.#":         {nil, policy.Rules[0].Destinations},
-							"Rules[0].SourceResource.ID":      {"resource2", policy.Rules[0].SourceResource.Id},
-							"Rules[0].DestinationResource.ID": {"resource1", policy.Rules[0].DestinationResource.Id},
+							"Rules[0].SourceResource.ID":      {e2eResourceSubnetID(), policy.Rules[0].SourceResource.Id},
+							"Rules[0].DestinationResource.ID": {e2eResourceDomainID(), policy.Rules[0].DestinationResource.Id},
 							"Rules[0].PortRanges.#":           {int(1), len(*policy.Rules[0].PortRanges)},
 							"Rules[0].PortRanges.0.Start":     {int(1), (*policy.Rules[0].PortRanges)[0].Start},
 							"Rules[0].PortRanges.0.End":       {int(100), (*policy.Rules[0].PortRanges)[0].End},

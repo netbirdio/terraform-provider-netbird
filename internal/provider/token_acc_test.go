@@ -13,6 +13,7 @@ import (
 )
 
 func Test_Token_Create(t *testing.T) {
+	testE2E(t)
 	rName := "t" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_token." + rName
 	resource.Test(t, resource.TestCase{
@@ -21,14 +22,14 @@ func Test_Token_Create(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       testTokenResource(rName, `user1`, `180`),
+				Config:       testTokenResource(rName, mustE2E().UserID, `180`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "token"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expiration_date"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "expiration_days", "180"),
-					resource.TestCheckResourceAttr(rNameFull, "user_id", "user1"),
+					resource.TestCheckResourceAttr(rNameFull, "user_id", mustE2E().UserID),
 					func(s *terraform.State) error {
 						uID := s.RootModule().Resources[rNameFull].Primary.Attributes["user_id"]
 						tID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]

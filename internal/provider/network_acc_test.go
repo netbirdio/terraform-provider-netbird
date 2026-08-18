@@ -13,6 +13,7 @@ import (
 )
 
 func Test_Network_Create(t *testing.T) {
+	testE2E(t)
 	rName := "n" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network." + rName
 	resource.Test(t, resource.TestCase{
@@ -53,6 +54,7 @@ func Test_Network_Create(t *testing.T) {
 }
 
 func Test_Network_Update(t *testing.T) {
+	testE2E(t)
 	rName := "n" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network." + rName
 	resource.Test(t, resource.TestCase{
