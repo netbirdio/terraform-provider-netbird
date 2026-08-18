@@ -35,6 +35,11 @@ import (
 // one of" — which is worth matching loosely rather than pinning.
 var noSelector = regexp.MustCompile(`(?s)No selector|at least one of`)
 
+// noMatch is the refusal when a filter is well formed and answers nothing. The
+// wording splits the same way — "matching parameters not found" against
+// "matched the given filters" — so both are accepted.
+var noMatch = regexp.MustCompile(`(?s)No [Mm]atch|not found|matched the given filters`)
+
 // ambiguous is what a filter matching more than one object has to produce.
 var ambiguous = regexp.MustCompile(`(?s)Multiple Matches|match(ed)? more than one|cannot match multiple`)
 
@@ -206,6 +211,89 @@ data "netbird_token" "nothing" {
   user_id = %q
 }
 `, mustE2E().UserID), noSelector)
+	})
+}
+
+// Test_DataSource_RejectsNoMatch asks for a name nothing carries. The answer
+// has to be an error naming the failure, not an empty object: a data source that
+// returns zeros for a name the user misspelled hands those zeros to whatever
+// referenced it.
+func Test_DataSource_RejectsNoMatch(t *testing.T) {
+	testE2E(t)
+
+	// identity_provider and scim are left out: their list endpoints are
+	// cloud-only, so a self-hosted deployment answers with an error about the
+	// integration rather than about the filter.
+	for _, kind := range []string{
+		"group", "network", "setup_key", "user", "posture_check",
+		"nameserver_group", "policy",
+		"agent_network_provider", "agent_network_policy", "agent_network_guardrail",
+	} {
+		t.Run(kind, func(t *testing.T) {
+			rejects(t, fmt.Sprintf(`
+data "netbird_%s" "missing" {
+  name = "does-not-exist-%s"
+}
+`, kind, acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)), noMatch)
+		})
+	}
+
+	// A route is selected by network_id rather than name.
+	t.Run("route", func(t *testing.T) {
+		rejects(t, fmt.Sprintf(`
+data "netbird_route" "missing" {
+  network_id = "does-not-exist-%s"
+}
+`, acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)), noMatch)
+	})
+}
+
+// Test_DataSource_RejectsDisagreeingSelectors gives two selectors that point at
+// different objects. Both are satisfiable on their own, which is what makes this
+// worth a test: a data source that took the first one and ignored the second
+// would return an object the configuration did not ask for.
+func Test_DataSource_RejectsDisagreeingSelectors(t *testing.T) {
+	testE2E(t)
+
+	t.Run("group id and name", func(t *testing.T) {
+		rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, testGroupResource(rName, `[]`)+fmt.Sprintf(`
+data "netbird_group" "%[1]s" {
+  id   = netbird_group.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName), noMatch)
+	})
+
+	t.Run("user id and email", func(t *testing.T) {
+		rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, fmt.Sprintf(`
+resource "netbird_user" "%[1]s" {
+  name            = "%[1]s"
+  email           = "%[1]s@example.com"
+  is_service_user = false
+  role            = "user"
+  auto_groups     = []
+}
+
+data "netbird_user" "%[1]s" {
+  id    = netbird_user.%[1]s.id
+  email = "%[1]s-other@example.com"
+}
+`, rName), noMatch)
+	})
+
+	// The agent network data sources take a different path for a known ID: they
+	// fetch it directly rather than listing, and check the name afterwards. That
+	// is a separate comparison and needs its own case.
+	t.Run("agent network policy id and name", func(t *testing.T) {
+		rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, testAgentNetworkPolicyResource(rName)+fmt.Sprintf(`
+data "netbird_agent_network_policy" "%[1]s" {
+  id   = netbird_agent_network_policy.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName), noMatch)
 	})
 }
 
