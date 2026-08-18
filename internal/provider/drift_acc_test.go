@@ -488,3 +488,57 @@ func Test_Drift_AgentNetworkProvider(t *testing.T) {
 		resource.TestCheckResourceAttr(address, "name", rName),
 	)
 }
+
+func Test_Drift_AgentNetworkGuardrail(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_agent_network_guardrail." + rName
+	driftCase(t, address, testAgentNetworkGuardrailResource(rName),
+		func(id string) error {
+			// The checks are read back and carried through unchanged, since the
+			// request replaces them wholesale and the case is about the name and
+			// the PII flag rather than about the allowlist.
+			g, err := testAgentNetworkClient().GetGuardrail(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			checks := g.Checks
+			checks.PromptCapture.RedactPii = false
+			_, err = testAgentNetworkClient().UpdateGuardrail(context.Background(), id,
+				api.AgentNetworkGuardrailRequest{
+					Name: rName + "-changed-elsewhere", Description: &g.Description, Checks: checks,
+				})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "name", rName),
+		resource.TestCheckResourceAttr(address, "prompt_capture.redact_pii", "true"),
+	)
+}
+
+func Test_Drift_AgentNetworkPolicy(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_agent_network_policy." + rName
+	driftCase(t, address, testAgentNetworkPolicyResource(rName),
+		func(id string) error {
+			// A policy points at a provider and a guardrail, and the update
+			// replaces the whole object, so both have to be carried through from
+			// the policy as it stands rather than named again here.
+			p, err := testAgentNetworkClient().GetPolicy(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			off := false
+			_, err = testAgentNetworkClient().UpdatePolicy(context.Background(), id,
+				api.AgentNetworkPolicyRequest{
+					Name: rName + "-changed-elsewhere", Description: &p.Description,
+					Enabled: &off, SourceGroups: p.SourceGroups,
+					DestinationProviderIds: p.DestinationProviderIds,
+					GuardrailIds:           &p.GuardrailIds, Limits: &p.Limits,
+				})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "name", rName),
+		resource.TestCheckResourceAttr(address, "enabled", "true"),
+	)
+}

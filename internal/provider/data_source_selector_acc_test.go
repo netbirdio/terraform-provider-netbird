@@ -152,6 +152,58 @@ data "netbird_policy" "%[1]s" {
 		dsCase(t, cfg, samePair("policy", rName, "id", "name", "enabled"))
 	})
 
+	t.Run("network resource by name", func(t *testing.T) {
+		// The parent is required either way, so the selector under test is the
+		// name within it rather than the pair.
+		rName := "nr" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		cfg := testNetworkResourceResource(rName, e2eNetworkID(), "example.com",
+			fmt.Sprintf("[%q]", e2eGroupNotAllID()), rName) + fmt.Sprintf(`
+data "netbird_network_resource" "%[1]s" {
+  network_id = %[2]q
+  name       = netbird_network_resource.%[1]s.name
+}
+`, rName, e2eNetworkID())
+		dsCase(t, cfg, samePair("network_resource", rName, "id", "name", "address"))
+	})
+
+	t.Run("token by name", func(t *testing.T) {
+		rName := "t" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		userID := mustE2E().UserID
+		cfg := testTokenResource(rName, userID, `90`) + fmt.Sprintf(`
+data "netbird_token" "%[1]s" {
+  user_id = %[2]q
+  name    = netbird_token.%[1]s.name
+}
+`, rName, userID)
+		dsCase(t, cfg, samePair("token", rName, "id", "name", "user_id"))
+	})
+
+	t.Run("peer by name", func(t *testing.T) {
+		// A peer is registered by an agent rather than created by Terraform, so
+		// this reads a fixture by the hostname it registered under.
+		name := "peer1"
+		id := testPeerID(t, name)
+		dsCase(t, fmt.Sprintf(`
+data "netbird_peer" "byname" {
+  name = %q
+}
+`, name), resource.ComposeAggregateTestCheckFunc(
+			resource.TestCheckResourceAttr("data.netbird_peer.byname", "id", id),
+			resource.TestCheckResourceAttr("data.netbird_peer.byname", "name", name),
+			resource.TestCheckResourceAttrSet("data.netbird_peer.byname", "ip"),
+		))
+	})
+
+	t.Run("agent network provider by name", func(t *testing.T) {
+		rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		cfg := testAgentNetworkProviderResource(rName, rName, `null`, "false") + fmt.Sprintf(`
+data "netbird_agent_network_provider" "%[1]s" {
+  name = netbird_agent_network_provider.%[1]s.name
+}
+`, rName)
+		dsCase(t, cfg, samePair("agent_network_provider", rName, "id", "name", "enabled"))
+	})
+
 	t.Run("agent network guardrail by name", func(t *testing.T) {
 		rName := "ang" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 		cfg := testAgentNetworkGuardrailResource(rName) + fmt.Sprintf(`
