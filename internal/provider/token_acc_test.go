@@ -10,20 +10,27 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_Token_Create(t *testing.T) {
 	testE2E(t)
 	rName := "t" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_token." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.PersonalAccessToken, error) {
+			return testClient().Tokens.Get(ctx, mustE2E().UserID, id)
+		}, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testTokenResource(rName, mustE2E().UserID, `180`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "token"),
 					resource.TestCheckResourceAttrSet(rNameFull, "expiration_date"),
@@ -42,6 +49,13 @@ func Test_Token_Create(t *testing.T) {
 						})
 					},
 				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateIdFunc:       testImportIDFrom(rNameFull, "/", "user_id", "id"),
+				ImportStateVerifyIgnore: []string{"token"},
 			},
 		},
 	})

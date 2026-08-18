@@ -48,8 +48,12 @@ import (
 	"testing"
 	"time"
 
+	tfjson "github.com/hashicorp/terraform-json"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/netbirdio/netbird/e2e/harness"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
@@ -71,7 +75,19 @@ const (
 
 // e2ePeerNames are the hostnames the agent containers register under, in the
 // order the tests expect to find them.
-var e2ePeerNames = []string{"peer1", "peer2", "peer3"}
+//
+// They are split by purpose, because a test that manages a peer through its own
+// lifecycle destroys it: peer1 and peer2 are shared and read-only, addressed by
+// name by the group, route, peers and reverse-proxy tests and expected to
+// survive the whole run, while peer3 to peer5 are consumable, one per lifecycle
+// test. One each rather than sharing, since sharing would make the later test
+// depend on the order Go compiles the files in.
+//
+// Deleting a peer does not actually deregister the device today — Peer.Delete
+// skips the API call under TF_ACC, which is what Test_Peer_Delete reports. The
+// split is what stops that from becoming a cascade of failures once the delete
+// works.
+var e2ePeerNames = []string{"peer1", "peer2", "peer3", "peer4", "peer5"}
 
 // e2eStack is the live deployment plus the IDs of the fixtures created on it.
 type e2eStack struct {
@@ -566,5 +582,193 @@ func Test_sameIDSet(t *testing.T) {
 				t.Errorf("sameIDSet(%v) = %v, want %v", tc.got, got, tc.want)
 			}
 		})
+	}
+}
+
+// Destroy coverage.
+//
+// The destroy half of a resource's lifecycle went almost entirely unchecked: 3
+// of 65 acceptance tests asserted anything about it, so a resource that failed
+// to delete server-side looked exactly like one that deleted cleanly. Terraform
+// removes the resource from state either way, and the next test creates its own
+// randomly named fixture, so nothing downstream notices the leak.
+//
+// Asking the server for the object by ID is stricter than listing objects and
+// matching a name. It catches a delete that removed the wrong object, and it
+// separates "the object is gone" from "the check could not tell" — a not-found
+// is the only answer that proves a delete, where any other error means the
+// check itself failed and must not be read as success.
+
+// testRecordID captures a resource's server-assigned ID from state while the
+// resource still exists. CheckDestroy runs once Terraform has forgotten the
+// resource, so the ID has to be taken during the test rather than after it.
+func testRecordID(resourceName string, into *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state, so its ID cannot be recorded for the destroy check", resourceName)
+		}
+		id := rs.Primary.Attributes["id"]
+		if id == "" {
+			return fmt.Errorf("%s has no id attribute in state", resourceName)
+		}
+		*into = id
+		return nil
+	}
+}
+
+// testRecordAttr is testRecordID for any other attribute, which a destroy check
+// needs when the object it must ask about is addressed through a parent — a DNS
+// record lives under the zone in its zone_id, for instance.
+func testRecordAttr(resourceName, attr string, into *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state, so its %s cannot be recorded for the destroy check", resourceName, attr)
+		}
+		v := rs.Primary.Attributes[attr]
+		if v == "" {
+			return fmt.Errorf("%s has no %s attribute in state", resourceName, attr)
+		}
+		*into = v
+		return nil
+	}
+}
+
+// testCheckGone builds a CheckDestroy that requires the recorded object to be
+// absent from the management server. Pass the API's own getter, which for most
+// resources is a method value such as testClient().Groups.Get.
+func testCheckGone[T any](get func(context.Context, string) (T, error), id *string) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		if *id == "" {
+			// An empty ID means the test never reached the step that records it,
+			// so reporting success here would assert nothing at all.
+			return errors.New("the destroy check has no ID to look up; the test never recorded one")
+		}
+		_, err := get(context.Background(), *id)
+		if err == nil {
+			return fmt.Errorf("%s still exists on the management server after destroy", *id)
+		}
+		if !netbird.IsNotFound(err) {
+			return fmt.Errorf("checking that %s was deleted: %w", *id, err)
+		}
+		return nil
+	}
+}
+
+// testCheckAbsentFromList is the destroy check for a resource whose API has no
+// by-ID getter, so the only way to ask is to list and look. Weaker than
+// testCheckGone — a list error is indistinguishable from an empty list only if
+// it is ignored, so it is returned instead.
+func testCheckAbsentFromList[T any](list func(context.Context) ([]T, error), id func(T) string, want *string) func(*terraform.State) error {
+	return func(*terraform.State) error {
+		if *want == "" {
+			return errors.New("the destroy check has no ID to look for; the test never recorded one")
+		}
+		items, err := list(context.Background())
+		if err != nil {
+			return fmt.Errorf("listing to check that %s was deleted: %w", *want, err)
+		}
+		for _, it := range items {
+			if id(it) == *want {
+				return fmt.Errorf("%s still exists on the management server after destroy", *want)
+			}
+		}
+		return nil
+	}
+}
+
+// testImportIDFrom builds a composite import ID out of attributes in state, for
+// the resources whose ImportState expects more than the object's own ID — a
+// network resource is addressed as network_id/id, a token as user_id/id.
+//
+// The separator is a parameter because the provider is not consistent about it:
+// dns_record splits on ":" while the others split on "/".
+func testImportIDFrom(resourceName, sep string, attrs ...string) resource.ImportStateIdFunc {
+	return func(s *terraform.State) (string, error) {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return "", fmt.Errorf("%s is not in state, so no import ID can be built", resourceName)
+		}
+		parts := make([]string, 0, len(attrs))
+		for _, a := range attrs {
+			v := rs.Primary.Attributes[a]
+			if v == "" {
+				return "", fmt.Errorf("%s has no %s in state", resourceName, a)
+			}
+			parts = append(parts, v)
+		}
+		return strings.Join(parts, sep), nil
+	}
+}
+
+// testIDChanged asserts the object was replaced rather than updated in place, by
+// comparing against the ID recorded in an earlier step. It is the assertion that
+// makes a RequiresReplace declaration mean something: without it a provider that
+// quietly updated in place would look identical to one that recreated.
+func testIDChanged(resourceName string, previous *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if *previous == "" {
+			return errors.New("no earlier ID was recorded, so a replacement cannot be detected")
+		}
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("%s is not in state", resourceName)
+		}
+		if got := rs.Primary.Attributes["id"]; got == *previous {
+			return fmt.Errorf("%s kept id %s across a change the schema marks RequiresReplace, so it was updated in place instead of being recreated", resourceName, got)
+		}
+		return nil
+	}
+}
+
+// testExpectUpdateInPlace asserts the planned change to a resource is an update
+// rather than a replacement.
+//
+// Comparing IDs across steps proves an object was replaced, but only after the
+// fact and without saying why. This reads the plan itself, so a failure names
+// the action Terraform chose and the attributes that forced it — which is the
+// part that has to change to fix it. Only the attributes that can force a
+// replacement are reported, both because the rest cannot be the cause and
+// because a full dump of the object would carry the plaintext key with it.
+func testExpectUpdateInPlace(address string) plancheck.PlanCheck {
+	return updateInPlace{address: address}
+}
+
+type updateInPlace struct {
+	address string
+}
+
+func (c updateInPlace) CheckPlan(_ context.Context, req plancheck.CheckPlanRequest, resp *plancheck.CheckPlanResponse) {
+	for _, rc := range req.Plan.ResourceChanges {
+		if rc.Address != c.address {
+			continue
+		}
+		if slices.Equal(rc.Change.Actions, tfjson.Actions{tfjson.ActionUpdate}) {
+			return
+		}
+		resp.Error = fmt.Errorf("%s: planned %v rather than an in-place update; replacement forced by %v; %s",
+			c.address, rc.Change.Actions, rc.Change.ReplacePaths, describeReplaceable(rc.Change))
+		return
+	}
+	resp.Error = fmt.Errorf("%s is not in the plan", c.address)
+}
+
+// describeReplaceable reports the before and after of every attribute the setup
+// key schema marks RequiresReplace.
+func describeReplaceable(change *tfjson.Change) string {
+	before, _ := change.Before.(map[string]any)
+	after, _ := change.After.(map[string]any)
+	var parts []string
+	for _, attr := range []string{"name", "type", "expiry_seconds", "usage_limit", "ephemeral", "allow_extra_dns_labels"} {
+		parts = append(parts, fmt.Sprintf("%s: %v -> %v", attr, before[attr], after[attr]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// updatesInPlace is testExpectUpdateInPlace as a step's plan checks.
+func updatesInPlace(address string) resource.ConfigPlanChecks {
+	return resource.ConfigPlanChecks{
+		PreApply: []plancheck.PlanCheck{testExpectUpdateInPlace(address)},
 	}
 }

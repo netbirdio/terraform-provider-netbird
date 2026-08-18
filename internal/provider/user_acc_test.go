@@ -17,14 +17,18 @@ func Test_User_Create(t *testing.T) {
 	testE2E(t)
 	rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_user." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckAbsentFromList(testClient().Users.List,
+			func(u api.User) string { return u.Id }, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testUserResource(rName, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `false`, `user`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", rName),
 					resource.TestCheckResourceAttr(rNameFull, "is_service_user", "true"),
@@ -63,6 +67,11 @@ func Test_User_Create(t *testing.T) {
 						})
 					},
 				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})

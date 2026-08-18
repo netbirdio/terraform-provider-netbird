@@ -239,15 +239,18 @@ func Test_ReverseProxyService_PinAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + "." + cluster.Address
 	rNameFull := "netbird_reverse_proxy_service." + rName
+	var createdID string
 	peerID := testPeerID(t, "peer1")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().ReverseProxyServices.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				Config: testReverseProxyServicePinAuth(rName, domain, peerID, "9876"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "auth.pin_auth.enabled", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "auth.pin_auth.pin", "9876"),
@@ -273,16 +276,19 @@ func Test_ReverseProxyService_BearerAuth(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + "." + cluster.Address
 	rNameFull := "netbird_reverse_proxy_service." + rName
+	var createdID string
 	peerID := testPeerID(t, "peer1")
 	groupID := e2eGroupAllID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().ReverseProxyServices.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				Config: testReverseProxyServiceBearerAuth(rName, domain, peerID, groupID),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "auth.bearer_auth.enabled", "true"),
 					resource.TestCheckResourceAttr(rNameFull, "auth.bearer_auth.distribution_groups.#", "1"),
@@ -312,16 +318,19 @@ func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 	domain := rName + "." + cluster.Address
 	rNameFull := "netbird_reverse_proxy_service." + rName
+	var createdID string
 	peerID1 := testPeerID(t, "peer1")
 	peerID2 := testPeerID(t, "peer2")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().ReverseProxyServices.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				Config: testReverseProxyServiceMultiTarget(rName, domain, peerID1, peerID2),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "targets.#", "2"),
 					func(s *terraform.State) error {

@@ -16,14 +16,17 @@ func Test_Route_Create(t *testing.T) {
 	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_route." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Routes.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testRouteResource(rName, e2eGroupAllID(), `null`, `desc`, `null`, `["example.com"]`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `null`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "network_id", rName),
 					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
@@ -57,6 +60,11 @@ func Test_Route_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -65,6 +73,7 @@ func Test_Route_Update(t *testing.T) {
 	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_route." + rName
+	var createdID string
 	// Resolved once, up front: the fixture helpers can fail the test, and doing
 	// that from inside a Check closure aborts the run mid-apply, before
 	// terraform-plugin-testing gets to its destroy step.
@@ -72,11 +81,13 @@ func Test_Route_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Routes.Get, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testRouteResource(rName, e2eGroupAllID(), `null`, `desc`, `null`, `["example.com"]`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `null`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 				),
 			},

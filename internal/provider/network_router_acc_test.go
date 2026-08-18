@@ -10,20 +10,27 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_NetworkRouter_Create(t *testing.T) {
 	testE2E(t)
 	rName := "nro" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_router." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkRouter, error) {
+			return testClient().Networks.Routers(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testNetworkRouterResource(rName, e2eNetworkID(), fmt.Sprintf("[%q]", e2eGroupNotAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", `1`),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", e2eGroupNotAllID()),
@@ -45,6 +52,12 @@ func Test_NetworkRouter_Create(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: testImportIDFrom(rNameFull, "/", "network_id", "id"),
+			},
 		},
 	})
 }
@@ -53,14 +66,19 @@ func Test_NetworkRouter_Update(t *testing.T) {
 	testE2E(t)
 	rName := "nro" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_network_router." + rName
+	var createdID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkRouter, error) {
+			return testClient().Networks.Routers(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
 				Config:       testNetworkRouterResource(rName, e2eNetworkID(), fmt.Sprintf("[%q]", e2eGroupNotAllID())),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.#", `1`),
 					resource.TestCheckResourceAttr(rNameFull, "peer_groups.0", e2eGroupNotAllID()),

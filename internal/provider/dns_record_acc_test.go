@@ -16,13 +16,16 @@ func Test_DNSRecord_Create(t *testing.T) {
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
+	var zoneID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().DNSZones.GetZone, &zoneID),
 		Steps: []resource.TestStep{
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "www", "A", "192.168.1.1", 300),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordAttr(rNameFull, "zone_id", &zoneID),
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttrSet(rNameFull, "zone_id"),
 					resource.TestCheckResourceAttr(rNameFull, "name", "www.test.local"),
@@ -46,13 +49,16 @@ func Test_DNSRecord_Update(t *testing.T) {
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
+	var zoneID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().DNSZones.GetZone, &zoneID),
 		Steps: []resource.TestStep{
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "www", "A", "192.168.1.1", 300),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordAttr(rNameFull, "zone_id", &zoneID),
 					resource.TestCheckResourceAttr(rNameFull, "name", "www.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "192.168.1.1"),
 					resource.TestCheckResourceAttr(rNameFull, "ttl", "300"),
@@ -75,13 +81,16 @@ func Test_DNSRecord_CNAME(t *testing.T) {
 	zoneName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rName := "r" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_dns_record." + rName
+	var zoneID string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().DNSZones.GetZone, &zoneID),
 		Steps: []resource.TestStep{
 			{
 				Config: testDNSRecordResource(zoneName, "test.local", rName, "mail", "CNAME", "mail.example.com", 300),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordAttr(rNameFull, "zone_id", &zoneID),
 					resource.TestCheckResourceAttr(rNameFull, "name", "mail.test.local"),
 					resource.TestCheckResourceAttr(rNameFull, "type", "CNAME"),
 					resource.TestCheckResourceAttr(rNameFull, "content", "mail.example.com"),
