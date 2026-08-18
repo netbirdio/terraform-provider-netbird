@@ -515,8 +515,13 @@ data "netbird_setup_key" "d" {
   name = "%[1]s-not-the-name"
 }
 `, rName)},
+		// description is set deliberately: leaving it out fails the apply
+		// outright, because the attribute is Optional without being Computed and
+		// the API answers with an empty string rather than nothing. That is a
+		// defect of its own, not this case's subject.
 		{"posture_check", fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
-  name = "%[1]s"
+  name        = "%[1]s"
+  description = "selector test"
 
   netbird_version_check {
     min_version = "0.40.0"
