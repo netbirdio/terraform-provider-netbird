@@ -237,6 +237,24 @@ func Test_AgentNetworkProvider_DataSource(t *testing.T) {
 		samePair("agent_network_provider", rName, "name", "enabled"))
 }
 
+func Test_AgentNetworkGuardrail_DataSource(t *testing.T) {
+	testE2E(t)
+	rName := "ang" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	dsCase(t, testAgentNetworkGuardrailResource(rName)+dataSourceByID("agent_network_guardrail", rName),
+		samePair("agent_network_guardrail", rName, "name", "description",
+			"model_allowlist.enabled", "model_allowlist.models.#",
+			"prompt_capture.enabled", "prompt_capture.redact_pii"))
+}
+
+func Test_AgentNetworkPolicy_DataSource(t *testing.T) {
+	testE2E(t)
+	rName := "anpol" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	dsCase(t, testAgentNetworkPolicyResource(rName)+dataSourceByID("agent_network_policy", rName),
+		samePair("agent_network_policy", rName, "name", "description", "enabled",
+			"source_groups.#", "destination_provider_ids.#", "guardrail_ids.#",
+			"token_limit.enabled", "token_limit.group_cap", "token_limit.window_seconds"))
+}
+
 func Test_Scim_DataSource(t *testing.T) {
 	// Skipped for the same reason as the SCIM resource tests: the integration is
 	// cloud-only, so a self-hosted deployment has nothing to read.

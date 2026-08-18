@@ -120,6 +120,44 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 }`, rName, name, extraValues, metadataDisabled)
 }
 
+// testAgentNetworkGuardrailResource and testAgentNetworkPolicyResource are the
+// minimum a guardrail and a policy need to exist, for tests whose subject is
+// something else — a data source read, for instance.
+func testAgentNetworkGuardrailResource(rName string) string {
+	return fmt.Sprintf(`resource "netbird_agent_network_guardrail" "%[1]s" {
+	name        = "%[1]s"
+	description = "acceptance test"
+	model_allowlist = {
+		enabled = true
+		models  = ["gpt-4.1"]
+	}
+	prompt_capture = {
+		enabled    = true
+		redact_pii = true
+	}
+}
+`, rName)
+}
+
+func testAgentNetworkPolicyResource(rName string) string {
+	return testAgentNetworkProviderResource(rName, rName+"-provider", `null`, "false") + "\n" +
+		testAgentNetworkGuardrailResource(rName) + fmt.Sprintf(`
+resource "netbird_agent_network_policy" "%[1]s" {
+	name                     = "%[1]s"
+	description              = "acceptance test"
+	source_groups            = [%[2]q]
+	destination_provider_ids = [netbird_agent_network_provider.%[1]s.id]
+	guardrail_ids            = [netbird_agent_network_guardrail.%[1]s.id]
+
+	token_limit = {
+		enabled        = true
+		group_cap      = 1000000
+		window_seconds = 86400
+	}
+}
+`, rName, e2eGroupNotAllID())
+}
+
 func Test_AgentNetworkProvider_Create(t *testing.T) {
 	testE2E(t)
 	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)

@@ -31,7 +31,141 @@ var (
 	outOfRange = regexp.MustCompile(`(?s)value must be between|Invalid Attribute Value`)
 	wrongSize  = regexp.MustCompile(`(?s)list must contain|Invalid Attribute Value|Insufficient|Too few`)
 	tooLong    = regexp.MustCompile(`(?s)length must be|Invalid Attribute Value`)
+	conflicts  = regexp.MustCompile(`(?s)Invalid Attribute Combination|cannot be specified when`)
 )
+
+// Test_Rejects_MutuallyExclusiveAttributes covers the thirteen ConflictsWith
+// validators, which are a different promise from the range and enumeration
+// checks: not "this value is wrong" but "these two cannot both be here".
+//
+// They matter more than their size suggests. Each pair exists because the API
+// models one thing two ways — a route to a peer or to a group of peers, a rule
+// scoped to groups or to a resource — and a request carrying both is ambiguous
+// rather than merely invalid. A validator that does not fire lets that ambiguity
+// reach the server, which resolves it silently and by its own rules.
+func Test_Rejects_MutuallyExclusiveAttributes(t *testing.T) {
+	testE2E(t)
+	rName := "x" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	group, other := e2eGroupNotAllID(), e2eGroupAllID()
+
+	cases := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "network_router peer and peer_groups together",
+			config: fmt.Sprintf(`
+resource "netbird_network_router" "%[1]s" {
+  network_id  = %[2]q
+  peer        = "some-peer"
+  peer_groups = [%[3]q]
+  masquerade  = true
+  metric      = 9999
+}`, rName, e2eNetworkID(), group),
+		},
+		{
+			name: "route peer and peer_groups together",
+			config: fmt.Sprintf(`
+resource "netbird_route" "%[1]s" {
+  network_id  = "%[1]s"
+  groups      = [%[2]q]
+  domains     = ["example.com"]
+  peer        = "some-peer"
+  peer_groups = [%[3]q]
+}`, rName, group, other),
+		},
+		{
+			// A route reaches either a CIDR or a set of domains. Both at once
+			// describes two different routes.
+			name: "route network and domains together",
+			config: fmt.Sprintf(`
+resource "netbird_route" "%[1]s" {
+  network_id = "%[1]s"
+  groups     = [%[2]q]
+  network    = "100.10.0.0/16"
+  domains    = ["example.com"]
+}`, rName, group),
+		},
+		{
+			name: "policy rule ports and port_ranges together",
+			config: fmt.Sprintf(`
+resource "netbird_policy" "%[1]s" {
+  name    = "%[1]s"
+  enabled = true
+
+  rule {
+    name          = "%[1]s"
+    action        = "accept"
+    bidirectional = true
+    enabled       = true
+    protocol      = "tcp"
+    sources       = [%[2]q]
+    destinations  = [%[3]q]
+    ports         = ["443"]
+
+    port_ranges = [{
+      start = 8000
+      end   = 8080
+    }]
+  }
+}`, rName, group, other),
+		},
+		{
+			name: "policy rule sources and source_resource together",
+			config: fmt.Sprintf(`
+resource "netbird_policy" "%[1]s" {
+  name    = "%[1]s"
+  enabled = true
+
+  rule {
+    name          = "%[1]s"
+    action        = "accept"
+    bidirectional = true
+    enabled       = true
+    protocol      = "tcp"
+    sources       = [%[2]q]
+    destinations  = [%[3]q]
+    ports         = ["443"]
+
+    source_resource = {
+      id   = "some-resource"
+      type = "host"
+    }
+  }
+}`, rName, group, other),
+		},
+		{
+			name: "policy rule destinations and destination_resource together",
+			config: fmt.Sprintf(`
+resource "netbird_policy" "%[1]s" {
+  name    = "%[1]s"
+  enabled = true
+
+  rule {
+    name          = "%[1]s"
+    action        = "accept"
+    bidirectional = true
+    enabled       = true
+    protocol      = "tcp"
+    sources       = [%[2]q]
+    destinations  = [%[3]q]
+    ports         = ["443"]
+
+    destination_resource = {
+      id   = "some-resource"
+      type = "host"
+    }
+  }
+}`, rName, group, other),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rejects(t, c.config, conflicts)
+		})
+	}
+}
 
 func Test_Rejects_OutsideValidatorLimits(t *testing.T) {
 	testE2E(t)
