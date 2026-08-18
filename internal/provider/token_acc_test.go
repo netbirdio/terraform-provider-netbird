@@ -1,0 +1,71 @@
+//go:build e2e
+
+package provider
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
+)
+
+func Test_Token_Create(t *testing.T) {
+	testE2E(t)
+	rName := "t" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_token." + rName
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.PersonalAccessToken, error) {
+			return testClient().Tokens.Get(ctx, mustE2E().UserID, id)
+		}, &createdID),
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testTokenResource(rName, mustE2E().UserID, `180`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttrSet(rNameFull, "token"),
+					resource.TestCheckResourceAttrSet(rNameFull, "expiration_date"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "expiration_days", "180"),
+					resource.TestCheckResourceAttr(rNameFull, "user_id", mustE2E().UserID),
+					func(s *terraform.State) error {
+						uID := s.RootModule().Resources[rNameFull].Primary.Attributes["user_id"]
+						tID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						token, err := testClient().Tokens.Get(context.Background(), uID, tID)
+						if err != nil {
+							return err
+						}
+						return matchPairs(map[string][]any{
+							"name": {rName, token.Name},
+						})
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateIdFunc:       testImportIDFrom(rNameFull, "/", "user_id", "id"),
+				ImportStateVerifyIgnore: []string{"token"},
+			},
+		},
+	})
+}
+
+func testTokenResource(rName, userID, expiryDays string) string {
+	return fmt.Sprintf(`resource "netbird_token" "%s" {
+  user_id         = "%s"
+  name            = "%s"
+  expiration_days = %s
+}
+`, rName, userID, rName, expiryDays)
+}

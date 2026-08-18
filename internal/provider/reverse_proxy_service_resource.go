@@ -532,6 +532,7 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		return req, ret
 	}
 
+	targets := make([]api.ServiceTarget, 0, len(targetModels))
 	for _, t := range targetModels {
 		target := api.ServiceTarget{
 			TargetId:   t.TargetId.ValueString(),
@@ -548,10 +549,12 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			v := t.Path.ValueString()
 			target.Path = &v
 		}
-		req.Targets = append(req.Targets, target)
+		targets = append(targets, target)
 	}
+	req.Targets = &targets
 
 	authAttrs := data.Auth.Attributes()
+	req.Auth = &api.ServiceAuthConfig{}
 
 	if v, ok := authAttrs["password_auth"].(types.Object); ok && !v.IsNull() && !v.IsUnknown() {
 		pwAttrs := v.Attributes()
