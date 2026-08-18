@@ -409,3 +409,313 @@ resource "netbird_setup_key" "%[1]sb" {
 		},
 	})
 }
+
+// Test_DataSource_RejectsNoSelectorWithoutAGuard is the other half of the
+// no-selector story.
+//
+// Five data sources have no explicit guard: they list and filter, and a
+// configuration that names nothing matches nothing, so the answer is the
+// not-found error rather than a message naming the selectors. The outcome is
+// safe either way — no object is returned — but the message is worse, and a
+// test that pins it is how anyone notices if that changes.
+//
+// The reverse proxy pair is left out: their lists need a running cluster.
+func Test_DataSource_RejectsNoSelectorWithoutAGuard(t *testing.T) {
+	testE2E(t)
+
+	t.Run("dns_zone", func(t *testing.T) {
+		rejects(t, "data \"netbird_dns_zone\" \"nothing\" {}\n", noMatch)
+	})
+
+	t.Run("peer", func(t *testing.T) {
+		rejects(t, "data \"netbird_peer\" \"nothing\" {}\n", noMatch)
+	})
+
+	t.Run("dns_record", func(t *testing.T) {
+		rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, testDNSZoneResource(rName, rName+".local", true, false,
+			fmt.Sprintf("[%q]", e2eGroupNotAllID()))+fmt.Sprintf(`
+data "netbird_dns_record" "nothing" {
+  zone_id = netbird_dns_zone.%s.id
+}
+`, rName), noMatch)
+	})
+}
+
+// Test_DataSource_RejectsNoMatchOnTheRest covers the data sources whose
+// not-found path needs a parent or a fixture, so they do not fit the table in
+// Test_DataSource_RejectsNoMatch.
+func Test_DataSource_RejectsNoMatchOnTheRest(t *testing.T) {
+	testE2E(t)
+	gone := "does-not-exist-" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+
+	t.Run("dns_zone", func(t *testing.T) {
+		rejects(t, fmt.Sprintf("data \"netbird_dns_zone\" \"missing\" {\n  name = %q\n}\n", gone), noMatch)
+	})
+
+	t.Run("peer", func(t *testing.T) {
+		rejects(t, fmt.Sprintf("data \"netbird_peer\" \"missing\" {\n  name = %q\n}\n", gone), noMatch)
+	})
+
+	t.Run("dns_record", func(t *testing.T) {
+		rName := "z" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, testDNSZoneResource(rName, rName+".local", true, false,
+			fmt.Sprintf("[%q]", e2eGroupNotAllID()))+fmt.Sprintf(`
+data "netbird_dns_record" "missing" {
+  zone_id = netbird_dns_zone.%s.id
+  name    = %q
+}
+`, rName, gone), noMatch)
+	})
+
+	t.Run("network_resource", func(t *testing.T) {
+		rejects(t, fmt.Sprintf(`
+data "netbird_network_resource" "missing" {
+  network_id = %q
+  name       = %q
+}
+`, e2eNetworkID(), gone), noMatch)
+	})
+
+	t.Run("token", func(t *testing.T) {
+		rejects(t, fmt.Sprintf(`
+data "netbird_token" "missing" {
+  user_id = %q
+  name    = %q
+}
+`, mustE2E().UserID, gone), noMatch)
+	})
+}
+
+// Test_DataSource_RejectsDisagreeingSelectorsOnTheRest is the same case as
+// above for every remaining data source, in a table because the configuration
+// is the only thing that differs: create an object, then ask for it by its ID
+// and by a second selector that names something else.
+//
+// The two cloud-only data sources and the reverse proxy pair are left out —
+// nothing on a self-hosted deployment can create the objects.
+func Test_DataSource_RejectsDisagreeingSelectorsOnTheRest(t *testing.T) {
+	testE2E(t)
+	rName := "dis" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	notAll := fmt.Sprintf("[%q]", e2eGroupNotAllID())
+
+	for _, c := range []struct {
+		name   string
+		config string
+	}{
+		{"network", testNetworkResource(rName, `Test`) + fmt.Sprintf(`
+data "netbird_network" "d" {
+  id   = netbird_network.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"setup_key", testSetupKeyResourceNoLimit(rName, `reusable`) + fmt.Sprintf(`
+data "netbird_setup_key" "d" {
+  id   = netbird_setup_key.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"posture_check", fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  netbird_version_check {
+    min_version = "0.40.0"
+  }
+}
+
+data "netbird_posture_check" "d" {
+  id   = netbird_posture_check.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"nameserver_group", testNameserverGroupResource(rName, `1.1.1.1`, `53`, notAll) + fmt.Sprintf(`
+data "netbird_nameserver_group" "d" {
+  id   = netbird_nameserver_group.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"policy", testPolicyResourceGroups(rName, rName, "desc", "accept", "udp",
+			e2eGroupAllID(), e2eGroupNotAllID(), "443") + fmt.Sprintf(`
+data "netbird_policy" "d" {
+  id   = netbird_policy.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		// A route's second selector is its network_id rather than a name.
+		{"route", testRouteResource(rName, e2eGroupAllID(), `null`, `desc`, `null`,
+			`["example.com"]`, notAll, `null`) + fmt.Sprintf(`
+data "netbird_route" "d" {
+  id         = netbird_route.%[1]s.id
+  network_id = "%[1]s-not-the-network"
+}
+`, rName)},
+		{"agent_network_guardrail", testAgentNetworkGuardrailResource(rName) + fmt.Sprintf(`
+data "netbird_agent_network_guardrail" "d" {
+  id   = netbird_agent_network_guardrail.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"agent_network_provider", testAgentNetworkProviderResource(rName, rName, `null`, "false") +
+			fmt.Sprintf(`
+data "netbird_agent_network_provider" "d" {
+  id   = netbird_agent_network_provider.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"dns_zone", testDNSZoneResource(rName, rName+".local", true, false, notAll) + fmt.Sprintf(`
+data "netbird_dns_zone" "d" {
+  id   = netbird_dns_zone.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName)},
+		{"dns_record", testDNSRecordResource(rName, rName+".local", rName+"rec", "www",
+			"A", "10.0.0.1", 300) + fmt.Sprintf(`
+data "netbird_dns_record" "d" {
+  zone_id = netbird_dns_zone.%[1]s.id
+  id      = netbird_dns_record.%[1]srec.id
+  name    = "not-the-name.%[1]s.local"
+}
+`, rName)},
+		{"network_resource", testNetworkResourceResource(rName, e2eNetworkID(), "example.com",
+			notAll, rName) + fmt.Sprintf(`
+data "netbird_network_resource" "d" {
+  network_id = %[2]q
+  id         = netbird_network_resource.%[1]s.id
+  name       = "%[1]s-not-the-name"
+}
+`, rName, e2eNetworkID())},
+		{"token", testTokenResource(rName, mustE2E().UserID, `90`) + fmt.Sprintf(`
+data "netbird_token" "d" {
+  user_id = %[2]q
+  id      = netbird_token.%[1]s.id
+  name    = "%[1]s-not-the-name"
+}
+`, rName, mustE2E().UserID)},
+		// A peer needs no resource: the fixture is already registered.
+		{"peer", fmt.Sprintf(`
+data "netbird_peer" "d" {
+  id   = %q
+  name = "not-the-hostname"
+}
+`, testPeerID(t, "peer1"))},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rejects(t, c.config, noMatch)
+		})
+	}
+}
+
+// Test_DataSource_TokenAmbiguousMatch is the second place the ambiguous path can
+// be reached: two tokens for the same user can carry the same name.
+func Test_DataSource_TokenAmbiguousMatch(t *testing.T) {
+	testE2E(t)
+	rName := "amb" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	userID := mustE2E().UserID
+	both := fmt.Sprintf(`
+resource "netbird_token" "%[1]sa" {
+  user_id         = %[2]q
+  name            = "%[1]s"
+  expiration_days = 90
+}
+
+resource "netbird_token" "%[1]sb" {
+  user_id         = %[2]q
+  name            = "%[1]s"
+  expiration_days = 90
+}
+`, rName, userID)
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: both},
+			{
+				Config: both + fmt.Sprintf(`
+data "netbird_token" "%[1]s" {
+  user_id = %[2]q
+  name    = "%[1]s"
+}
+`, rName, userID),
+				ExpectError: ambiguous,
+			},
+		},
+	})
+}
+
+// The by-ID read for the two DNS data sources and for the account settings
+// singleton, compared against the resource that produced them. The existing
+// tests for these three select by name, or assert literals, so the pairing was
+// never made.
+func Test_DNSZone_DataSourceByID(t *testing.T) {
+	testE2E(t)
+	rName := "dz" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	cfg := testDNSZoneResource(rName, rName+".local", true, false,
+		fmt.Sprintf("[%q]", e2eGroupNotAllID())) + dataSourceByID("dns_zone", rName)
+	dsCase(t, cfg, samePair("dns_zone", rName, "name", "domain", "enabled",
+		"enable_search_domain", "distribution_groups.#"))
+}
+
+func Test_DNSRecord_DataSourceByID(t *testing.T) {
+	testE2E(t)
+	rName := "dr" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	cfg := testDNSRecordResource(rName, rName+".local", rName, "www", "A", "10.0.0.1", 300) +
+		fmt.Sprintf(`
+data "netbird_dns_record" "%[1]s" {
+  zone_id = netbird_dns_zone.%[1]s.id
+  id      = netbird_dns_record.%[1]s.id
+}
+`, rName)
+	dsCase(t, cfg, samePair("dns_record", rName, "name", "type", "content", "ttl", "zone_id"))
+}
+
+func Test_AccountSettings_DataSourcePairs(t *testing.T) {
+	testE2E(t)
+	rName := "as" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	cfg := testAccountResource(rName) + fmt.Sprintf(`
+data "netbird_account_settings" "%[1]s" {
+  depends_on = [netbird_account_settings.%[1]s]
+}
+`, rName)
+	dsCase(t, cfg, samePair("account_settings", rName, "peer_login_expiration",
+		"peer_inactivity_expiration", "peer_login_expiration_enabled",
+		"regular_users_view_blocked", "groups_propagation_enabled", "jwt_groups_enabled"))
+}
+
+// The identity provider data source rounds out the same three cases. The
+// resource needs egress — the provider fetches the issuer's discovery document
+// before the server accepts it — which is why these sit apart from the tables
+// above rather than inside them.
+func Test_DataSource_IdentityProviderSelectors(t *testing.T) {
+	testE2E(t)
+	const issuer = "https://oauth.id.jumpcloud.com/"
+
+	t.Run("by name", func(t *testing.T) {
+		rName := "ip" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		cfg := testIdentityProviderResource(rName, rName, "oidc", "client-id", "client-secret", issuer) +
+			fmt.Sprintf(`
+data "netbird_identity_provider" "%[1]s" {
+  name = netbird_identity_provider.%[1]s.name
+}
+`, rName)
+		dsCase(t, cfg, samePair("identity_provider", rName, "id", "name", "type", "issuer"))
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		rejects(t, fmt.Sprintf(`
+data "netbird_identity_provider" "missing" {
+  name = "does-not-exist-%s"
+}
+`, acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)), noMatch)
+	})
+
+	t.Run("disagreeing selectors", func(t *testing.T) {
+		rName := "ip" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+		rejects(t, testIdentityProviderResource(rName, rName, "oidc", "client-id", "client-secret", issuer)+
+			fmt.Sprintf(`
+data "netbird_identity_provider" "d" {
+  id   = netbird_identity_provider.%[1]s.id
+  name = "%[1]s-not-the-name"
+}
+`, rName), noMatch)
+	})
+}
