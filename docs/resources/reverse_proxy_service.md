@@ -29,7 +29,6 @@ resource "netbird_reverse_proxy_service" "web_app" {
     protocol    = "https"
 
     options = {
-      skip_tls_verify = true
       request_timeout = "30s"
       path_rewrite    = "preserve"
       custom_headers = {
@@ -65,6 +64,9 @@ resource "netbird_reverse_proxy_service" "postgres" {
       request_timeout = "60s"
     }
   }]
+
+  # L4 modes do not support authentication
+  auth = {}
 }
 
 # UDP (L4) proxy service with session idle timeout
@@ -85,6 +87,9 @@ resource "netbird_reverse_proxy_service" "dns" {
       session_idle_timeout = "2m"
     }
   }]
+
+  # L4 modes do not support authentication
+  auth = {}
 }
 
 # TLS (SNI passthrough) proxy service
@@ -105,6 +110,9 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
       proxy_protocol = true
     }
   }]
+
+  # L4 modes do not support authentication
+  auth = {}
 }
 ```
 
