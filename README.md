@@ -44,10 +44,26 @@ To compile the provider, run `go install`. This will build the provider and put 
 
 To generate or update documentation, run `make generate`.
 
-In order to run the full suite of Acceptance tests, run `make testacc`.
+There are two test suites, separated by the `e2e` build tag.
 
-*Note:* Acceptance tests create real resources, and often cost money to run.
+`make test` runs everything that needs nothing but Go — the conversion functions
+each resource maps its API type through, the filter matching every data source
+scores on, and the provider's own configuration. It takes about a second and needs
+no Docker and no Terraform CLI, because the acceptance tests and the harness that
+starts a deployment for them are not compiled into that build at all.
+
+`make testacc` runs the acceptance suite as well, against a live NetBird
+deployment that the harness brings up. It needs Docker and a Terraform CLI.
 
 ```shell
-make testacc
+make test      # fast: no deployment
+make testacc   # everything, against a deployment
 ```
+
+Both switches in `testacc` are load-bearing: `-tags e2e` compiles the harness and
+the acceptance tests in, and `TF_ACC=1` is terraform-plugin-testing's own gate.
+Dropping either one runs the fast suite and reports success without having tested
+a deployment.
+
+*Note:* Acceptance tests create real resources, and often cost money to run
+against a hosted NetBird instance.

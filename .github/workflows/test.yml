@@ -1,13 +1,19 @@
-# Terraform Provider testing workflow.
+# Build, lint, generated documentation, and the tests that need nothing but Go.
+#
+# The acceptance suite lives in e2e.yml: it needs a running NetBird deployment and
+# a Terraform CLI, which makes it slower by an order of magnitude, so it has no
+# business gating the checks that answer in a minute.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
 on:
   pull_request:
     paths-ignore:
       - 'README.md'
+  # Once more after a merge. Other branches are not built: a branch that is not in
+  # a pull request yet gets nothing out of a run.
   push:
+    branches:
+      - main
     paths-ignore:
       - 'README.md'
 
@@ -22,23 +28,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the checkout token has no business
+          # outliving the step that fetched with it.
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
       - run: go mod download
       - run: go build -v .
       - name: Run linters
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: latest
+      # The acceptance tests and the harness are behind the `e2e` tag, so the pass
+      # above never sees them. Lint them here rather than in e2e.yml: a lint
+      # failure is not worth standing a deployment up for, and this keeps every
+      # lint result in one job.
+      - name: Run linters (e2e)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: latest
+          args: --build-tags e2e
 
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the checkout token has no business
+          # outliving the step that fetched with it.
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -52,35 +75,29 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions
-  test:
-    name: Terraform Provider Acceptance Tests
+  # Everything that runs without a deployment: the conversion functions each
+  # resource maps its API type through, the filter matching every data source
+  # scores on, and the provider's own configuration against a stub server.
+  #
+  # Built without the `e2e` tag, so neither the harness nor the acceptance tests
+  # are compiled in. This job therefore needs no Docker daemon and no Terraform
+  # CLI, and it is the reason the tag exists.
+  unit:
+    name: Unit and integration tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # Supporting latest 6 minor versions of Terraform
-        terraform:
-          - '1.7.*'
-          - '1.8.*'
-          - '1.9.*'
-          - '1.10.*'
-          - '1.11.*'
-          - '1.12.*'
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the checkout token has no business
+          # outliving the step that fetched with it.
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
-        with:
-          terraform_version: ${{ matrix.terraform }}
-          terraform_wrapper: false
       - run: go mod download
-      - env:
-          TF_ACC: "1"
-        run: go test -v -cover ./internal/provider/
-        timeout-minutes: 10
+      # Under the race detector: these tests are cheap, and the stub servers they
+      # drive run their handlers on another goroutine.
+      - run: go test -race -timeout 5m ./...

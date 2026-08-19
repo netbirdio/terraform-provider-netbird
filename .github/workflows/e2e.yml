@@ -1,0 +1,104 @@
+# End-to-end tests: the acceptance suite, against a NetBird deployment the tests
+# stand up themselves. Everything that runs without a deployment lives in
+# test.yml, which answers in about a minute.
+#
+# The deployment comes from netbird's own e2e harness, at the revision pinned in
+# go.mod, and the harness builds the server, proxy and agent images from that
+# revision's source. So the server under test is built from the same commit as the
+# client library the provider is compiled against, and a server-side change that
+# breaks the provider surfaces when go.mod moves rather than after a release.
+#
+# The Terraform CLI matrix is the one thing worth standing a deployment up more
+# than once for, since it is the provider's protocol surface that differs between
+# CLI versions. Paying for a deployment per version on every pull request buys
+# little, so a pull request runs the current CLI and the full matrix runs on main,
+# where a version-specific break still surfaces before a release.
+name: End-to-end
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+  # For running the full matrix on a branch before merging it.
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: 'Run every supported Terraform version'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance tests
+    runs-on: ubuntu-latest
+    # Above the step budget below plus setup and a cold image build, so a job that
+    # overruns fails on the step that overran rather than being cancelled, which
+    # would take the diagnostics with it.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The current CLI line and the three before it on main and on a dispatch
+        # that asks for them; the current line alone everywhere else. Each entry is
+        # a wildcard, so a patch release is picked up without a change here — only
+        # a new minor line is worth editing for.
+        terraform: ${{ fromJSON((github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix)) && '["1.12.*","1.13.*","1.14.*","1.15.*"]' || '["1.15.*"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the checkout token has no business
+          # outliving the step that fetched with it.
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      # The harness builds its images with `docker buildx --load`, and exporting a
+      # local layer cache needs the container driver rather than the default
+      # docker one.
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        with:
+          driver: docker-container
+      # The netbird source is the build context, so the cache is only valid for
+      # one pinned revision — key it on go.sum and let a bump miss deliberately.
+      - name: Restore image layer cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/nb-buildx-cache
+          key: nb-buildx-${{ hashFiles('go.sum') }}
+          restore-keys: nb-buildx-
+      - run: go mod download
+      # The netbird module has to be in the cache before the harness can use it as
+      # a build context: it resolves the directory through `go list -m`.
+      - run: go mod download github.com/netbirdio/netbird
+      # -tags e2e is what compiles the harness and the acceptance tests in; TF_ACC
+      # is terraform-plugin-testing's own switch. Both are needed, and neither on
+      # its own runs anything against a deployment.
+      - env:
+          TF_ACC: "1"
+          NB_E2E_BUILDX_CACHE: /tmp/nb-buildx-cache
+        run: go test -v -tags e2e -timeout 35m -cover -coverprofile=coverage.out ./internal/provider/
+        # Above the 35m the go test timeout allows, because that timeout only
+        # starts once the tests are running: compiling the package and building
+        # the images happen inside this step but outside it. Killing the step
+        # first would take the panic trace with it, which is the one artifact
+        # that says which test hung.
+        timeout-minutes: 40
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage.out ]; then
+            go tool cover -func=coverage.out | tail -n 1
+          fi
