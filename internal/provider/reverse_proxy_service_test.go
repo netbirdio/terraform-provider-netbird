@@ -508,41 +508,56 @@ func Test_reverseProxyServiceAPIToTerraform_nullAuth(t *testing.T) {
 }
 
 func Test_reverseProxyServiceAPIToTerraform_nullOptions(t *testing.T) {
-	ctx := context.Background()
-	svc := &api.Service{
-		Id:      "svc-no-opts",
-		Name:    "no-options",
-		Domain:  "noopts.example.com",
-		Enabled: true,
-		Targets: []api.ServiceTarget{
-			{
-				TargetId:   "peer1",
-				TargetType: api.ServiceTargetTargetTypePeer,
-				Port:       80,
-				Protocol:   api.ServiceTargetProtocolHttp,
-				Enabled:    true,
-				Options:    nil,
-			},
-		},
-		Auth: api.ServiceAuthConfig{},
+	cases := []struct {
+		name    string
+		options *api.ServiceTargetOptions
+	}{
+		{name: "nil options", options: nil},
+		// The server serializes proxy_protocol only when true, so a false here
+		// means the option was never configured and must not materialize an
+		// options object in state.
+		{name: "default-valued options", options: &api.ServiceTargetOptions{ProxyProtocol: valPtr(false)}},
 	}
 
-	var out ReverseProxyServiceModel
-	d := reverseProxyServiceAPIToTerraform(ctx, svc, &out)
-	if d.HasError() {
-		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
-	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			svc := &api.Service{
+				Id:      "svc-no-opts",
+				Name:    "no-options",
+				Domain:  "noopts.example.com",
+				Enabled: true,
+				Targets: []api.ServiceTarget{
+					{
+						TargetId:   "peer1",
+						TargetType: api.ServiceTargetTargetTypePeer,
+						Port:       80,
+						Protocol:   api.ServiceTargetProtocolHttp,
+						Enabled:    true,
+						Options:    c.options,
+					},
+				},
+				Auth: api.ServiceAuthConfig{},
+			}
 
-	var targets []ReverseProxyServiceTargetModel
-	d = out.Targets.ElementsAs(ctx, &targets, false)
-	if d.HasError() {
-		t.Fatal("Failed to extract targets")
-	}
-	if len(targets) != 1 {
-		t.Fatalf("Expected 1 target, got %d", len(targets))
-	}
-	if !targets[0].Options.IsNull() {
-		t.Error("Options should be null when not set in API")
+			var out ReverseProxyServiceModel
+			d := reverseProxyServiceAPIToTerraform(ctx, svc, &out)
+			if d.HasError() {
+				t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+			}
+
+			var targets []ReverseProxyServiceTargetModel
+			d = out.Targets.ElementsAs(ctx, &targets, false)
+			if d.HasError() {
+				t.Fatal("Failed to extract targets")
+			}
+			if len(targets) != 1 {
+				t.Fatalf("Expected 1 target, got %d", len(targets))
+			}
+			if !targets[0].Options.IsNull() {
+				t.Error("Options should be null when not set in API")
+			}
+		})
 	}
 }
 
