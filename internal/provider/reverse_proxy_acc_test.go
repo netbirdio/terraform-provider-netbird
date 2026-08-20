@@ -543,6 +543,241 @@ data "netbird_reverse_proxy_service" "lookup" {
 }`, rName, domain, peerID)
 }
 
+func Test_ReverseProxyService_TargetOptions(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testPeerID(t, "peer1")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(rName),
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceTargetOptions(rName, domain, peerID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.protocol", "https"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.skip_tls_verify", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.request_timeout", "30s"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.path_rewrite", "preserve"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.custom_headers.X-Custom", "test-value"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if len(svc.Targets) != 1 {
+							return fmt.Errorf("expected 1 target, got %d", len(svc.Targets))
+						}
+						opts := svc.Targets[0].Options
+						if opts == nil {
+							return fmt.Errorf("expected target options to be set")
+						}
+						if opts.SkipTlsVerify == nil || !*opts.SkipTlsVerify {
+							return fmt.Errorf("expected skip_tls_verify to be true")
+						}
+						if opts.RequestTimeout == nil || *opts.RequestTimeout != "30s" {
+							return fmt.Errorf("expected request_timeout to be 30s")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.password_auth.password"},
+			},
+		},
+	})
+}
+
+func testReverseProxyServiceTargetOptions(rName, domain, peerID string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8443
+    protocol    = "https"
+
+    options = {
+      skip_tls_verify = true
+      request_timeout = "30s"
+      path_rewrite    = "preserve"
+      custom_headers = {
+        "X-Custom" = "test-value"
+      }
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = "options-test"
+    }
+  }
+}`, rName, rName, domain, peerID)
+}
+
+func Test_ReverseProxyService_TCPMode(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testPeerID(t, "peer1")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(rName),
+		Steps: []resource.TestStep{
+			{
+				// Durations use the canonical Go form ("1m0s", not "60s") so the
+				// server's round-trip matches the config and import verification.
+				Config: testReverseProxyServiceL4(rName, domain, peerID, "tcp", 15432, `
+    options = {
+      proxy_protocol  = true
+      request_timeout = "1m0s"
+    }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "mode", "tcp"),
+					resource.TestCheckResourceAttr(rNameFull, "listen_port", "15432"),
+					resource.TestCheckResourceAttr(rNameFull, "port_auto_assigned", "false"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.protocol", "tcp"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.proxy_protocol", "true"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.request_timeout", "1m0s"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if svc.Mode == nil || *svc.Mode != "tcp" {
+							return fmt.Errorf("expected mode tcp, got %v", svc.Mode)
+						}
+						if svc.ListenPort == nil || *svc.ListenPort != 15432 {
+							return fmt.Errorf("expected listen_port 15432, got %v", svc.ListenPort)
+						}
+						if len(svc.Targets) != 1 {
+							return fmt.Errorf("expected 1 target, got %d", len(svc.Targets))
+						}
+						opts := svc.Targets[0].Options
+						if opts == nil || opts.ProxyProtocol == nil || !*opts.ProxyProtocol {
+							return fmt.Errorf("expected proxy_protocol to be true")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func Test_ReverseProxyService_UDPMode(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testPeerID(t, "peer1")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(rName),
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceL4(rName, domain, peerID, "udp", 19053, `
+    options = {
+      session_idle_timeout = "2m0s"
+    }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "mode", "udp"),
+					resource.TestCheckResourceAttr(rNameFull, "listen_port", "19053"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.protocol", "udp"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.session_idle_timeout", "2m0s"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if svc.Mode == nil || *svc.Mode != "udp" {
+							return fmt.Errorf("expected mode udp, got %v", svc.Mode)
+						}
+						if len(svc.Targets) != 1 {
+							return fmt.Errorf("expected 1 target, got %d", len(svc.Targets))
+						}
+						opts := svc.Targets[0].Options
+						if opts == nil || opts.SessionIdleTimeout == nil || *opts.SessionIdleTimeout != "2m0s" {
+							return fmt.Errorf("expected session_idle_timeout 2m0s, got %v", opts)
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func testReverseProxyServiceDestroyed(name string) func(*terraform.State) error {
+	return func(s *terraform.State) error {
+		services, err := testClient().ReverseProxyServices.List(context.Background())
+		if err != nil {
+			return err
+		}
+		for _, svc := range services {
+			if svc.Name == name {
+				return fmt.Errorf("service %s still exists", name)
+			}
+		}
+		return nil
+	}
+}
+
+func testReverseProxyServiceL4(rName, domain, peerID, mode string, listenPort int, options string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name        = %q
+  domain      = %q
+  mode        = %q
+  listen_port = %d
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 5001
+    protocol    = %q
+%s
+  }]
+
+  auth = {}
+}`, rName, rName, domain, mode, listenPort, peerID, mode, options)
+}
+
 func testAccountSettingsPeerExpose(enabled bool, groupID string) string {
 	groups := "[]"
 	if groupID != "" {
