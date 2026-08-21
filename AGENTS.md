@@ -19,7 +19,6 @@ where a general Go or process rule is not repeated here, that file applies.
 
 ## Contents
 
-- [STOP and ask the user before](#stop-and-ask-the-user-before)
 - [Quick reference](#quick-reference)
 - [Structure](#structure)
 - [Adding a resource or data source](#adding-a-resource-or-data-source)
@@ -31,30 +30,6 @@ where a general Go or process rule is not repeated here, that file applies.
 - [Commits and pull requests](#commits-and-pull-requests)
 - [After you push: CI and review bots](#after-you-push-ci-and-review-bots)
 - [Support](#support)
-
-## STOP and ask the user before
-
-- **Adding, removing, or renaming a resource, data source, or attribute.** These
-  are public-schema changes that existing configurations depend on. Removing or
-  renaming an attribute is a breaking change; prefer `DeprecationMessage` over
-  removal. Agree the shape in an issue first.
-- **Changing observable plan or apply behavior** on an existing resource:
-  turning an attribute Required/Optional/Computed, adding or removing
-  `RequiresReplace`, changing a default, or altering how drift is reconciled.
-  Someone's state and plans depend on the current behavior.
-- **Bumping, adding, or removing the `github.com/netbirdio/netbird` dependency**
-  (or any dependency). The provider is generated against a specific Management
-  API; moving the pin can change the client surface and the server behavior the
-  acceptance suite runs against. Never point it at an unmerged branch or a fork
-  in a PR meant for `main`.
-- **Weakening a security posture**: making a sensitive attribute non-sensitive,
-  logging a secret, or relaxing a validator, even when it is the quickest way to
-  make a test pass.
-- **Hand-editing anything generated.** `docs/` is produced by `tfplugindocs`.
-  Change the schema `MarkdownDescription` and the `examples/`, then rerun
-  `make generate`. Never edit `docs/` by hand.
-- **Force-pushing a branch that is already under review**, amending pushed
-  commits, or force-pushing `main`. Add commits instead.
 
 ## Quick reference
 
@@ -258,7 +233,8 @@ Follow NetBird's Go conventions:
   split in the issue first and prefer GitHub stacked PRs (each opened against the
   branch below it) over hand-managed base branches.
 - **Push review fixes as separate commits**; the PR squashes on merge, so there
-  is no reason to rewrite history mid-review.
+  is no reason to rewrite history mid-review. Do not force-push a branch that is
+  already under review (it detaches existing review comments); add commits instead.
 - Avoid the usual LLM tells in commits, comments, and PR text: em dashes, hedging
   narration, and trailing summaries.
 
