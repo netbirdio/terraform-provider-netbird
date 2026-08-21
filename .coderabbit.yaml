@@ -10,8 +10,6 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    base_branches:
-      - "main"
   # Generated and lock files are outputs, not review targets.
   path_filters:
     - "!docs/**"
