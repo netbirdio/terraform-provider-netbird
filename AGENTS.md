@@ -1,0 +1,289 @@
+# NetBird Terraform Provider — Agent Guidelines
+
+This is the Terraform provider for [NetBird](https://netbird.io), built on the
+**Terraform Plugin Framework** (not the legacy SDK v2). It exposes NetBird's
+Management API as Terraform resources and data sources: groups, networks,
+policies, DNS, setup keys, users, tokens, posture checks, reverse-proxy
+services, and the Agent Network resources.
+
+The provider is a thin, typed shell over NetBird's own Go client. It talks to
+Management through `github.com/netbirdio/netbird/shared/management/client/rest`,
+using the generated API types in `.../shared/management/http/api`. Almost every
+change is either a schema attribute, the mapping between that schema and an API
+type, or a lifecycle rule (plan modifier / validator). Keep that framing in mind:
+the provider's job is a faithful, predictable mapping, not business logic.
+
+This file is the single source of truth for agent guidance in this repository.
+It shares conventions with [netbirdio/netbird's `AGENTS.md`](https://github.com/netbirdio/netbird/blob/main/AGENTS.md);
+where a general Go or process rule is not repeated here, that file applies.
+
+## Contents
+
+- [STOP and ask the user before](#stop-and-ask-the-user-before)
+- [Quick reference](#quick-reference)
+- [Structure](#structure)
+- [Adding a resource or data source](#adding-a-resource-or-data-source)
+- [Schema and mapping conventions](#schema-and-mapping-conventions)
+- [Sensitive attributes](#sensitive-attributes)
+- [Plan behavior: unknown vs null, replacement](#plan-behavior-unknown-vs-null-replacement)
+- [Testing](#testing)
+- [Error handling and comments](#error-handling-and-comments)
+- [Commits and pull requests](#commits-and-pull-requests)
+- [After you push: CI and review bots](#after-you-push-ci-and-review-bots)
+- [Support](#support)
+
+## STOP and ask the user before
+
+- **Adding, removing, or renaming a resource, data source, or attribute.** These
+  are public-schema changes that existing configurations depend on. Removing or
+  renaming an attribute is a breaking change; prefer `DeprecationMessage` over
+  removal. Agree the shape in an issue first.
+- **Changing observable plan or apply behavior** on an existing resource:
+  turning an attribute Required/Optional/Computed, adding or removing
+  `RequiresReplace`, changing a default, or altering how drift is reconciled.
+  Someone's state and plans depend on the current behavior.
+- **Bumping, adding, or removing the `github.com/netbirdio/netbird` dependency**
+  (or any dependency). The provider is generated against a specific Management
+  API; moving the pin can change the client surface and the server behavior the
+  acceptance suite runs against. Never point it at an unmerged branch or a fork
+  in a PR meant for `main`.
+- **Weakening a security posture**: making a sensitive attribute non-sensitive,
+  logging a secret, or relaxing a validator, even when it is the quickest way to
+  make a test pass.
+- **Hand-editing anything generated.** `docs/` is produced by `tfplugindocs`.
+  Change the schema `MarkdownDescription` and the `examples/`, then rerun
+  `make generate`. Never edit `docs/` by hand.
+- **Force-pushing a branch that is already under review**, amending pushed
+  commits, or force-pushing `main`. Add commits instead.
+
+## Quick reference
+
+```bash
+# Build / install
+make build                 # go build -v ./...
+make install               # go install into GOPATH/bin
+
+# Format, lint, docs (run before every push)
+make fmt                   # gofmt -s -w -e .
+make lint                  # golangci-lint run  AND  golangci-lint run --build-tags e2e
+make generate              # cd tools; tfplugindocs + terraform fmt ../examples (regenerates docs/)
+
+# Unit + integration tests — nothing but Go, no Docker, no Terraform CLI
+make test                  # go test -v -cover -timeout=120s -parallel=10 ./...
+
+# Acceptance tests — needs Docker (the harness starts a NetBird deployment)
+make testacc               # TF_ACC=1 go test -v -tags e2e -timeout 120m ./...
+
+# Narrow runs
+go test ./internal/provider/ -run Test_userAPIToTerraform
+TF_ACC=1 go test -tags e2e ./internal/provider/ -run Test_ReverseProxyService_PasswordAuth
+```
+
+Two switches gate the acceptance suite and **both** are required: `-tags e2e`
+compiles the harness and the `*_acc_test.go` files in, and `TF_ACC=1` is
+terraform-plugin-testing's own gate. Without the tag, `go test ./...` compiles
+and runs only the unit tests. CI lints both with and without the tag, so run
+`make lint` (which does both) before pushing.
+
+To look up client types and method signatures from the NetBird dependency, use
+`go doc` rather than grepping the module cache: get the module directory with
+`go list -m -f '{{.Dir}}' github.com/netbirdio/netbird`, then
+`go doc <dir>/shared/management/http/api <Type>`.
+
+## Structure
+
+```text
+terraform-provider-netbird/
+├── internal/provider/         all resources, data sources, and tests (flat)
+│   ├── provider.go            provider config; registers every resource + data source
+│   ├── <name>_resource.go     one resource: schema, model, mapping, CRUD
+│   ├── <name>_data_source.go  the matching data source
+│   ├── <name>_acc_test.go     that resource's acceptance tests (//go:build e2e)
+│   ├── e2e_harness_test.go    the shared deployment harness and test helpers
+│   ├── validation_acc_test.go, import_acc_test.go, drift_acc_test.go,
+│   ├── replacement_acc_test.go, lifecycle_*_acc_test.go, data_source_*_acc_test.go
+│   │                          cross-cutting suites that span many resources
+│   └── util.go                shared mapping/validation helpers (matchString, ...)
+├── examples/                  HCL examples; the source for generated docs
+├── docs/                      GENERATED by tfplugindocs — never hand-edit
+├── tools/                     go:generate entrypoint (tfplugindocs, terraform fmt)
+├── .github/workflows/         test.yml (build/lint/unit/generate-diff), e2e.yml, release.yml
+└── GNUmakefile
+```
+
+Provider configuration takes `management_url` and `token`, falling back to the
+`NB_MANAGEMENT_URL` and `NB_PAT` environment variables (config values win).
+
+## Adding a resource or data source
+
+When adding one, complete all of these:
+
+- Register the constructor in `internal/provider/provider.go` (`Resources()` or
+  `DataSources()`).
+- Add an example under `examples/{resources,data-sources}/netbird_<name>/`.
+- Add it to the resource list in `README.md`.
+- Run `make generate` to regenerate the `docs/` page from the schema and example.
+- Add acceptance tests in `<name>_acc_test.go`, including `CheckDestroy` and an
+  `ImportState` step (see [Testing](#testing)).
+- **Keep the resource and its same-named data source in sync.** They should
+  expose the same attributes and reuse the same `...APIToTerraform` mapping
+  helper. When you change one, check the other.
+
+## Schema and mapping conventions
+
+- **Mapping lives in the resource/data-source file, in two directions**, named
+  `<name>APIToTerraform` (API response → Terraform model) and
+  `<name>TerraformToAPI` (Terraform model → API request). Follow the existing
+  pattern for the resource you are near; do not invent a new mapping shape.
+- **Prefer a server-resolvable lookup over list-and-filter.** When the API can
+  fetch an object by a stable identifier, do that instead of listing everything
+  and matching client-side. Where a data source accepts a name as well as an ID,
+  reuse `matchString`/the shared helpers in `util.go` and reject an ambiguous
+  match rather than returning the first hit.
+- **Follow HashiCorp's naming best practices** for attributes and resources:
+  <https://developer.hashicorp.com/terraform/plugin/best-practices/naming>.
+- **Exported functions get a doc comment**, a full sentence starting with the
+  identifier name. Prefer unexported helpers; export only what a caller outside
+  the package needs.
+
+## Sensitive attributes
+
+This provider does **not** use the write-only (`_wo` / `_wo_version`) pattern.
+Its convention, and the thing to get right, is:
+
+- Mark any attribute whose value is a credential `Sensitive: true` on **both**
+  the resource and the same-named data source. Terraform then redacts it from
+  plan, CLI, and log output. `Sensitive` is display-only; it changes nothing
+  about persistence or diffing.
+- **If the Management API redacts the value on read** (returns it blank), the
+  read would otherwise clobber state, so:
+  1. preserve the prior state/plan value in `Read`/`Update` (see
+     `preserveAuthSecrets` in `reverse_proxy_service_resource.go`, and the
+     equivalents elsewhere), and
+  2. add the attribute to `ImportStateVerifyIgnore` in the import test step,
+     because an import cannot recover a value the API will not return.
+  Examples that follow this: `setup_key.key`, `token`, `identity_provider.client_secret`,
+  `agent_network_provider.api_key`, `scim.auth_token`, `reverse_proxy_service`
+  auth secrets.
+- **If the API returns the value in full** (does not redact it), mark it
+  `Sensitive` but do **not** add preserve logic or `ImportStateVerifyIgnore` —
+  it round-trips on its own, and an acceptance test should assert that it does.
+  `reverse_proxy_service` target `custom_headers` is the current example.
+- **Never log a secret**, and never put one in an error message.
+
+Before marking a field, confirm which of the two cases applies by checking
+whether the API blanks it on read; the treatment differs and getting it wrong
+produces either a perpetual diff or a failing import.
+
+## Plan behavior: unknown vs null, replacement
+
+- **Do not conflate unknown with null.** An unknown value is valid at plan time
+  and must not be rejected as if unset. An Optional+Computed attribute the user
+  did not configure is adopted from the server, so changing it out of band is a
+  legitimate no-op, not drift.
+- **Order plan modifiers deliberately.** When an attribute is both
+  `UseStateForUnknown()` and `RequiresReplace()`, the `UseStateForUnknown`
+  modifier must come first, or an unconfigured computed value plans as unknown
+  and forces a needless replacement. This provider has been bitten by exactly
+  that; look at how `setup_key` and `scim` order theirs.
+- **`RequiresReplace` is a promise** that changing the attribute destroys and
+  recreates the object. It is the highest-risk kind of change on this provider
+  because a needless replacement can invalidate a live secret (a setup key, a
+  token). Add or change it only with an agreed reason, and cover it with a
+  replacement test (see below).
+
+## Testing
+
+Unit tests (the mapping and validation functions) live beside the code as plain
+`_test.go` and run under `make test` with no deployment. Acceptance tests carry
+`//go:build e2e`, live in `*_acc_test.go`, and run a real NetBird deployment
+through the shared harness in `e2e_harness_test.go`.
+
+- **Every acceptance test PreChecks with `testE2E(t)` / `testEnsureManagementRunning(t)`**
+  and talks to the deployment through `testClient()`. Reuse the harness helpers
+  rather than standing up your own fixtures: `testPeerID`, `testRequireProxyCluster`,
+  `testRecordID`/`testIDChanged`, `testCheckGone`, `e2eGroupAllID`/`e2eGroupNotAllID`,
+  `e2eNetworkID`, `mustE2E`.
+- **A resource test must include `CheckDestroy`** that asserts the object is gone
+  from the server (list or get returns not-found), not merely dropped from state.
+- **Include an `ImportState` step** with `ImportStateVerify: true`, and use
+  `ImportStateVerifyIgnore` only for values the API cannot return (see
+  [Sensitive attributes](#sensitive-attributes)).
+- **Assert real behavior**, not just that state was written: fetch the object
+  back through `testClient()` and check the server actually holds the configured
+  value. Verify both the Terraform state and the API side.
+- **A missing fixture must fail, not skip.** A test that silently skips when its
+  precondition is absent reports success while testing nothing. The only
+  legitimate unconditional skip is a cloud-only integration with nothing to run
+  against on a self-hosted deployment (e.g. `scim`), and it should say so.
+- **Reproduce a bug with a failing test before fixing it**, and watch it fail for
+  the reason you expect.
+- **Geolocation stays enabled** in the harness so posture-check location rules
+  are actually evaluated. The escape hatch is `NB_E2E_DISABLE_GEOLOCATION=1`; do
+  not disable it to make a run pass.
+- The cross-cutting suites (`validation_acc_test.go`, `import_acc_test.go`,
+  `drift_acc_test.go`, `replacement_acc_test.go`, `lifecycle_*`, `data_source_*`)
+  encode invariants across many resources. When you add a resource, add its
+  cases to the ones that apply rather than only writing a single happy-path test.
+
+## Error handling and comments
+
+Follow NetBird's Go conventions:
+
+- Wrap errors with short context and **do not** prefix messages with "failed to"
+  or "error" (`fmt.Errorf("list setup keys: %w", err)`, not
+  `"failed to list setup keys"`). "failed" is fine in log messages.
+- Use early returns and guard clauses; handle the error case first.
+- Comment the **why**, not the **what**. Do not narrate the diff or reference the
+  current task/PR in a comment. Around 90 characters per line, and if a comment
+  needs more than a few lines the code usually wants a named helper or constant
+  instead. Explanatory comments in tests are welcome and exempt from the budget.
+- Run `gofmt` on every modified file and fix every `golangci-lint` warning on
+  code you touch, with and without `-tags e2e`.
+
+## Commits and pull requests
+
+- **Subjects (and PR titles) use `[scope] Subject`.** Scope is the area changed:
+  `[provider]`, `[tests]`, `[deps]`, `[ci]`, or a comma-separated pair like
+  `[tests,ci]`. Keep the subject short and imperative. Recent history is the
+  reference (`[provider] Fix the delete, update and replacement paths ...`).
+- **Body: why before what.** Lead with the problem and the reason for the
+  approach; the reviewer reads the diff for the rest. No file-by-file walkthrough,
+  no trailing summary, no restating the diff in prose.
+- **No `Co-Authored-By` or tool-attribution trailers** in commits or PR
+  descriptions. The person opening the PR is its author and is accountable for
+  every line, whatever tooling produced the diff.
+- **One PR, one purpose**, and keep it small — split refactors out of fixes and
+  fixes out of features. For a change that genuinely cannot be small, agree the
+  split in the issue first and prefer GitHub stacked PRs (each opened against the
+  branch below it) over hand-managed base branches.
+- **Push review fixes as separate commits**; the PR squashes on merge, so there
+  is no reason to rewrite history mid-review.
+- Avoid the usual LLM tells in commits, comments, and PR text: em dashes, hedging
+  narration, and trailing summaries.
+
+## After you push: CI and review bots
+
+Opening the PR is not the end of the task. Watch the run and drive it to green;
+never describe a red or still-running PR as passing, and if you ran out of turn
+before CI finished, say which checks were pending.
+
+The workflows are `test.yml` (build, `make generate` diff check, lint, and the
+unit/integration tests) and `e2e.yml` (the acceptance suite against NetBird's own
+e2e harness). `make generate` producing a diff is a red build, so regenerate docs
+and commit them whenever a schema description or example changes.
+
+**CodeRabbit** auto-reviews every non-draft PR and you can reach it with
+`@coderabbitai` in a comment. Read every finding and either act on it or reply
+with why it does not apply; do not bulk-resolve to clear the count. Bots are
+frequently wrong on this codebase's plan-modifier and mapping subtleties, so
+verify a claim against the code before changing anything, and never edit correct
+code just to silence a bot. Security findings get the opposite default: assume
+real until disproved, and surface them to the user. Never change a workflow,
+threshold, or lint exclusion to make a check pass.
+
+## Support
+
+- NetBird docs: <https://docs.netbird.io>
+- Internal standards: [netbirdio/netbird `AGENTS.md`](https://github.com/netbirdio/netbird/blob/main/AGENTS.md)
+- Terraform Plugin Framework: <https://developer.hashicorp.com/terraform/plugin/framework>
