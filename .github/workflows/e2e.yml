@@ -68,7 +68,7 @@ jobs:
       # The harness builds its images with `docker buildx --load`, and exporting a
       # local layer cache needs the container driver rather than the default
       # docker one.
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver: docker-container
       # The netbird source is the build context, so the cache is only valid for
