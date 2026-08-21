@@ -138,7 +138,7 @@ Read-Only:
 
 Read-Only:
 
-- `custom_headers` (Map of String) Extra headers sent to the backend (HTTP only)
+- `custom_headers` (Map of String, Sensitive) Extra headers sent to the backend (HTTP only). Marked sensitive since values commonly carry credentials, e.g. an `Authorization` header.
 - `path_rewrite` (String) Controls how the request path is rewritten before forwarding (HTTP only)
 - `proxy_protocol` (Boolean) Send PROXY Protocol v2 header to this backend (TCP/TLS only)
 - `request_timeout` (String) Per-target response timeout as a Go duration string

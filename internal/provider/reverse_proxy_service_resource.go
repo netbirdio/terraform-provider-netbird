@@ -347,9 +347,10 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 									Validators:          []validator.String{stringvalidator.OneOf("preserve")},
 								},
 								"custom_headers": schema.MapAttribute{
-									MarkdownDescription: "Extra headers sent to the backend (HTTP only)",
+									MarkdownDescription: "Extra headers sent to the backend (HTTP only). Marked sensitive since values commonly carry credentials, e.g. an `Authorization` header.",
 									Optional:            true,
 									ElementType:         types.StringType,
+									Sensitive:           true,
 								},
 								"proxy_protocol": schema.BoolAttribute{
 									MarkdownDescription: "Send PROXY Protocol v2 header to this backend (TCP/TLS only)",
