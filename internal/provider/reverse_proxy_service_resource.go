@@ -213,6 +213,7 @@ type ReverseProxyAccessRestrictionsModel struct {
 	AllowedCountries types.List   `tfsdk:"allowed_countries"`
 	BlockedCountries types.List   `tfsdk:"blocked_countries"`
 	AllowMatch       types.String `tfsdk:"allow_match"`
+	AppsecMode       types.String `tfsdk:"appsec_mode"`
 }
 
 // TFType returns the Terraform object type for access restrictions.
@@ -224,6 +225,7 @@ func (m ReverseProxyAccessRestrictionsModel) TFType() types.ObjectType {
 			"allowed_countries": types.ListType{ElemType: types.StringType},
 			"blocked_countries": types.ListType{ElemType: types.StringType},
 			"allow_match":       types.StringType,
+			"appsec_mode":       types.StringType,
 		},
 	}
 }
@@ -470,6 +472,11 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 						MarkdownDescription: "How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.",
 						Optional:            true,
 						Validators:          []validator.String{stringvalidator.OneOf("all", "any")},
+					},
+					"appsec_mode": schema.StringAttribute{
+						MarkdownDescription: "CrowdSec AppSec (WAF) request inspection mode: `off` (default), `enforce` to block requests the WAF flags, or `observe` to record verdicts in the access log without blocking. HTTP services only, and requires the proxy cluster to have a CrowdSec AppSec endpoint configured.",
+						Optional:            true,
+						Validators:          []validator.String{stringvalidator.OneOf("off", "enforce", "observe")},
 					},
 				},
 			},
@@ -747,6 +754,11 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 			arModel.AllowMatch = types.StringValue(string(*svc.AccessRestrictions.AllowMatch))
 		} else {
 			arModel.AllowMatch = types.StringNull()
+		}
+		if svc.AccessRestrictions.AppsecMode != nil {
+			arModel.AppsecMode = types.StringValue(string(*svc.AccessRestrictions.AppsecMode))
+		} else {
+			arModel.AppsecMode = types.StringNull()
 		}
 		data.AccessRestrictions, d = types.ObjectValueFrom(ctx, ReverseProxyAccessRestrictionsModel{}.TFType().AttrTypes, arModel)
 		ret.Append(d...)
@@ -1028,6 +1040,11 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 		if v, ok := arAttrs["allow_match"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
 			m := api.AccessRestrictionsAllowMatch(v.ValueString())
 			ar.AllowMatch = &m
+			hasAR = true
+		}
+		if v, ok := arAttrs["appsec_mode"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+			m := api.AccessRestrictionsAppsecMode(v.ValueString())
+			ar.AppsecMode = &m
 			hasAR = true
 		}
 		if hasAR {

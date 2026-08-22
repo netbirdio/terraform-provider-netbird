@@ -261,6 +261,10 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 						MarkdownDescription: "How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.",
 						Computed:            true,
 					},
+					"appsec_mode": schema.StringAttribute{
+						MarkdownDescription: "CrowdSec AppSec (WAF) request inspection mode: `off`, `enforce`, or `observe`. HTTP services only.",
+						Computed:            true,
+					},
 				},
 			},
 		},

@@ -1323,6 +1323,8 @@ func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
 		AccessRestrictions: &api.AccessRestrictions{
 			AllowedCountries: &[]string{"US", "DE"},
 			BlockedCidrs:     &[]string{"192.168.0.0/16", "10.0.0.0/8"},
+			AllowMatch:       valPtr(api.AccessRestrictionsAllowMatchAny),
+			AppsecMode:       valPtr(api.AccessRestrictionsAppsecModeEnforce),
 		},
 	}
 
@@ -1359,6 +1361,12 @@ func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
 	}
 	if req.AccessRestrictions.BlockedCountries != nil {
 		t.Error("BlockedCountries should be nil when not set")
+	}
+	if req.AccessRestrictions.AllowMatch == nil || *req.AccessRestrictions.AllowMatch != api.AccessRestrictionsAllowMatchAny {
+		t.Errorf("AllowMatch mismatch: got %v", req.AccessRestrictions.AllowMatch)
+	}
+	if req.AccessRestrictions.AppsecMode == nil || *req.AccessRestrictions.AppsecMode != api.AccessRestrictionsAppsecModeEnforce {
+		t.Errorf("AppsecMode mismatch: got %v", req.AccessRestrictions.AppsecMode)
 	}
 }
 
@@ -1397,4 +1405,47 @@ func mustObjectValue(ctx context.Context, attrTypes map[string]attr.Type, val an
 		panic("failed to create object value in test helper")
 	}
 	return obj
+}
+
+// appsec_mode alone must keep the access_restrictions object alive: unlike
+// allow_match it is meaningful without any CIDR or country entry.
+func Test_reverseProxyServiceRoundtrip_appsecModeOnly(t *testing.T) {
+	ctx := context.Background()
+
+	appsecMode := api.AccessRestrictionsAppsecModeObserve
+	original := &api.Service{
+		Id:      "svc-appsec-only",
+		Name:    "appsec-only-service",
+		Domain:  "appsec.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       8080,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+				Host:       valPtr("10.0.0.1"),
+			},
+		},
+		AccessRestrictions: &api.AccessRestrictions{AppsecMode: &appsecMode},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+
+	if req.AccessRestrictions == nil {
+		t.Fatal("appsec_mode alone must not collapse access_restrictions to nil")
+	}
+	if req.AccessRestrictions.AppsecMode == nil || *req.AccessRestrictions.AppsecMode != appsecMode {
+		t.Errorf("AppsecMode mismatch: got %v", req.AccessRestrictions.AppsecMode)
+	}
 }

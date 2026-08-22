@@ -103,6 +103,11 @@ resource "netbird_reverse_proxy_service" "api_gateway" {
     # "any": allow a client matching an allowed country OR an allowed CIDR.
     # "all" (default) requires matching every configured allowlist.
     allow_match = "any"
+    # CrowdSec AppSec (WAF) inspection. "observe" records verdicts in the
+    # access log without blocking, which is the safe way to evaluate the
+    # rules before switching to "enforce". Requires the proxy cluster to
+    # have an AppSec endpoint configured.
+    appsec_mode = "observe"
   }
 }
 
