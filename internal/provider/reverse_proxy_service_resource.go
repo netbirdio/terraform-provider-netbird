@@ -208,10 +208,11 @@ func (m ReverseProxyHeaderAuthModel) TFType() types.ObjectType {
 
 // ReverseProxyAccessRestrictionsModel describes access restrictions.
 type ReverseProxyAccessRestrictionsModel struct {
-	AllowedCidrs     types.List `tfsdk:"allowed_cidrs"`
-	BlockedCidrs     types.List `tfsdk:"blocked_cidrs"`
-	AllowedCountries types.List `tfsdk:"allowed_countries"`
-	BlockedCountries types.List `tfsdk:"blocked_countries"`
+	AllowedCidrs     types.List   `tfsdk:"allowed_cidrs"`
+	BlockedCidrs     types.List   `tfsdk:"blocked_cidrs"`
+	AllowedCountries types.List   `tfsdk:"allowed_countries"`
+	BlockedCountries types.List   `tfsdk:"blocked_countries"`
+	AllowMatch       types.String `tfsdk:"allow_match"`
 }
 
 // TFType returns the Terraform object type for access restrictions.
@@ -222,6 +223,7 @@ func (m ReverseProxyAccessRestrictionsModel) TFType() types.ObjectType {
 			"blocked_cidrs":     types.ListType{ElemType: types.StringType},
 			"allowed_countries": types.ListType{ElemType: types.StringType},
 			"blocked_countries": types.ListType{ElemType: types.StringType},
+			"allow_match":       types.StringType,
 		},
 	}
 }
@@ -463,6 +465,11 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 						MarkdownDescription: "ISO 3166-1 alpha-2 country codes to block",
 						Optional:            true,
 						ElementType:         types.StringType,
+					},
+					"allow_match": schema.StringAttribute{
+						MarkdownDescription: "How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.",
+						Optional:            true,
+						Validators:          []validator.String{stringvalidator.OneOf("all", "any")},
 					},
 				},
 			},
@@ -735,6 +742,11 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 			ret.Append(d...)
 		} else {
 			arModel.BlockedCountries = types.ListNull(types.StringType)
+		}
+		if svc.AccessRestrictions.AllowMatch != nil {
+			arModel.AllowMatch = types.StringValue(string(*svc.AccessRestrictions.AllowMatch))
+		} else {
+			arModel.AllowMatch = types.StringNull()
 		}
 		data.AccessRestrictions, d = types.ObjectValueFrom(ctx, ReverseProxyAccessRestrictionsModel{}.TFType().AttrTypes, arModel)
 		ret.Append(d...)
@@ -1011,6 +1023,11 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			var countries []string
 			ret.Append(v.ElementsAs(ctx, &countries, false)...)
 			ar.BlockedCountries = &countries
+			hasAR = true
+		}
+		if v, ok := arAttrs["allow_match"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+			m := api.AccessRestrictionsAllowMatch(v.ValueString())
+			ar.AllowMatch = &m
 			hasAR = true
 		}
 		if hasAR {

@@ -56,6 +56,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 Read-Only:
 
+- `allow_match` (String) How the allowlists (allowed_cidrs, allowed_countries) combine: `all` (default) requires matching every configured allowlist (AND); `any` requires matching at least one (OR). Blocklists always reject on match regardless of this setting.
 - `allowed_cidrs` (List of String) CIDR allowlist
 - `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
 - `blocked_cidrs` (List of String) CIDR blocklist

@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_ReverseProxyClusters_DataSource(t *testing.T) {
@@ -846,6 +847,7 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.1", "DE"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.0", "192.168.0.0/16"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allow_match", "any"),
 					func(s *terraform.State) error {
 						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
@@ -860,6 +862,9 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 						}
 						if svc.AccessRestrictions.BlockedCidrs == nil || len(*svc.AccessRestrictions.BlockedCidrs) != 1 {
 							return fmt.Errorf("expected 1 blocked CIDR")
+						}
+						if svc.AccessRestrictions.AllowMatch == nil || *svc.AccessRestrictions.AllowMatch != api.AccessRestrictionsAllowMatchAny {
+							return fmt.Errorf("expected allow_match any")
 						}
 						return nil
 					},
@@ -921,6 +926,7 @@ resource "netbird_reverse_proxy_service" "%s" {
   access_restrictions = {
     allowed_countries = ["US", "DE"]
     blocked_cidrs     = ["192.168.0.0/16"]
+    allow_match       = "any"
   }
 }`, rName, rName, domain, peerID)
 }
