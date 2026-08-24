@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -382,32 +383,78 @@ func Test_SetupKey_Reusable_UnlimitedWithGroups(t *testing.T) {
 
 // Test_SetupKey_Reusable_AddGroupAfterCreate covers attaching a second group to
 // an already-created reusable key — the routing-peers key gets the it-ops-team
-// group added after the fact. The assertion that matters is updatesInPlace: the
-// plaintext key a reusable setup key hands out is what every peer registers
-// with, so adding a group must not replace the key and mint a new secret. Three
-// things are checked together: the plan is an in-place update rather than a
-// replacement, the ID is the same object across the change, and the plaintext
-// key value itself is byte-for-byte unchanged — the last being the one the
-// customer's peers actually depend on.
+// group added after the fact.
+//
+// The worry this answers is not "does the apply fail" — it does not — but "does
+// the key the peers already registered with survive the change". That question
+// cannot be answered from Terraform state: the provider carries the key forward
+// from prior state with UseStateForUnknown and never re-reads it, so a state
+// assertion that the key is unchanged would pass even if the server had rotated
+// the real secret underneath it. It would confirm the provider agreeing with
+// itself, which is no confirmation at all.
+//
+// So the key checks read the management API instead. On a GET the server returns
+// the key masked — the first five characters of the real secret followed by
+// asterisks (types.HiddenKey) — which is derived from the live secret and so
+// changes if and only if the server rotates it. The test captures that masked
+// value from the server before the group is added and requires it identical
+// after, and separately requires the key still valid and not revoked. The masked
+// prefix is also matched against the plaintext held in state, which ties the
+// secret the provider would hand a peer to the one the server still honours.
 func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
 	groupA, groupB := "netbird_group."+rName+"a", "netbird_group."+rName+"b"
-	var createdID, createdKey string
+	var createdID, plaintextKey, serverMaskedBefore string
 	sameID := func() resource.TestCheckFunc {
 		return resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID)
 	}
-	// sameSecret is the assertion that speaks to what the change actually
-	// threatens: the plaintext key is what every peer registers with, and it is
-	// handed out once, at creation. A stable ID already rules out a replacement,
-	// but the key is preserved by a second, independent mechanism — Update never
-	// re-maps it and the update response carries no key, so it survives only
-	// because it is held from prior state. Pinning the value here guards that
-	// invariant directly: were Update ever changed to read the key back from the
-	// API, it would blank out, and no ID or plan check would notice.
-	sameSecret := func() resource.TestCheckFunc {
-		return resource.TestCheckResourceAttrPtr(rNameFull, "key", &createdKey)
+	// recordServerKey asks the management server for the key and stores the masked
+	// secret it returns. Read from the API, not from state, so the value it
+	// captures is the server's, not the provider's copy of it.
+	recordServerKey := func(into *string) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
+			if err != nil {
+				return err
+			}
+			if sk.Key == "" {
+				return fmt.Errorf("management returned an empty key for %s", createdID)
+			}
+			*into = sk.Key
+			return nil
+		}
+	}
+	// secretUntouchedOnServer is the assertion the customer's fear reduces to: the
+	// key on the management server is the same secret after the group is added as
+	// before it, and is still usable. Comparing the masked value the server
+	// returns catches a rotation the provider's cached plaintext would hide, and
+	// the prefix match ties that server key to the plaintext a peer would actually
+	// present.
+	secretUntouchedOnServer := func() resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
+			if err != nil {
+				return err
+			}
+			if sk.Key != serverMaskedBefore {
+				return fmt.Errorf("management rotated the key across the group add: was %q, now %q", serverMaskedBefore, sk.Key)
+			}
+			if !sk.Valid || sk.Revoked || sk.State != "valid" {
+				return fmt.Errorf("key is no longer usable after the group add: valid=%v revoked=%v state=%q", sk.Valid, sk.Revoked, sk.State)
+			}
+			if len(sk.AutoGroups) != 2 {
+				return fmt.Errorf("management has %d auto groups %v, expected 2", len(sk.AutoGroups), sk.AutoGroups)
+			}
+			// The masked form is the plaintext's first five characters plus
+			// asterisks, so the plaintext a peer holds must share that prefix with
+			// the key the server still recognises.
+			if len(plaintextKey) < 5 || !strings.HasPrefix(sk.Key, plaintextKey[:5]) {
+				return fmt.Errorf("server key %q does not correspond to the plaintext the provider holds (%q...)", sk.Key, safePrefix(plaintextKey))
+			}
+			return nil
+		}
 	}
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -419,7 +466,10 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 				Config: testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id]", groupA)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testRecordID(rNameFull, &createdID),
-					testRecordAttr(rNameFull, "key", &createdKey),
+					// The plaintext, handed out once at creation, is what the peers
+					// register with; captured here to tie to the server key later.
+					testRecordAttr(rNameFull, "key", &plaintextKey),
+					recordServerKey(&serverMaskedBefore),
 					resource.TestCheckResourceAttr(rNameFull, "type", "reusable"),
 					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
@@ -428,28 +478,27 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 			},
 			{
 				// The it-ops-team group is added after creation: an in-place
-				// update, not a replacement, and the key the peers hold is
-				// untouched.
+				// update, not a replacement, and — confirmed against the server —
+				// the key the peers hold is untouched.
 				Config:           testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameID(),
-					sameSecret(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
-					func(s *terraform.State) error {
-						sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
-						if err != nil {
-							return err
-						}
-						if len(sk.AutoGroups) != 2 {
-							return fmt.Errorf("management has %d auto groups %v, expected 2", len(sk.AutoGroups), sk.AutoGroups)
-						}
-						return nil
-					},
+					secretUntouchedOnServer(),
 				),
 			},
 		},
 	})
+}
+
+// safePrefix returns the first few characters of a secret for an error message,
+// never the whole thing.
+func safePrefix(s string) string {
+	if len(s) < 5 {
+		return s
+	}
+	return s[:5]
 }
 
 // testSetupKeyReusableWithGroups builds a reusable, never-expiring, unlimited
