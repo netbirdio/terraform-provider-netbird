@@ -384,17 +384,30 @@ func Test_SetupKey_Reusable_UnlimitedWithGroups(t *testing.T) {
 // an already-created reusable key — the routing-peers key gets the it-ops-team
 // group added after the fact. The assertion that matters is updatesInPlace: the
 // plaintext key a reusable setup key hands out is what every peer registers
-// with, so adding a group must not replace the key and mint a new secret. The ID
-// is checked as unchanged for the same reason, since a plan can read right and
-// the apply still swap the object underneath it.
+// with, so adding a group must not replace the key and mint a new secret. Three
+// things are checked together: the plan is an in-place update rather than a
+// replacement, the ID is the same object across the change, and the plaintext
+// key value itself is byte-for-byte unchanged — the last being the one the
+// customer's peers actually depend on.
 func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	rNameFull := "netbird_setup_key." + rName
 	groupA, groupB := "netbird_group."+rName+"a", "netbird_group."+rName+"b"
-	var createdID string
-	sameKey := func() resource.TestCheckFunc {
+	var createdID, createdKey string
+	sameID := func() resource.TestCheckFunc {
 		return resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID)
+	}
+	// sameSecret is the assertion that speaks to what the change actually
+	// threatens: the plaintext key is what every peer registers with, and it is
+	// handed out once, at creation. A stable ID already rules out a replacement,
+	// but the key is preserved by a second, independent mechanism — Update never
+	// re-maps it and the update response carries no key, so it survives only
+	// because it is held from prior state. Pinning the value here guards that
+	// invariant directly: were Update ever changed to read the key back from the
+	// API, it would blank out, and no ID or plan check would notice.
+	sameSecret := func() resource.TestCheckFunc {
+		return resource.TestCheckResourceAttrPtr(rNameFull, "key", &createdKey)
 	}
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -406,6 +419,7 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 				Config: testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id]", groupA)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testRecordID(rNameFull, &createdID),
+					testRecordAttr(rNameFull, "key", &createdKey),
 					resource.TestCheckResourceAttr(rNameFull, "type", "reusable"),
 					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
@@ -414,11 +428,13 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 			},
 			{
 				// The it-ops-team group is added after creation: an in-place
-				// update, not a replacement.
+				// update, not a replacement, and the key the peers hold is
+				// untouched.
 				Config:           testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					sameKey(),
+					sameID(),
+					sameSecret(),
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
 					func(s *terraform.State) error {
 						sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
