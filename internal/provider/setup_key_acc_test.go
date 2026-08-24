@@ -385,22 +385,23 @@ func Test_SetupKey_Reusable_UnlimitedWithGroups(t *testing.T) {
 // an already-created reusable key — the routing-peers key gets the it-ops-team
 // group added after the fact.
 //
-// The worry this answers is not "does the apply fail" — it does not — but "does
-// the key the peers already registered with survive the change". That question
-// cannot be answered from Terraform state: the provider carries the key forward
-// from prior state with UseStateForUnknown and never re-reads it, so a state
-// assertion that the key is unchanged would pass even if the server had rotated
-// the real secret underneath it. It would confirm the provider agreeing with
-// itself, which is no confirmation at all.
+// The change is about the auto_groups list, so that list is what the test pins,
+// on the management server rather than only in Terraform state: after the add
+// the server must carry exactly the routing-peers group it started with plus the
+// it-ops-team group, no more and no fewer. A count would not catch the group
+// having been silently swapped rather than appended, so membership is matched as
+// a set. The add must also be an in-place update, not a replacement.
 //
-// So the key checks read the management API instead. On a GET the server returns
-// the key masked — the first five characters of the real secret followed by
-// asterisks (types.HiddenKey) — which is derived from the live secret and so
-// changes if and only if the server rotates it. The test captures that masked
-// value from the server before the group is added and requires it identical
-// after, and separately requires the key still valid and not revoked. The masked
-// prefix is also matched against the plaintext held in state, which ties the
-// secret the provider would hand a peer to the one the server still honours.
+// The key is checked alongside, because a replacement would mint a new secret
+// and strand every peer already holding the old one. That check also reads the
+// API, not state: the provider carries the key forward with UseStateForUnknown
+// and never re-reads it, so a state comparison would pass even if the server had
+// rotated the secret. On a GET the server returns the key masked — the first
+// five characters of the real secret plus asterisks (types.HiddenKey) — derived
+// from the live secret, so it changes if and only if the server rotates it. The
+// masked value is captured before the add and required identical after, the key
+// required still valid and not revoked, and its prefix matched against the
+// plaintext in state to tie the two together.
 func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 	testE2E(t)
 	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
@@ -444,14 +445,72 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 			if !sk.Valid || sk.Revoked || sk.State != "valid" {
 				return fmt.Errorf("key is no longer usable after the group add: valid=%v revoked=%v state=%q", sk.Valid, sk.Revoked, sk.State)
 			}
-			if len(sk.AutoGroups) != 2 {
-				return fmt.Errorf("management has %d auto groups %v, expected 2", len(sk.AutoGroups), sk.AutoGroups)
-			}
 			// The masked form is the plaintext's first five characters plus
 			// asterisks, so the plaintext a peer holds must share that prefix with
 			// the key the server still recognises.
 			if len(plaintextKey) < 5 || !strings.HasPrefix(sk.Key, plaintextKey[:5]) {
 				return fmt.Errorf("server key %q does not correspond to the plaintext the provider holds (%q...)", sk.Key, safePrefix(plaintextKey))
+			}
+			return nil
+		}
+	}
+	// autoGroupsOnServerAre is the assertion the change is actually about: after
+	// the group is added, the setup key on the management server carries exactly
+	// the groups named — the one it started with still attached and the new one
+	// added, no more and no fewer. A count alone would let a key that had dropped
+	// the original group and kept some other one pass; the IDs are read out of
+	// state (the groups are created by the same config, so their IDs are not known
+	// until applied) and matched as a set against what the server returns.
+	autoGroupsOnServerAre := func(addresses ...string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			want := make([]string, 0, len(addresses))
+			for _, a := range addresses {
+				rs, ok := s.RootModule().Resources[a]
+				if !ok {
+					return fmt.Errorf("%s is not in state", a)
+				}
+				want = append(want, rs.Primary.Attributes["id"])
+			}
+			sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
+			if err != nil {
+				return err
+			}
+			if len(sk.AutoGroups) != len(want) {
+				return fmt.Errorf("management has %d auto groups %v, expected %d %v", len(sk.AutoGroups), sk.AutoGroups, len(want), want)
+			}
+			for _, id := range want {
+				if !slices.Contains(sk.AutoGroups, id) {
+					return fmt.Errorf("group %s missing from the server's auto groups %v after the add", id, sk.AutoGroups)
+				}
+			}
+			return nil
+		}
+	}
+	// autoGroupsInStateAre is the same set check against Terraform state, so a
+	// provider that read the server correctly but wrote the wrong IDs back into
+	// state would still be caught. auto_groups is an ordered list whose order is
+	// the server's, so the elements are collected and compared as a set rather
+	// than assumed to sit at a particular index.
+	autoGroupsInStateAre := func(addresses ...string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			rs, ok := s.RootModule().Resources[rNameFull]
+			if !ok {
+				return fmt.Errorf("%s is not in state", rNameFull)
+			}
+			got := map[string]bool{}
+			for k, v := range rs.Primary.Attributes {
+				if strings.HasPrefix(k, "auto_groups.") && k != "auto_groups.#" {
+					got[v] = true
+				}
+			}
+			for _, a := range addresses {
+				grs, ok := s.RootModule().Resources[a]
+				if !ok {
+					return fmt.Errorf("%s is not in state", a)
+				}
+				if id := grs.Primary.Attributes["id"]; !got[id] {
+					return fmt.Errorf("group %s (%s) missing from auto_groups in state %v", a, id, got)
+				}
 			}
 			return nil
 		}
@@ -477,14 +536,20 @@ func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
 				),
 			},
 			{
-				// The it-ops-team group is added after creation: an in-place
-				// update, not a replacement, and — confirmed against the server —
-				// the key the peers hold is untouched.
+				// The it-ops-team group is added after creation, keeping the
+				// routing-peers group it was created with: an in-place update, not a
+				// replacement. The list membership is asserted on the server, and
+				// the key is confirmed untouched alongside it.
 				Config:           testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
 				ConfigPlanChecks: updatesInPlace(rNameFull),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					sameID(),
+					// State carries both groups (order is the API's, so membership
+					// is matched as a set rather than by index)...
 					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
+					autoGroupsInStateAre(groupA, groupB),
+					// ...and so does the setup key on the management server.
+					autoGroupsOnServerAre(groupA, groupB),
 					secretUntouchedOnServer(),
 				),
 			},
