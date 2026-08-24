@@ -22,6 +22,10 @@ on:
   push:
     branches:
       - main
+      # Temporary: run the acceptance suite on this branch's pushes, which have a
+      # Docker daemon this development environment lacks, to exercise the new
+      # reusable-setup-key cases before opening a pull request. Remove before merge.
+      - test/setup-key-reusable-auto-groups
     paths-ignore:
       - 'README.md'
   # For running the full matrix on a branch before merging it.

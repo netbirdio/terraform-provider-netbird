@@ -315,6 +315,156 @@ func Test_SetupKey_Update_Revoke(t *testing.T) {
 	})
 }
 
+// Test_SetupKey_Reusable_UnlimitedWithGroups covers a real configuration: a
+// reusable key with no lifetime (expiry_seconds = 0), no usage cap
+// (usage_limit = 0), and two auto groups attached from the start — the exact
+// shape a routing-peer setup key takes. It is the reusable counterpart to the
+// one-off cases above, which every existing group test uses.
+//
+// The two zeros are the point. usage_limit = 0 means unlimited and is only
+// legal on a reusable key: the one-off validator would reject it. expiry_seconds
+// = 0 means the key never expires, and because the API never reports the
+// lifetime a key was created with, it is one of the two attributes an import
+// cannot verify. Both are asserted against what the server actually stored.
+func Test_SetupKey_Reusable_UnlimitedWithGroups(t *testing.T) {
+	testE2E(t)
+	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_setup_key." + rName
+	groupA, groupB := "netbird_group."+rName+"a", "netbird_group."+rName+"b"
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttrSet(rNameFull, "key"),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "type", "reusable"),
+					resource.TestCheckResourceAttr(rNameFull, "expiry_seconds", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "ephemeral", "false"),
+					resource.TestCheckResourceAttr(rNameFull, "allow_extra_dns_labels", "false"),
+					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
+					func(s *terraform.State) error {
+						pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						sk, err := testClient().SetupKeys.Get(context.Background(), pID)
+						if err != nil {
+							return err
+						}
+						return matchPairs(map[string][]any{
+							"name":                   {rName, sk.Name},
+							"type":                   {"reusable", sk.Type},
+							"allow_extra_dns_labels": {false, sk.AllowExtraDnsLabels},
+							"auto_groups.#":          {int(2), len(sk.AutoGroups)},
+							"ephemeral":              {false, sk.Ephemeral},
+							"revoked":                {false, sk.Revoked},
+							// 0 is the server's "unlimited", stored as given
+							// rather than pinned the way a one-off key is.
+							"usage_limit": {int(0), sk.UsageLimit},
+						})
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"key", "expiry_seconds"},
+			},
+		},
+	})
+}
+
+// Test_SetupKey_Reusable_AddGroupAfterCreate covers attaching a second group to
+// an already-created reusable key — the routing-peers key gets the it-ops-team
+// group added after the fact. The assertion that matters is updatesInPlace: the
+// plaintext key a reusable setup key hands out is what every peer registers
+// with, so adding a group must not replace the key and mint a new secret. The ID
+// is checked as unchanged for the same reason, since a plan can read right and
+// the apply still swap the object underneath it.
+func Test_SetupKey_Reusable_AddGroupAfterCreate(t *testing.T) {
+	testE2E(t)
+	rName := "sk" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_setup_key." + rName
+	groupA, groupB := "netbird_group."+rName+"a", "netbird_group."+rName+"b"
+	var createdID string
+	sameKey := func() resource.TestCheckFunc {
+		return resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID)
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().SetupKeys.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				// Created with only the routing-peers group attached.
+				Config: testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id]", groupA)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "type", "reusable"),
+					resource.TestCheckResourceAttr(rNameFull, "usage_limit", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "auto_groups.0", groupA, "id"),
+				),
+			},
+			{
+				// The it-ops-team group is added after creation: an in-place
+				// update, not a replacement.
+				Config:           testSetupKeyReusableWithGroups(rName, fmt.Sprintf("[%s.id, %s.id]", groupA, groupB)),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					sameKey(),
+					resource.TestCheckResourceAttr(rNameFull, "auto_groups.#", "2"),
+					func(s *terraform.State) error {
+						sk, err := testClient().SetupKeys.Get(context.Background(), createdID)
+						if err != nil {
+							return err
+						}
+						if len(sk.AutoGroups) != 2 {
+							return fmt.Errorf("management has %d auto groups %v, expected 2", len(sk.AutoGroups), sk.AutoGroups)
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// testSetupKeyReusableWithGroups builds a reusable, never-expiring, unlimited
+// setup key alongside the two groups it attaches. The groups are declared here
+// rather than taken from the fixtures because the account's "All" group cannot
+// be attached to a setup key, leaving too few fixture groups to exercise a
+// two-group configuration. expiry_seconds and usage_limit are pinned to 0 — the
+// reusable-key shape this file did not otherwise cover.
+func testSetupKeyReusableWithGroups(rName, groups string) string {
+	return fmt.Sprintf(`resource "netbird_group" "%[1]sa" {
+  name  = "%[1]sa"
+  peers = []
+}
+
+resource "netbird_group" "%[1]sb" {
+  name  = "%[1]sb"
+  peers = []
+}
+
+resource "netbird_setup_key" "%[1]s" {
+  name                   = "%[1]s"
+  type                   = "reusable"
+  expiry_seconds         = 0
+  usage_limit            = 0
+  ephemeral              = false
+  allow_extra_dns_labels = false
+  auto_groups            = %[2]s
+}
+`, rName, groups)
+}
+
 // testSetupKeyResourceNoLimit omits usage_limit, and with it the optional flags
 // and groups the test using it does not involve. A one-off key has to be
 // written this way: the server decides its usage limit, so naming one in the
