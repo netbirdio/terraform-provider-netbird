@@ -15,5 +15,5 @@ resource "netbird_account_settings" "example" {
 
   # IPv6 overlay addressing
   network_range_v6    = "fd00:1234:5678::/64"
-  ipv6_enabled_groups = [netbird_group.all.id]
+  ipv6_enabled_groups = [netbird_group.example.id]
 }
