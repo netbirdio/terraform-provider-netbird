@@ -160,8 +160,6 @@ func (d *AccountSettingsDataSource) Read(ctx context.Context, req datasource.Rea
 	}
 
 	accounts, err := d.client.Accounts.List(ctx)
-	account := accounts[0]
-
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			resp.State.RemoveResource(ctx)
@@ -172,7 +170,13 @@ func (d *AccountSettingsDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
-	resp.Diagnostics.Append(accountAPIToTerraform(ctx, &account, &data)...)
+	account, err := firstAccount(accounts)
+	if err != nil {
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
+		return
+	}
+
+	resp.Diagnostics.Append(accountAPIToTerraform(ctx, account, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
