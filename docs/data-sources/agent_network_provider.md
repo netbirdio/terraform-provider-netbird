@@ -44,9 +44,9 @@ data "netbird_agent_network_provider" "openai" {
 
 Read-Only:
 
-- `id` (String) Model identifier
-- `input_per_1k` (Number) Cost per 1k input tokens in USD
-- `output_per_1k` (Number) Cost per 1k output tokens in USD
 - `cache_creation_per_1k` (Number) Anthropic-shape cache rate — cost per 1k cache-creation tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache writes bill at input_per_1k.
 - `cache_read_per_1k` (Number) Anthropic-shape cache rate — cost per 1k cache-read tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache reads bill at input_per_1k.
 - `cached_input_per_1k` (Number) OpenAI-shape cache rate — cost per 1k cached prompt tokens (a subset of input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means no discount (cached tokens bill at input_per_1k).
+- `id` (String) Model identifier
+- `input_per_1k` (Number) Cost per 1k input tokens in USD
+- `output_per_1k` (Number) Cost per 1k output tokens in USD
