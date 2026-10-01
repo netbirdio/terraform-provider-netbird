@@ -6,9 +6,69 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
+
+func Test_AccountSettings_LocalMFASchema(t *testing.T) {
+	ctx := context.Background()
+	var resourceResp resource.SchemaResponse
+	(&AccountSettings{}).Schema(ctx, resource.SchemaRequest{}, &resourceResp)
+	attribute, ok := resourceResp.Schema.Attributes["local_mfa_enabled"]
+	if !ok {
+		t.Fatal("account settings resource must expose local_mfa_enabled")
+	}
+	if !attribute.IsOptional() || !attribute.IsComputed() {
+		t.Fatal("local_mfa_enabled must be optional and computed to adopt server settings")
+	}
+	var dataSourceResp datasource.SchemaResponse
+	(&AccountSettingsDataSource{}).Schema(ctx, datasource.SchemaRequest{}, &dataSourceResp)
+	attributeDS, ok := dataSourceResp.Schema.Attributes["local_mfa_enabled"]
+	if !ok || !attributeDS.IsComputed() {
+		t.Fatal("account settings data source must expose computed local_mfa_enabled")
+	}
+}
+
+func Test_AccountSettings_LocalMFAMapping(t *testing.T) {
+	cases := []struct {
+		name    string
+		current *bool
+		planned types.Bool
+		want    *bool
+	}{
+		{"enable", valPtr(false), types.BoolValue(true), valPtr(true)},
+		{"disable", valPtr(true), types.BoolValue(false), valPtr(false)},
+		{"omitted enabled", valPtr(true), types.BoolNull(), valPtr(true)},
+		{"omitted disabled", valPtr(false), types.BoolNull(), valPtr(false)},
+		{"unknown enabled", valPtr(true), types.BoolUnknown(), valPtr(true)},
+		{"unknown disabled", valPtr(false), types.BoolUnknown(), valPtr(false)},
+		{"unavailable", nil, types.BoolNull(), nil},
+		{"unknown unavailable", nil, types.BoolUnknown(), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			account := &api.Account{Settings: api.AccountSettings{
+				LocalMfaEnabled: c.current,
+				Extra:           &api.AccountExtraSettings{},
+			}}
+			var data AccountSettingsModel
+			if diagnostics := accountAPIToTerraform(ctx, account, &data); diagnostics.HasError() {
+				t.Fatalf("map account settings: %v", diagnostics)
+			}
+			if !data.LocalMfaEnabled.Equal(types.BoolPointerValue(c.current)) {
+				t.Fatalf("read local_mfa_enabled: got %v, want %v", data.LocalMfaEnabled, c.current)
+			}
+			data.LocalMfaEnabled = c.planned
+			request := accountTerraformToAPI(ctx, account, data)
+			if !reflect.DeepEqual(request.Settings.LocalMfaEnabled, c.want) {
+				t.Fatalf("write local_mfa_enabled: got %v, want %v", request.Settings.LocalMfaEnabled, c.want)
+			}
+		})
+	}
+}
 
 func Test_accountAPIToTerraform(t *testing.T) {
 	cases := []struct {
@@ -77,6 +137,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 					DnsDomain:                       valPtr("custom.com"),
 					NetworkRange:                    valPtr("100.64.0.0/10"),
 					LazyConnectionEnabled:           valPtr(true),
+					LocalMfaEnabled:                 valPtr(true),
 					GroupsPropagationEnabled:        valPtr(true),
 					JwtAllowGroups:                  &[]string{"test"},
 					JwtGroupsClaimName:              valPtr("test"),
@@ -117,6 +178,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				DnsDomain:                          types.StringValue("custom.com"),
 				NetworkRange:                       types.StringValue("100.64.0.0/10"),
 				LazyConnectionEnabled:              types.BoolValue(true),
+				LocalMfaEnabled:                    types.BoolValue(true),
 				UserApprovalRequired:               types.BoolValue(true),
 				NetworkTrafficLogsGroups:           types.ListValueMust(types.StringType, []attr.Value{types.StringValue("group1")}),
 				PeerExposeEnabled:                  types.BoolValue(true),
