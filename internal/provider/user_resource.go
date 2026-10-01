@@ -161,12 +161,15 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(user.Id)
 	data.Name = types.StringValue(user.Name)
-	data.LastLogin = types.StringValue(user.LastLogin.Format(time.RFC3339))
+	data.LastLogin = types.StringNull()
+	if user.LastLogin != nil {
+		data.LastLogin = types.StringValue(user.LastLogin.Format(time.RFC3339))
+	}
 	data.Email = types.StringValue(user.Email)
 	data.IsBlocked = types.BoolValue(user.IsBlocked)
-	data.IsCurrent = types.BoolValue(*user.IsCurrent)
-	data.IsServiceUser = types.BoolValue(*user.IsServiceUser)
-	data.Issued = types.StringValue(*user.Issued)
+	data.IsCurrent = types.BoolPointerValue(user.IsCurrent)
+	data.IsServiceUser = types.BoolPointerValue(user.IsServiceUser)
+	data.Issued = types.StringPointerValue(user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
 	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)

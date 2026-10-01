@@ -109,3 +109,22 @@ func Test_usersAPIToTerraform(t *testing.T) {
 		t.Fatalf("Unexpected user mapping: %#v", data.Users)
 	}
 }
+
+func Test_usersAPIToTerraform_absentOptionalFields(t *testing.T) {
+	// The optional pointers are omitempty in the API types: a user the filter
+	// accepts without them must map to nulls, not crash the provider.
+	users := []api.User{{Id: "u4", Name: "Carol", Role: "user", Status: api.UserStatusInvited}}
+
+	var data UsersModel
+	if d := usersAPIToTerraform(context.Background(), users, &data); d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+
+	u := data.Users[0]
+	if !u.LastLogin.IsNull() || !u.IsCurrent.IsNull() || !u.IsServiceUser.IsNull() || !u.Issued.IsNull() {
+		t.Fatalf("Expected nulls for the absent fields, found %#v", u)
+	}
+	if u.Name.ValueString() != "Carol" || u.Status.ValueString() != "invited" {
+		t.Fatalf("Unexpected user mapping: %#v", u)
+	}
+}
