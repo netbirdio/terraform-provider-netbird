@@ -12,4 +12,5 @@ resource "netbird_account_settings" "example" {
   peer_approval_enabled                  = false
   network_traffic_logs_enabled           = false
   network_traffic_packet_counter_enabled = false
+  metrics_push_enabled                   = false
 }

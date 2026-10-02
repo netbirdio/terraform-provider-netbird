@@ -57,6 +57,7 @@ func Test_Account_Create(t *testing.T) {
 							"jwt_groups_enabled":                 {attrs["jwt_groups_enabled"], fmt.Sprint(valOr(settings.JwtGroupsEnabled, false))},
 							"routing_peer_dns_resolution_enabled": {attrs["routing_peer_dns_resolution_enabled"],
 								fmt.Sprint(valOr(settings.RoutingPeerDnsResolutionEnabled, false))},
+							"metrics_push_enabled": {attrs["metrics_push_enabled"], fmt.Sprint(valOr(settings.MetricsPushEnabled, false))},
 						})
 					},
 				),
@@ -101,6 +102,58 @@ func Test_Account_Update(t *testing.T) {
 
 func testAccountResource(rName string) string {
 	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {}`, rName)
+}
+
+func Test_Account_MetricsPushUpdate(t *testing.T) {
+	env := testE2E(t)
+	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	rNameFull := "netbird_account_settings." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testAccountResourceWithMetricsPush(rName, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "metrics_push_enabled", "true"),
+					testCheckAccountMetricsPush(env, true),
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testAccountResourceWithMetricsPush(rName, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "metrics_push_enabled", "false"),
+					testCheckAccountMetricsPush(env, false),
+				),
+			},
+		},
+	})
+}
+
+func testAccountResourceWithMetricsPush(rName string, enabled bool) string {
+	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {
+metrics_push_enabled = %v
+}`, rName, enabled)
+}
+
+func testCheckAccountMetricsPush(env *e2eStack, want bool) func(*terraform.State) error {
+	return func(_ *terraform.State) error {
+		accounts, err := testClient().Accounts.List(context.Background())
+		if err != nil {
+			return fmt.Errorf("list accounts: %w", err)
+		}
+		idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+		if idx < 0 {
+			return fmt.Errorf("account %s is not among the %d accounts on the management server", env.AccountID, len(accounts))
+		}
+		got := valOr(accounts[idx].Settings.MetricsPushEnabled, false)
+		if got != want {
+			return fmt.Errorf("metrics_push_enabled: server holds %t, expected %t", got, want)
+		}
+		return nil
+	}
 }
 
 func testAccountResourceWithJWT(rName string, enabled bool) string {

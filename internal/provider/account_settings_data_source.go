@@ -125,6 +125,10 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
+			"metrics_push_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables client metrics push for all peers in the account.",
+				Computed:            true,
+			},
 		},
 	}
 }
