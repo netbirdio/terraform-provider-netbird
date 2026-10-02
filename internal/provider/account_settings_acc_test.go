@@ -128,6 +128,11 @@ func Test_Account_MetricsPushUpdate(t *testing.T) {
 					testCheckAccountMetricsPush(env, false),
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
