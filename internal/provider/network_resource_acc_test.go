@@ -176,10 +176,33 @@ func Test_NetworkResource_NoGroups(t *testing.T) {
 				),
 			},
 			{
-				Config: noGroupsConfig,
+				Config: testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, "[]", rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
 					checkServerGroups(),
+				),
+			},
+			{
+				PreConfig: func() {
+					_, err := testClient().Networks.Resources(e2eNetworkID()).Update(context.Background(), createdID, api.NetworkResourceRequest{
+						Name:    rName,
+						Address: "example.com",
+						Enabled: true,
+						Groups:  []string{e2eGroupNotAllID()},
+					})
+					if err != nil {
+						t.Fatalf("attach group out of band: %v", err)
+					}
+				},
+				Config: fmt.Sprintf(`resource "netbird_network_resource" "%s" {
+	network_id = "%s"
+	address = "example.com"
+	name = "%s"
+}`, rName, e2eNetworkID(), rName+"Updated"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "name", rName+"Updated"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
+					checkServerGroups(e2eGroupNotAllID()),
 				),
 			},
 		},
