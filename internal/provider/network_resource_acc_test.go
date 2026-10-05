@@ -122,8 +122,6 @@ func Test_NetworkResource_Update(t *testing.T) {
 	})
 }
 
-// Test_NetworkResource_NoGroups covers a resource created without groups, then gaining
-// and losing them, since the API treats groups as optional.
 func Test_NetworkResource_NoGroups(t *testing.T) {
 	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
