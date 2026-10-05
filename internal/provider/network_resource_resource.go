@@ -99,8 +99,8 @@ func (r *NetworkResource) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
-				Default:    setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
-				Validators: []validator.Set{setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
+				Default:             setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
+				Validators:          []validator.Set{setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 			},
 		},
 	}
