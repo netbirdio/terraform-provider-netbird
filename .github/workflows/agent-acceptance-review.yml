@@ -282,12 +282,37 @@ jobs:
                  before RequiresReplace), RequiresReplace vs in-place, Sensitive handling,
                  drift/read consistency, ValidateConfig. On a violation, give the
                  `propagation_chain` (e.g. attribute → mapping → operation → apply behavior).
-              5. contract (Contract Verifier) — the change's contract is proven by tests: a
-                 behavior change under internal/provider/ has a matching *_acc_test.go
-                 (create/update, CheckDestroy, ImportState; in-place vs replace asserted
-                 where it matters), per AGENTS.md; where the spec defines enums or numeric
-                 bounds for a changed field, a test exercises them. On an unproven contract,
-                 give a `counterexample`: a concrete config/scenario with no covering assertion.
+              5. contract (Contract Verifier) — the change's contract is proven by the
+                 right level of test. Judge by the diff, not by what the PR claims.
+
+                 REQUIRES an acceptance test when it changes observable provider behavior
+                 under internal/provider/:
+                   - adds a new resource or data source;
+                   - adds or changes a schema attribute (type, Required/Optional/Computed,
+                     default, Sensitive, validators);
+                   - changes CRUD, mapping (xAPIToTerraform / xTerraformToAPI), plan
+                     modifiers, or lifecycle (RequiresReplace, drift).
+                 An adequate acceptance test is a *_acc_test.go case that creates (and, for
+                 a change, updates) the object, includes CheckDestroy, and has an
+                 ImportState step — matching the existing suite; where in-place vs replace
+                 matters it is asserted; and where the spec defines enums or numeric bounds
+                 for a changed field, a test exercises them. A data source change needs a
+                 corresponding read/selector case.
+
+                 Does NOT require an acceptance test:
+                   - docs-only, examples-only, or comment-only changes;
+                   - CI / GitHub Actions / .coderabbit / repo-meta changes;
+                   - dependency bumps (go.mod / go.sum) with no provider code change;
+                   - pure refactors that do not change behavior;
+                   - changes whose behavior is only unit-testable — REST client internals,
+                     error/response parsing, helpers in util.go — where a plain *_test.go
+                     unit test is the right level; an added unit test for such a change is
+                     adequate.
+                 If a change needs an acceptance test AND a unit test would not exercise the
+                 provider behavior, an added unit test alone is NOT adequate.
+
+                 On an unproven contract, give a `counterexample`: a concrete config or
+                 scenario the change allows that no test's assertions cover.
 
             A stage that finds nothing wrong is "pass". The first stage that finds a problem
             is "fail"; every later stage is "skipped".
