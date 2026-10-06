@@ -94,13 +94,31 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The artifact is written by the PR Metadata workflow, whose content a FORK
+      # controls (it runs the fork's copy of pr-metadata.yml). So its contents are
+      # untrusted and are bound here to facts GitHub sets server-side on the
+      # triggering run, which a fork cannot forge: the SHA must equal
+      # workflow_run.head_sha, and the PR number must be a pull request whose head
+      # is that commit. A fork that edits pr-metadata.yml to upload another PR's
+      # number and SHA therefore cannot redirect this privileged run at it.
       - name: Read and validate PR metadata
         id: meta
+        env:
+          TRUSTED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -uo pipefail
           num="$(cat pr_number.txt)"
           sha="$(cat pr_head_sha.txt)"
-          [[ "$num" =~ ^[0-9]+$ ]]       || { echo "bad PR number: $num"; exit 1; }
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "bad head sha: $sha"; exit 1; }
+          [[ "$num" =~ ^[0-9]+$ ]]       || { echo "::error::bad PR number: $num"; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad head sha: $sha"; exit 1; }
+          if [ "$sha" != "$TRUSTED_SHA" ]; then
+            echo "::error::artifact sha $sha does not match the triggering run's head $TRUSTED_SHA"
+            exit 1
+          fi
+          if ! gh api "repos/$REPO/commits/$TRUSTED_SHA/pulls" --jq '.[].number' | grep -qx "$num"; then
+            echo "::error::PR #$num is not a pull request whose head is $TRUSTED_SHA"
+            exit 1
+          fi
           echo "number=$num" >> "$GITHUB_OUTPUT"
           echo "sha=$sha"    >> "$GITHUB_OUTPUT"
 
@@ -108,12 +126,15 @@ jobs:
       # moved on since the metadata was recorded (a newer push started its own run).
       - name: Check the PR is still open at this SHA
         id: open
+        env:
+          NUM: ${{ steps.meta.outputs.number }}
+          SHA: ${{ steps.meta.outputs.sha }}
         run: |
-          state="$(gh pr view "${{ steps.meta.outputs.number }}" --repo "$REPO" --json state,headRefOid \
+          state="$(gh pr view "$NUM" --repo "$REPO" --json state,headRefOid \
             --jq '.state + " " + .headRefOid')"
           echo "state: $state"
           set -- $state
-          if [ "$1" != "OPEN" ] || [ "$2" != "${{ steps.meta.outputs.sha }}" ]; then
+          if [ "$1" != "OPEN" ] || [ "$2" != "$SHA" ]; then
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -358,23 +379,38 @@ jobs:
             exit 0
           fi
 
-          # Per-stage statuses from the agent's report.
+          # Per-stage statuses from the agent's report. The report is shaped by
+          # untrusted PR content, so only the five known stage keys are honoured —
+          # anything else, "review" included (the verdict below owns that context),
+          # is dropped — and approval is derived from the stage states rather than
+          # taken on the agent's word.
           declare -A seen
+          allpass=true
           while IFS=$'\t' read -r key state summary; do
+            case "$key" in
+              schema|names|types|effects|contract) ;;
+              *) echo "::warning::ignoring unknown stage key '$key'"; continue ;;
+            esac
             seen[$key]=1
             case "$state" in
               pass)    st=success ;;
               skipped) st=failure; summary="skipped (upstream stage failed)" ;;
               *)       st=failure ;;
             esac
+            [ "$state" = pass ] || allpass=false
             status "$key" "$st" "${summary:-$key}"
           done < <(jq -r '.stages[] | [.key, .state, (.summary // "")] | @tsv' "$res")
           for k in schema names types effects contract; do
-            [ -n "${seen[$k]:-}" ] || status "$k" failure "not reported by agent"
+            if [ -z "${seen[$k]:-}" ]; then
+              status "$k" failure "not reported by agent"
+              allpass=false
+            fi
           done
 
           jq -r '.review_markdown // ""' "$res" > review.md
-          if [ "$(jq -r '.approved' "$res")" = "true" ]; then
+          # Approve only when every stage was reported and passed AND the agent
+          # itself concluded approved; either alone is not enough.
+          if [ "$allpass" = true ] && [ "$(jq -r '.approved' "$res")" = "true" ]; then
             status review success "All five Edict stages passed"
             [ -s review.md ] || echo "## Edict — all five stages passed" > review.md
             gh pr review "$NUM" --repo "$REPO" --approve --body-file review.md
