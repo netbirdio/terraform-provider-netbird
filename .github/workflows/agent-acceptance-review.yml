@@ -152,6 +152,36 @@ jobs:
         with:
           persist-credentials: false
 
+      # Fetch NetBird's OpenAPI spec at the EXACT version go.mod pins — the same
+      # commit the provider's generated api.* types come from, so the stages
+      # validate against the contract the code actually targets rather than a
+      # drifting main. Best-effort: on failure the stages still run, just without
+      # the spec. (A normal run step, not an agent tool — keeps the agent sandboxed.)
+      - name: Fetch version-matched NetBird OpenAPI spec
+        id: spec
+        if: steps.open.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          ver="$(awk '$1=="github.com/netbirdio/netbird"{print $2; exit}' go.mod)"
+          echo "netbird version: ${ver:-<none>}"
+          ref="$ver"
+          # A pseudo-version (vX.Y.Z-<ts>-<shortsha>) carries the commit in its last
+          # segment; resolve it to a full SHA raw.githubusercontent can serve.
+          suffix="${ver##*-}"
+          if [ "$ver" != "${ver%-*}" ] && printf '%s' "$suffix" | grep -qiE '^[0-9a-f]{12,40}$'; then
+            full="$(gh api "repos/netbirdio/netbird/commits/$suffix" --jq '.sha' 2>/dev/null || true)"
+            ref="${full:-$suffix}"
+          fi
+          out="$GITHUB_WORKSPACE/netbird-openapi.yml"
+          url="https://raw.githubusercontent.com/netbirdio/netbird/${ref}/shared/management/http/api/openapi.yml"
+          if curl -fsSL "$url" -o "$out" && [ -s "$out" ]; then
+            echo "fetched spec at ${ref} ($(wc -l < "$out") lines)"
+            echo "path=$out" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not fetch the version-matched OpenAPI spec (ref ${ref}); stages will run without it"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
       # One Claude agent runs the whole verification flow. Its LLM calls go through
       # the agent network (ANTHROPIC_BASE_URL); the api key is a throwaway the proxy
       # ignores. The agent only ANALYSES and writes edict-result.json — it posts no
@@ -187,28 +217,46 @@ jobs:
             You have the base repo checked out, so Read/Grep the existing
             internal/provider/*.go and *_acc_test.go to validate against.
 
+            The authoritative source of truth for the API this provider wraps is
+            NetBird's OpenAPI spec, fetched at the exact netbird version go.mod pins
+            and saved to: ${{ steps.spec.outputs.path }}
+            When that path is non-empty, Read/Grep it and ground stages 1–4 in it —
+            components.schemas and their properties (type, format, enum, required,
+            readOnly, nullable) and the paths/operations. If the path is empty the
+            spec could not be fetched; say so and validate structurally without it,
+            and do not fail a stage solely for the spec being unavailable.
+
             The five stages, each its own validation:
               1. schema   (Schema Validator)  — provider schema changes are structurally
-                 sound: attribute blocks well-formed; Required/Optional/Computed coherent;
-                 defaults, validators, plan modifiers, nested attrs correctly declared.
+                 sound AND faithful to the spec: a provider attribute maps to a property
+                 of the matching request/response schema; Required/Optional/Computed is
+                 consistent with the spec's `required` and `readOnly`; defaults, validators,
+                 plan modifiers and nested attrs are correctly declared.
               2. names    (Name Resolver)     — every referenced identifier resolves: tfsdk
-                 tags ↔ model fields; API types/fields in mapping funcs exist; resource and
-                 data-source type names registered in provider.go; path.Root(...) names exist.
-                 On an undefined name, give `candidates` (closest existing names).
-              3. types    (Type Checker)      — Terraform model types (types.String/Int32/
-                 List…) are consistent with the API types across xAPIToTerraform /
-                 xTerraformToAPI; ElementType matches; pointer vs value correct. On a
-                 mismatch, give the `expected_type` (and actual).
-              4. effects  (Effect Checker)    — CRUD/lifecycle effects are declared correctly:
-                 plan-modifier ordering (UseStateForUnknown before RequiresReplace),
-                 RequiresReplace vs in-place, Sensitive handling, drift/read consistency,
-                 ValidateConfig. On a violation, give the `propagation_chain` (attribute →
-                 modifier → apply behavior).
+                 tags ↔ model fields; and every API type/field a mapping func touches
+                 (xAPIToTerraform / xTerraformToAPI) exists as a schema/property in the
+                 spec; resource and data-source type names are registered in provider.go;
+                 path.Root(...) names exist. On an undefined name, give `candidates` — the
+                 closest existing names (from the model or the spec).
+              3. types    (Type Checker)      — Terraform model types line up with the spec
+                 property types: string→types.String, integer→types.Int32/Int64 (per
+                 format), boolean→types.Bool, array→types.List/Set (ElementType matching the
+                 item type), enum→OneOf/validators, honoring nullable and pointer vs value
+                 in the mapping. On a mismatch, give the `expected_type` (and actual).
+              4. effects  (Effect Checker)    — CRUD/lifecycle effects are declared correctly
+                 and match the spec's operations: the resource's create/read/update/delete
+                 use paths+methods that exist in the spec; required request-body fields are
+                 sent and readOnly fields are not written back; enum values used by
+                 validators match the spec; plan-modifier ordering (UseStateForUnknown
+                 before RequiresReplace), RequiresReplace vs in-place, Sensitive handling,
+                 drift/read consistency, ValidateConfig. On a violation, give the
+                 `propagation_chain` (e.g. attribute → mapping → operation → apply behavior).
               5. contract (Contract Verifier) — the change's contract is proven by tests: a
                  behavior change under internal/provider/ has a matching *_acc_test.go
                  (create/update, CheckDestroy, ImportState; in-place vs replace asserted
-                 where it matters), per AGENTS.md. On an unproven contract, give a
-                 `counterexample`: a concrete config/scenario with no covering assertion.
+                 where it matters), per AGENTS.md; where the spec defines enums or numeric
+                 bounds for a changed field, a test exercises them. On an unproven contract,
+                 give a `counterexample`: a concrete config/scenario with no covering assertion.
 
             A stage that finds nothing wrong is "pass". The first stage that finds a problem
             is "fail"; every later stage is "skipped".
