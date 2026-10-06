@@ -119,10 +119,41 @@ jobs:
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Step aside for a PR that changes the gate itself. workflow_run always runs
+      # the default-branch copy of this workflow, so it would be judging a change
+      # to the gate with the OLD gate anyway; and a half-written new gate should
+      # not block its own PR. We mark the edict statuses "skipped" so required
+      # checks still resolve, but we neither approve nor enable auto-merge — a human
+      # reviews a change to the gate.
+      - name: Detect a PR that modifies the review workflow
+        id: selfmod
+        if: steps.open.outputs.proceed == 'true'
+        env:
+          NUM: ${{ steps.meta.outputs.number }}
+        run: |
+          files="$(gh pr view "$NUM" --repo "$REPO" --json files --jq '.files[].path')"
+          if printf '%s\n' "$files" | grep -qE '^\.github/workflows/(agent-acceptance-review|pr-metadata)\.yml$'; then
+            echo "self=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "self=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mark the gate skipped for a self-modifying PR
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self == 'true'
+        env:
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          for k in schema names types effects contract review; do
+            gh api -X POST "repos/$REPO/statuses/$SHA" \
+              -f state=success -f context="agent/edict-$k" \
+              -f description="Skipped: PR modifies the review workflow" \
+              -f target_url="$RUN_URL" >/dev/null
+          done
+
       # Refuse to run — rather than silently skip — if the network is not wired
       # up, so a missing secret is visible instead of looking like a pass.
       - name: Require agent-network configuration
-        if: steps.open.outputs.proceed == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         env:
           NB_SETUP_KEY: ${{ secrets.NB_SETUP_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -138,7 +169,7 @@ jobs:
       # Join the NetBird agent network. Membership is what authorizes the keyless
       # LLM calls below; the ephemeral setup key means the peer drops off after.
       - name: Connect to the NetBird agent network
-        if: steps.open.outputs.proceed == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         uses: Alemiz112/netbird-connect@fbea46300ca7ee907ff7d8e39ede3f556a6ecf10 # v1.0.2
         with:
           setup-key: ${{ secrets.NB_SETUP_KEY }}
@@ -147,7 +178,7 @@ jobs:
       # The base repo at the default branch — trusted code, never the fork's. Gives
       # the agent AGENTS.md and the existing *_acc_test.go suite to validate against.
       - name: Checkout base repo
-        if: steps.open.outputs.proceed == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -159,7 +190,7 @@ jobs:
       # the spec. (A normal run step, not an agent tool — keeps the agent sandboxed.)
       - name: Fetch version-matched NetBird OpenAPI spec
         id: spec
-        if: steps.open.outputs.proceed == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         run: |
           set -uo pipefail
           ver="$(awk '$1=="github.com/netbirdio/netbird"{print $2; exit}' go.mod)"
@@ -188,7 +219,7 @@ jobs:
       # reviews and performs no merge; the deterministic step below does that.
       - name: Run Edict verification (Claude agent, keyless via NetBird)
         id: agent
-        if: steps.open.outputs.proceed == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         uses: anthropics/claude-code-action@24dcd50c0568f0fc9e9211213a4fd2d9eb15c4e0 # v1.0.200
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -278,7 +309,7 @@ jobs:
       # merge decision never rests with the agent.
       - name: Reflect verdict, review, and enable auto-merge
         id: verdict
-        if: always() && steps.open.outputs.proceed == 'true'
+        if: always() && steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true'
         env:
           NUM: ${{ steps.meta.outputs.number }}
           SHA: ${{ steps.meta.outputs.sha }}
@@ -337,7 +368,7 @@ jobs:
       # re-checks against the head at that time, so a commit pushed after this run
       # will not merge unreviewed. Requires "Allow auto-merge" in repo settings.
       - name: Enable auto-merge
-        if: steps.open.outputs.proceed == 'true' && steps.verdict.outputs.approved == 'true'
+        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true' && steps.verdict.outputs.approved == 'true'
         env:
           NUM: ${{ steps.meta.outputs.number }}
         run: gh pr merge "$NUM" --repo "$REPO" --squash --auto
