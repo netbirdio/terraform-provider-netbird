@@ -367,8 +367,11 @@ jobs:
       # agent/edict-* statuses — is green and required reviews are approved, and it
       # re-checks against the head at that time, so a commit pushed after this run
       # will not merge unreviewed. Requires "Allow auto-merge" in repo settings.
-      - name: Enable auto-merge
-        if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true' && steps.verdict.outputs.approved == 'true'
-        env:
-          NUM: ${{ steps.meta.outputs.number }}
-        run: gh pr merge "$NUM" --repo "$REPO" --squash --auto
+      #
+      # TEMPORARILY DISABLED: auto-merge is commented out while the pipeline is
+      # being validated. Re-enable by uncommenting the step below.
+      # - name: Enable auto-merge
+      #   if: steps.open.outputs.proceed == 'true' && steps.selfmod.outputs.self != 'true' && steps.verdict.outputs.approved == 'true'
+      #   env:
+      #     NUM: ${{ steps.meta.outputs.number }}
+      #   run: gh pr merge "$NUM" --repo "$REPO" --squash --auto
