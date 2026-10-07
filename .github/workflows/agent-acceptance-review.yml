@@ -115,11 +115,12 @@ jobs:
 
       # The artifact is written by the PR Metadata workflow, whose content a FORK
       # controls (it runs the fork's copy of pr-metadata.yml). So its contents are
-      # untrusted and are bound here to facts GitHub sets server-side on the
-      # triggering run, which a fork cannot forge: the SHA must equal
-      # workflow_run.head_sha, and the PR number must be a pull request whose head
-      # is that commit. A fork that edits pr-metadata.yml to upload another PR's
-      # number and SHA therefore cannot redirect this privileged run at it.
+      # untrusted and are bound to a fact GitHub sets server-side on the triggering
+      # run, which a fork cannot forge: the SHA must equal workflow_run.head_sha.
+      # The PR number is bound in the next step, which requires that PR's CURRENT
+      # head to be this same SHA. (repos/{repo}/commits/{sha}/pulls is deliberately
+      # not used for this: it returns an empty list for pull requests whose head
+      # lives in a fork, which would reject the very PRs this gate exists for.)
       - name: Read and validate PR metadata
         id: meta
         env:
@@ -134,15 +135,16 @@ jobs:
             echo "::error::artifact sha $sha does not match the triggering run's head $TRUSTED_SHA"
             exit 1
           fi
-          if ! gh api "repos/$REPO/commits/$TRUSTED_SHA/pulls" --jq '.[].number' | grep -qx "$num"; then
-            echo "::error::PR #$num is not a pull request whose head is $TRUSTED_SHA"
-            exit 1
-          fi
           echo "number=$num" >> "$GITHUB_OUTPUT"
           echo "sha=$sha"    >> "$GITHUB_OUTPUT"
 
-      # Skip everything downstream if the PR is already closed/merged, or its head
-      # has moved on since the metadata was recorded (a newer push started its own run).
+      # Bind the PR number and gate on liveness: PR $NUM's CURRENT head must be
+      # the trusted SHA, and the PR must still be open. This is what stops a fork
+      # that edits pr-metadata.yml to name another PR — that PR's head is not this
+      # commit, so nothing downstream runs. A mismatch is a controlled stop rather
+      # than a failure, because it also happens benignly whenever the PR moves on
+      # before this run finishes (the newer push has its own run for its own SHA);
+      # either way nothing privileged happens.
       - name: Check the PR is still open at this SHA
         id: open
         env:
@@ -153,7 +155,11 @@ jobs:
             --jq '.state + " " + .headRefOid')"
           echo "state: $state"
           set -- $state
-          if [ "$1" != "OPEN" ] || [ "$2" != "$SHA" ]; then
+          if [ "$1" != "OPEN" ]; then
+            echo "::notice::PR #$NUM is $1; not proceeding"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$2" != "$SHA" ]; then
+            echo "::notice::PR #$NUM head is $2 but this run was triggered for $SHA (superseded, or the artifact named a PR this commit does not belong to); not proceeding"
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
