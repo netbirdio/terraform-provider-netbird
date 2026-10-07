@@ -294,6 +294,18 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 						}
 						return nil
 					},
+					func(s *terraform.State) error {
+						// The record step 1 created must now carry the new catalog
+						// entry, which is what updating in place means on the server.
+						p, err := testGetProvider(firstID)
+						if err != nil {
+							return err
+						}
+						if p.ProviderId != "anthropic_api" {
+							return fmt.Errorf("provider_id not persisted on the management server, found %q", p.ProviderId)
+						}
+						return nil
+					},
 				),
 			},
 		},
