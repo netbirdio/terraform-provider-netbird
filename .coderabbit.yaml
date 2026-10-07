@@ -3,11 +3,11 @@ language: "en-US"
 
 reviews:
   profile: "chill"
-  # Required for the pre-merge checks below to gate: an `error`-mode check only
-  # blocks a PR (CodeRabbit requests changes until it passes) when the
-  # request-changes workflow is on. Note this also makes CodeRabbit request
-  # changes for its own unresolved findings and approve once they are resolved.
-  request_changes_workflow: true
+  # Left off on purpose: with it on, CodeRabbit would request changes for any
+  # unresolved finding of its own, repo-wide. The consequence for the pre-merge
+  # checks below is that an `error`-mode check is reported as failing on the PR
+  # but does not by itself block merging — branch protection remains the gate.
+  request_changes_workflow: false
   high_level_summary: true
   poem: false
   review_status: true
