@@ -113,11 +113,11 @@ func testAgentNetworkProviderResource(rName, name, extraValues, metadataDisabled
 	return fmt.Sprintf(`resource "netbird_agent_network_provider" "%s" {
 	provider_id       = "openai_api"
 	name              = "%s"
-	upstream_url      = "https://api.openai.com"
+	upstream_url      = "%s"
 	api_key           = "sk-acc-test"
 	extra_values      = %s
 	metadata_disabled = %s
-}`, rName, name, extraValues, metadataDisabled)
+}`, rName, name, e2eUpstreamURL(), extraValues, metadataDisabled)
 }
 
 // testAgentNetworkGuardrailResource and testAgentNetworkPolicyResource are the
@@ -259,13 +259,13 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 	rNameFull := "netbird_agent_network_provider." + rName
 	var createdID string
 
-	config := func(providerID, upstream string) string {
+	config := func(providerID string) string {
 		return fmt.Sprintf(`resource "netbird_agent_network_provider" "%s" {
 	provider_id       = "%s"
 	name              = "%s"
 	upstream_url      = "%s"
 	api_key           = "sk-acc-test"
-}`, rName, providerID, rName, upstream)
+}`, rName, providerID, rName, e2eUpstreamURL())
 	}
 
 	var firstID string
@@ -276,7 +276,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				ResourceName: rName,
-				Config:       config("openai_api", "https://api.openai.com"),
+				Config:       config("openai_api"),
 				Check: resource.ComposeAggregateTestCheckFunc(func(s *terraform.State) error {
 					firstID = s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
 					return nil
@@ -284,7 +284,7 @@ func Test_AgentNetworkProvider_ProviderIdUpdatesInPlace(t *testing.T) {
 			},
 			{
 				ResourceName: rName,
-				Config:       config("anthropic_api", "https://api.anthropic.com"),
+				Config:       config("anthropic_api"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testRecordID(rNameFull, &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "provider_id", "anthropic_api"),
@@ -367,7 +367,7 @@ resource "netbird_group" "%[1]s" {
 resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id       = "openai_api"
 	name              = "%[1]s-provider"
-	upstream_url      = "https://api.openai.com"
+	upstream_url      = %[2]q
 	api_key           = "sk-acc-test"
 }
 
@@ -393,7 +393,7 @@ resource "netbird_agent_network_policy" "%[1]s" {
 		group_cap      = 1000000
 		window_seconds = 86400
 	}
-}`, rName)
+}`, rName, e2eUpstreamURL())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -504,10 +504,10 @@ resource "netbird_agent_network_settings" "%[1]s" {
 resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id       = "openai_api"
 	name              = "%[1]s-provider"
-	upstream_url      = "https://api.openai.com"
+	upstream_url      = %[2]q
 	api_key           = "sk-acc-test"
 	depends_on        = [netbird_agent_network_settings.%[1]s]
-}`, rName)
+}`, rName, e2eUpstreamURL())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
