@@ -128,8 +128,9 @@ reviews:
       - name: "Edict 4 — Effect Checker"
         mode: "error"
         instructions: |
-          Applies when the diff touches CRUD, plan modifiers, validators or lifecycle
-          under internal/provider/**/*.go; otherwise PASS.
+          Applies when the diff touches CRUD, plan modifiers, validators, lifecycle, or
+          the schema of a credential attribute (anything carrying a token, key, secret
+          or password) under internal/provider/**/*.go; otherwise PASS.
 
           PASS only if the resource's declared effects match reality:
             - Create/Read/Update/Delete call operations (path + method) that exist in
@@ -165,15 +166,20 @@ reviews:
               plan modifiers, or lifecycle (RequiresReplace, drift).
 
           An ADEQUATE acceptance test is a *_acc_test.go case (behind //go:build e2e,
-          using the shared harness) that creates — and, for a change, updates — the
-          object, includes CheckDestroy confirming removal on the server, and has an
-          ImportState step with ImportStateVerify (ImportStateVerifyIgnore only for
-          values the API cannot return). Where in-place vs replace matters it is
-          asserted (e.g. a plan check that the action is update, or an ID comparison).
-          Where the spec defines enums or numeric bounds for a changed field, a test
-          exercises them. Assertions go against the API via testClient(), not only
-          Terraform state. A data-source change needs a corresponding read/selector
-          case.
+          using the shared harness) whose assertions go against the API via
+          testClient(), not only Terraform state. What it must cover depends on the
+          kind of object:
+            - For a RESOURCE: creates — and, for a change, updates — the object,
+              includes CheckDestroy confirming removal on the server, and has an
+              ImportState step with ImportStateVerify (ImportStateVerifyIgnore only
+              for values the API cannot return). Where in-place vs replace matters it
+              is asserted (e.g. a plan check that the action is update, or an ID
+              comparison).
+            - For a DATA SOURCE: reads the object through each selector the change
+              adds or alters (by id, by name, …) and asserts the returned attributes
+              against the API; no create, destroy or import is expected of it.
+          In both cases, where the spec defines enums or numeric bounds for a changed
+          field, a test exercises them.
 
           Does NOT require an acceptance test:
             - docs-only, examples-only, or comment-only changes;
