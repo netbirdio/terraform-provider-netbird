@@ -40,12 +40,27 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 ### Read-Only
 
+- `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
+- `listen_port` (Number) Port the proxy listens on (L4/TLS only)
+- `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
 - `pass_host_header` (Boolean) When true, the original client Host header is passed through to the backend
+- `port_auto_assigned` (Boolean) Whether the listen port was auto-assigned by the server
 - `proxy_cluster` (String) The proxy cluster handling this service
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 - `targets` (Attributes List) List of target backends for this service (see [below for nested schema](#nestedatt--targets))
+
+<a id="nestedatt--access_restrictions"></a>
+### Nested Schema for `access_restrictions`
+
+Read-Only:
+
+- `allowed_cidrs` (List of String) CIDR allowlist
+- `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
+- `blocked_cidrs` (List of String) CIDR blocklist
+- `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
+
 
 <a id="nestedatt--auth"></a>
 ### Nested Schema for `auth`
@@ -53,6 +68,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 Read-Only:
 
 - `bearer_auth` (Attributes) Bearer token authentication (see [below for nested schema](#nestedatt--auth--bearer_auth))
+- `header_auths` (Attributes List) Static header-value authentication rules (see [below for nested schema](#nestedatt--auth--header_auths))
 - `link_auth` (Attributes) Link authentication (see [below for nested schema](#nestedatt--auth--link_auth))
 - `password_auth` (Attributes) Password authentication (see [below for nested schema](#nestedatt--auth--password_auth))
 - `pin_auth` (Attributes) PIN authentication (see [below for nested schema](#nestedatt--auth--pin_auth))
@@ -64,6 +80,16 @@ Read-Only:
 
 - `distribution_groups` (List of String) List of group IDs that can use bearer auth
 - `enabled` (Boolean)
+
+
+<a id="nestedatt--auth--header_auths"></a>
+### Nested Schema for `auth.header_auths`
+
+Read-Only:
+
+- `enabled` (Boolean)
+- `header` (String) HTTP header name to check
+- `value` (String, Sensitive) Expected header value
 
 
 <a id="nestedatt--auth--link_auth"></a>
@@ -100,8 +126,21 @@ Read-Only:
 
 - `enabled` (Boolean) Whether this target is enabled
 - `host` (String) Backend IP or domain for this target
+- `options` (Attributes) Per-target options (see [below for nested schema](#nestedatt--targets--options))
 - `path` (String) URL path prefix for this target
 - `port` (Number) Backend port for this target
-- `protocol` (String) Protocol to use when connecting to the backend (http, https)
+- `protocol` (String) Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)
 - `target_id` (String) Target ID (resource or peer ID)
 - `target_type` (String) Target type (peer, host, domain, subnet)
+
+<a id="nestedatt--targets--options"></a>
+### Nested Schema for `targets.options`
+
+Read-Only:
+
+- `custom_headers` (Map of String, Sensitive) Extra headers sent to the backend (HTTP only). Marked sensitive since values commonly carry credentials, e.g. an `Authorization` header.
+- `path_rewrite` (String) Controls how the request path is rewritten before forwarding (HTTP only)
+- `proxy_protocol` (Boolean) Send PROXY Protocol v2 header to this backend (TCP/TLS only)
+- `request_timeout` (String) Per-target response timeout as a Go duration string
+- `session_idle_timeout` (String) Idle timeout before a UDP session is reaped (UDP only)
+- `skip_tls_verify` (Boolean) Skip TLS certificate verification for this backend (HTTPS targets only)

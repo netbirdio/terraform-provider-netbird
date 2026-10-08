@@ -32,6 +32,7 @@ import (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &SetupKey{}
 var _ resource.ResourceWithImportState = &SetupKey{}
+var _ resource.ResourceWithValidateConfig = &SetupKey{}
 
 func NewSetupKey() resource.Resource {
 	return &SetupKey{}
@@ -88,11 +89,11 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				Computed:            true,
 			},
 			"expiry_seconds": schema.Int32Attribute{
-				MarkdownDescription: "Expiry time in seconds (0 is unlimited)",
+				MarkdownDescription: "Expiry time in seconds (0 is unlimited). The API reports an absolute expiry date and no creation date, so this value cannot be read back and an imported key adopts whatever the configuration says.",
 				Optional:            true,
 				Computed:            true,
 				Default:             int32default.StaticInt32(0),
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
+				PlanModifiers:       []planmodifier.Int32{expirySecondsPlanModifier{}},
 			},
 			"updated_at": schema.StringAttribute{
 				MarkdownDescription: "Creation timestamp",
@@ -118,11 +119,13 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				Validators:          []validator.String{stringvalidator.OneOf("one-off", "reusable")},
 			},
 			"usage_limit": schema.Int32Attribute{
-				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited)",
+				MarkdownDescription: "Maximum number of times SetupKey can be used (0 for unlimited). A one-off key is always limited to 1 by the server, so leave this unset for one-off keys.",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Int32{int32planmodifier.RequiresReplace()},
-				Default:             int32default.StaticInt32(0),
+				PlanModifiers: []planmodifier.Int32{
+					int32planmodifier.UseStateForUnknown(),
+					int32planmodifier.RequiresReplace(),
+				},
 			},
 			"used_times": schema.Int32Attribute{
 				MarkdownDescription: "Number of times Setup Key was used",
@@ -145,13 +148,19 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				MarkdownDescription: "Indicate that the peer will be ephemeral or not, ephemeral peers are deleted after 10 minutes of inactivity",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 			"allow_extra_dns_labels": schema.BoolAttribute{
 				MarkdownDescription: "Allow extra DNS labels to be added to the peer",
 				Computed:            true,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+					boolplanmodifier.RequiresReplace(),
+				},
 			},
 			"valid": schema.BoolAttribute{
 				MarkdownDescription: "True if setup key can be used to create more Peers",
@@ -165,6 +174,74 @@ func (r *SetupKey) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 			},
 		},
 	}
+}
+
+// expirySecondsPlanModifier replaces the setup key when its configured lifetime
+// changes, except when there is no prior value to compare against.
+//
+// The API has no field for the lifetime a key was created with. It reports an
+// absolute expiry date and no creation date, so nothing can be measured back
+// out of a read, and a key that was imported rather than created has no value
+// for it in state. Reading that absence as a change is what plain
+// RequiresReplace does, and it would destroy the key the user has just imported
+// and hand back a different secret. The configured value is adopted instead,
+// which costs one no-op update. A change between two known values still
+// replaces, because the server cannot move an expiry date.
+type expirySecondsPlanModifier struct{}
+
+func (expirySecondsPlanModifier) Description(context.Context) string {
+	return "Replaces the setup key when the configured expiry changes, and adopts the configured value when state has none."
+}
+
+func (m expirySecondsPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (expirySecondsPlanModifier) PlanModifyInt32(ctx context.Context, req planmodifier.Int32Request, resp *planmodifier.Int32Response) {
+	// Creating or destroying: there is no prior value that could have changed.
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	// Imported, so never recorded: take the planned value as it stands.
+	if req.StateValue.IsNull() {
+		return
+	}
+	if !req.PlanValue.Equal(req.StateValue) {
+		resp.RequiresReplace = true
+	}
+}
+
+// ValidateConfig rejects a usage limit a one-off key cannot honour. The server
+// pins a one-off key at a single use and ignores what the request asked for, so
+// a configuration naming anything else describes a key that will never exist.
+// Left alone, that surfaces at apply time as "Provider produced inconsistent
+// result after apply", which does not say what to change, and it leaves the
+// difference in state where it later forces the key to be recreated.
+func (r *SetupKey) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data SetupKeyModel
+
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.UsageLimit.IsNull() || data.UsageLimit.IsUnknown() || data.Type.IsUnknown() {
+		return
+	}
+	// An absent type is one-off, which is the schema default and is filled in
+	// after this runs.
+	if !data.Type.IsNull() && data.Type.ValueString() != "one-off" {
+		return
+	}
+	if data.UsageLimit.ValueInt32() == 1 {
+		return
+	}
+
+	resp.Diagnostics.AddAttributeError(
+		path.Root("usage_limit"),
+		"Invalid Attribute Combination",
+		`A one-off setup key can be used once, and the server fixes its usage limit at 1 whatever the request asks for. Remove usage_limit, set it to 1, or set type to "reusable".`,
+	)
 }
 
 func (r *SetupKey) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -303,7 +380,7 @@ func (r *SetupKey) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		return
 	}
 	if data.Id.ValueString() == "" {
-		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
+		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.ProviderMeta}, (*resource.CreateResponse)(resp))
 		return
 	}
 

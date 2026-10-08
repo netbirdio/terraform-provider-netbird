@@ -70,7 +70,10 @@ func (r *Scim) Schema(ctx context.Context, req resource.SchemaRequest, resp *res
 				MarkdownDescription: "The connection prefix used for the SCIM provider.",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Indicates whether the integration is enabled",

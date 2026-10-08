@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -127,11 +128,30 @@ func (r *Token) Configure(ctx context.Context, req resource.ConfigureRequest, re
 	r.client = client
 }
 
+// tokenExpirationDays recovers the lifetime a token was created with. The API
+// does not report it, but it reports both timestamps it was derived from: the
+// server sets the expiry to the creation time plus a whole number of days, in
+// UTC, where every day is 24 hours long. Rounding absorbs whatever sub-second
+// difference survives storage and transport.
+func tokenExpirationDays(createdAt, expirationDate time.Time) int32 {
+	return int32(math.Round(expirationDate.Sub(createdAt).Hours() / 24))
+}
+
 func tokenAPIToTerraform(token *api.PersonalAccessToken, data *TokenModel) {
 	data.Id = types.StringValue(token.Id)
 	data.Name = types.StringValue(token.Name)
 	data.ExpirationDate = types.StringValue(token.ExpirationDate.Format(time.RFC3339))
 	data.CreatedAt = types.StringValue(token.CreatedAt.Format(time.RFC3339))
+	// expiration_days is required, so it is already known everywhere except
+	// after an import, where nothing but the two timestamps is available to
+	// reconstruct it. Without this the imported token is missing an attribute
+	// its configuration requires, and the first plan after the import destroys
+	// and recreates it.
+	if data.ExpirationDays.IsNull() {
+		if days := tokenExpirationDays(token.CreatedAt, token.ExpirationDate); days > 0 {
+			data.ExpirationDays = types.Int32Value(days)
+		}
+	}
 	if token.LastUsed == nil {
 		data.LastUsed = types.StringNull()
 	} else {
@@ -206,12 +226,21 @@ func (r *Token) Read(ctx context.Context, req resource.ReadRequest, resp *resour
 func (r *Token) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data TokenModel
 
-	if data.Id.ValueString() == "" {
-		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.Config}, (*resource.CreateResponse)(resp))
-		return
-	}
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// The guard has to come after the plan is read. Checking data.Id on a
+	// zero-valued model made the condition always true, so this always called
+	// Create and the error below was unreachable.
+	if data.Id.ValueString() == "" {
+		r.Create(ctx, resource.CreateRequest{Config: req.Config, Plan: req.Plan, ProviderMeta: req.ProviderMeta}, (*resource.CreateResponse)(resp))
+		return
+	}
+
 	resp.Diagnostics.AddError("Invalid Operation", "Personal Access Tokens can't be updated")
 }
 

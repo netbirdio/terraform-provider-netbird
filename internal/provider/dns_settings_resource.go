@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -24,7 +23,10 @@ import (
 
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &DNSSettings{}
-var _ resource.ResourceWithImportState = &DNSSettings{}
+
+// No ResourceWithImportState: the account's DNS settings have no identifier to
+// import by. The schema is a single disabled_management_groups list, with no id
+// attribute, so the passthrough this used to declare could only ever fail.
 
 func NewDNSSettings() resource.Resource {
 	return &DNSSettings{}
@@ -182,8 +184,4 @@ func (r *DNSSettings) Update(ctx context.Context, req resource.UpdateRequest, re
 
 func (r *DNSSettings) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Do nothing
-}
-
-func (r *DNSSettings) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

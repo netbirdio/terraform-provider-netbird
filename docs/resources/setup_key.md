@@ -41,10 +41,10 @@ resource "netbird_setup_key" "example" {
 - `allow_extra_dns_labels` (Boolean) Allow extra DNS labels to be added to the peer
 - `auto_groups` (List of String) List of groups to automatically assign to peers created through this setup key
 - `ephemeral` (Boolean) Indicate that the peer will be ephemeral or not, ephemeral peers are deleted after 10 minutes of inactivity
-- `expiry_seconds` (Number) Expiry time in seconds (0 is unlimited)
+- `expiry_seconds` (Number) Expiry time in seconds (0 is unlimited). The API reports an absolute expiry date and no creation date, so this value cannot be read back and an imported key adopts whatever the configuration says.
 - `revoked` (Boolean) Set to true to revoke setup key
 - `type` (String) Setup Key type (one-off or reusable)
-- `usage_limit` (Number) Maximum number of times SetupKey can be used (0 for unlimited)
+- `usage_limit` (Number) Maximum number of times SetupKey can be used (0 for unlimited). A one-off key is always limited to 1 by the server, so leave this unset for one-off keys.
 
 ### Read-Only
 
