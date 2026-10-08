@@ -102,7 +102,12 @@ type e2eStack struct {
 	ResourceSubnetID string
 	ResourceHostID   string
 
-	srv *harness.Combined
+	// UpstreamURL is the model upstream the Agent Network provider fixtures point
+	// at. See startUpstream.
+	UpstreamURL string
+
+	srv      *harness.Combined
+	upstream *harness.VLLM
 
 	// The reverse proxy and the agents start on first use rather than up front,
 	// so a run that only touches the API does not pay for them.
@@ -213,7 +218,28 @@ func bootstrapE2E(ctx context.Context) (*e2eStack, error) {
 	if err := env.ensureFixtureNetwork(ctx, client); err != nil {
 		return nil, env.failed(ctx, err)
 	}
+	if err := env.startUpstream(ctx); err != nil {
+		return nil, env.failed(ctx, err)
+	}
 	return env, nil
+}
+
+// startUpstream runs netbird's mock model upstream on the deployment's network.
+//
+// Management checks a provider's credential against the vendor before it saves
+// the provider, so a fixture key aimed at a real vendor is refused. An upstream
+// that resolves to a private address is one management declines to dial, and it
+// stores the provider unchecked: that is the self-hosted backend the exemption
+// exists for, and the case netbird's own e2e suite runs its providers against.
+// Pointing the fixtures here keeps the suite off the vendors and needs no live key.
+func (env *e2eStack) startUpstream(ctx context.Context) error {
+	upstream, err := harness.StartVLLM(ctx, env.srv)
+	if err != nil {
+		return fmt.Errorf("start the mock model upstream: %w", err)
+	}
+	env.upstream = upstream
+	env.UpstreamURL = upstream.URL
+	return nil
 }
 
 // discoverAccount records the account and owner the setup call created.
@@ -446,6 +472,9 @@ func (env *e2eStack) terminate(ctx context.Context) {
 	if env.proxy != nil {
 		_ = env.proxy.Terminate(ctx)
 	}
+	if env.upstream != nil {
+		_ = env.upstream.Terminate(ctx)
+	}
 	if env.srv != nil {
 		_ = env.srv.Terminate(ctx)
 	}
@@ -469,6 +498,7 @@ func e2eNetworkID() string        { return mustE2E().NetworkID }
 func e2eResourceDomainID() string { return mustE2E().ResourceDomainID }
 func e2eResourceSubnetID() string { return mustE2E().ResourceSubnetID }
 func e2eResourceHostID() string   { return mustE2E().ResourceHostID } //nolint:unused // completes the fixture set
+func e2eUpstreamURL() string      { return mustE2E().UpstreamURL }
 
 // TestMain tears the deployment down after the suite. Without this the
 // containers outlive the run whenever the reaper is disabled.

@@ -1,0 +1,47 @@
+# Records the PR number and head SHA of every pull request, including fork PRs,
+# and uploads them as an artifact.
+#
+# This is the untrusted half of the acceptance-test agent gate. It runs on the
+# `pull_request` event, so for a fork PR it gets a read-only token and NO
+# secrets — which is what we want, because nothing privileged happens here. Its
+# only job is to hand the PR number and the tested commit SHA to the privileged
+# "Agent Acceptance-Test Review" workflow, which runs on `workflow_run` and
+# cannot otherwise learn the PR number for a fork PR (github.event.workflow_run
+# .pull_requests is empty for forks).
+#
+# It intentionally does not check out or run any PR code.
+name: PR Metadata
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    name: Record PR metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write PR number and head SHA
+        # Passed through env rather than interpolated into the script. Both are
+        # constrained values (an integer and a 40-char SHA), but env is the safe
+        # habit for anything off the event payload.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s\n' "$PR_NUMBER" > pr_number.txt
+          printf '%s\n' "$PR_HEAD_SHA" > pr_head_sha.txt
+
+      - name: Upload PR metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-metadata
+          path: |
+            pr_number.txt
+            pr_head_sha.txt
+          retention-days: 1
