@@ -3,7 +3,7 @@
 # Replaces the single acceptance-test review with a five-stage verification flow
 # modelled on https://github.com/Sowiedu/Edict, run by ONE Claude agent:
 #
-#   Schema Validator ─── invalid?   → StructuredError → request changes
+#   Schema Validator ─── invalid?   → StructuredError → comment
 #     ↓
 #   Name Resolver ────── undefined? → StructuredError (+ candidates)
 #     ↓
@@ -15,13 +15,14 @@
 #
 # The agent runs the five stages in order and halts at the first failure, the way
 # a compiler stops at the first bad phase. The failing stage is reported as a
-# request-changes review carrying its StructuredError, and the author fixes and
-# re-pushes (no self-repair loop). When all five pass, the agent/edict-review
-# commit status goes green and the verdict is posted as a COMMENT — never as an
-# approval. The agent's judgement is shaped by untrusted PR content, so it must
-# not be able to satisfy a "required approving review" by itself; branch
-# protection should require that review from a human or CODEOWNERS and gate on
-# the agent/edict-* statuses as status checks.
+# COMMENT review carrying its StructuredError, and the author fixes and re-pushes
+# (no self-repair loop). When all five pass, the verdict is likewise posted as a
+# COMMENT. This workflow never approves and never requests changes: the
+# pass/fail signal is the agent/edict-review commit status (plus one status per
+# stage), which branch protection gates on as status checks. The agent's
+# judgement is shaped by untrusted PR content, so it must not be able to satisfy
+# or block a review requirement by itself; branch protection should require the
+# approving review from a human or CODEOWNERS.
 #
 # Trust boundaries — three jobs
 # -----------------------------
@@ -526,9 +527,11 @@ jobs:
           PY
 
           # Pass only when every stage was reported and passed AND the agent itself
-          # concluded approved; either alone is not enough. A pass is published as
-          # the agent/edict-review status plus a COMMENT review — never an approval,
-          # so the agent can never satisfy a required approving review by itself.
+          # concluded approved; either alone is not enough. Both outcomes are
+          # published as the agent/edict-review commit status plus a COMMENT review
+          # — never an approval and never a request for changes — so the agent can
+          # neither satisfy nor block a review requirement by itself; the statuses
+          # are what branch protection gates on.
           if [ "$allpass" = true ] && [ "$(jq -r '.approved' "$res")" = "true" ]; then
             status review success "All five Edict stages passed"
             [ -s review.md ] || echo "## Edict — all five stages passed" > review.md
@@ -537,8 +540,8 @@ jobs:
           else
             halted="$(jq -r '.halted_stage // "a stage"' "$res")"
             status review failure "Edict halted at ${halted}"
-            [ -s review.md ] || echo "## Edict — changes requested" > review.md
-            gh pr review "$NUM" --repo "$REPO" --request-changes --body-file review.md
+            [ -s review.md ] || echo "## Edict — halted at ${halted}" > review.md
+            gh pr review "$NUM" --repo "$REPO" --comment --body-file review.md
             echo "approved=false" >> "$GITHUB_OUTPUT"
           fi
 
