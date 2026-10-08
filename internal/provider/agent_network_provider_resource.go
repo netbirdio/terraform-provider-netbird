@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -49,16 +50,22 @@ type AgentNetworkProviderModel struct {
 }
 
 type AgentNetworkProviderModelItem struct {
-	Id          types.String  `tfsdk:"id"`
-	InputPer1k  types.Float64 `tfsdk:"input_per_1k"`
-	OutputPer1k types.Float64 `tfsdk:"output_per_1k"`
+	Id                 types.String  `tfsdk:"id"`
+	InputPer1k         types.Float64 `tfsdk:"input_per_1k"`
+	OutputPer1k        types.Float64 `tfsdk:"output_per_1k"`
+	CachedInputPer1k   types.Float64 `tfsdk:"cached_input_per_1k"`
+	CacheReadPer1k     types.Float64 `tfsdk:"cache_read_per_1k"`
+	CacheCreationPer1k types.Float64 `tfsdk:"cache_creation_per_1k"`
 }
 
 func (AgentNetworkProviderModelItem) TFType() types.ObjectType {
 	return types.ObjectType{AttrTypes: map[string]attr.Type{
-		"id":            types.StringType,
-		"input_per_1k":  types.Float64Type,
-		"output_per_1k": types.Float64Type,
+		"id":                    types.StringType,
+		"input_per_1k":          types.Float64Type,
+		"output_per_1k":         types.Float64Type,
+		"cached_input_per_1k":   types.Float64Type,
+		"cache_read_per_1k":     types.Float64Type,
+		"cache_creation_per_1k": types.Float64Type,
 	}}
 }
 
@@ -152,6 +159,24 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 							MarkdownDescription: "Cost per 1k output tokens in USD",
 							Required:            true,
 						},
+						"cached_input_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "OpenAI-shape cache rate — cost per 1k cached prompt tokens (a subset of input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means no discount (cached tokens bill at input_per_1k).",
+							Optional:            true,
+							Computed:            true,
+							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
+						},
+						"cache_read_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-read tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache reads bill at input_per_1k.",
+							Optional:            true,
+							Computed:            true,
+							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
+						},
+						"cache_creation_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-creation tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache writes bill at input_per_1k.",
+							Optional:            true,
+							Computed:            true,
+							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
+						},
 					},
 				},
 			},
@@ -195,9 +220,12 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	modelObjs := make([]AgentNetworkProviderModelItem, 0, len(p.Models))
 	for _, m := range p.Models {
 		modelObjs = append(modelObjs, AgentNetworkProviderModelItem{
-			Id:          types.StringValue(m.Id),
-			InputPer1k:  types.Float64Value(m.InputPer1k),
-			OutputPer1k: types.Float64Value(m.OutputPer1k),
+			Id:                 types.StringValue(m.Id),
+			InputPer1k:         types.Float64Value(m.InputPer1k),
+			OutputPer1k:        types.Float64Value(m.OutputPer1k),
+			CachedInputPer1k:   types.Float64PointerValue(m.CachedInputPer1k),
+			CacheReadPer1k:     types.Float64PointerValue(m.CacheReadPer1k),
+			CacheCreationPer1k: types.Float64PointerValue(m.CacheCreationPer1k),
 		})
 	}
 	list, d := types.ListValueFrom(ctx, AgentNetworkProviderModelItem{}.TFType(), modelObjs)
@@ -245,9 +273,12 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 			models := make([]api.AgentNetworkProviderModel, 0, len(elems))
 			for _, e := range elems {
 				models = append(models, api.AgentNetworkProviderModel{
-					Id:          e.Id.ValueString(),
-					InputPer1k:  e.InputPer1k.ValueFloat64(),
-					OutputPer1k: e.OutputPer1k.ValueFloat64(),
+					Id:                 e.Id.ValueString(),
+					InputPer1k:         e.InputPer1k.ValueFloat64(),
+					OutputPer1k:        e.OutputPer1k.ValueFloat64(),
+					CachedInputPer1k:   e.CachedInputPer1k.ValueFloat64Pointer(),
+					CacheReadPer1k:     e.CacheReadPer1k.ValueFloat64Pointer(),
+					CacheCreationPer1k: e.CacheCreationPer1k.ValueFloat64Pointer(),
 				})
 			}
 			req.Models = &models

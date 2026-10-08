@@ -26,7 +26,7 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				MetadataDisabled:    true,
 				ExtraValues:         &map[string]string{"x-portkey-config": "pc-abc123"},
 				Models: []api.AgentNetworkProviderModel{
-					{Id: "gpt-4o-mini", InputPer1k: 0.00015, OutputPer1k: 0.0006},
+					{Id: "gpt-4o-mini", InputPer1k: 0.00015, OutputPer1k: 0.0006, CachedInputPer1k: valPtr(0.000075)},
 				},
 			},
 			expected: AgentNetworkProviderModel{
@@ -44,9 +44,12 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				}),
 				Models: types.ListValueMust(AgentNetworkProviderModelItem{}.TFType(), []attr.Value{
 					types.ObjectValueMust(AgentNetworkProviderModelItem{}.TFType().AttrTypes, map[string]attr.Value{
-						"id":            types.StringValue("gpt-4o-mini"),
-						"input_per_1k":  types.Float64Value(0.00015),
-						"output_per_1k": types.Float64Value(0.0006),
+						"id":                    types.StringValue("gpt-4o-mini"),
+						"input_per_1k":          types.Float64Value(0.00015),
+						"output_per_1k":         types.Float64Value(0.0006),
+						"cached_input_per_1k":   types.Float64Value(0.000075),
+						"cache_read_per_1k":     types.Float64Null(),
+						"cache_creation_per_1k": types.Float64Null(),
 					}),
 				}),
 			},
