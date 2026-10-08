@@ -476,11 +476,13 @@ func Test_Drift_AgentNetworkProvider(t *testing.T) {
 	cfg := testAgentNetworkProviderResource(rName, rName, `{ "x-portkey-config" = "pc-drift" }`, "false")
 	driftCase(t, address, cfg,
 		func(id string) error {
+			// The upstream stays as configured: moving it makes the server check
+			// the credential again, which is not what this case is about.
 			on := true
 			_, err := testAgentNetworkClient().UpdateProvider(context.Background(), id,
 				api.AgentNetworkProviderRequest{
 					ProviderId: "openai_api", Name: rName + "-changed-elsewhere",
-					UpstreamUrl: "https://api.openai.com", MetadataDisabled: &on,
+					UpstreamUrl: e2eUpstreamURL(), MetadataDisabled: &on,
 				})
 			return err
 		},
