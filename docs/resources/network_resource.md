@@ -38,7 +38,6 @@ resource "netbird_network_resource" "example" {
 ### Required
 
 - `address` (String) Network resource address (either a direct host like 1.1.1.1 or 1.1.1.1/32, or a subnet like 192.168.178.0/24, or domains like example.com and *.example.com)
-- `groups` (Set of String) Group IDs containing the resource
 - `name` (String) NetworkResource Name
 - `network_id` (String) The unique identifier of a network
 
@@ -46,6 +45,7 @@ resource "netbird_network_resource" "example" {
 
 - `description` (String) NetworkResource Description
 - `enabled` (Boolean) NetworkResource status
+- `groups` (Set of String) Group IDs containing the resource
 
 ### Read-Only
 
