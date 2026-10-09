@@ -59,7 +59,7 @@ func (d *GroupsDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Only return groups issued by this source (`api`, `integration` or `jwt`)",
 				Optional:            true,
-				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators:          []validator.String{stringvalidator.OneOf("api", "integration", "jwt")},
 			},
 			"ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of the matching groups",

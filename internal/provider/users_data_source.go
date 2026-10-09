@@ -74,12 +74,12 @@ func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 			"status": schema.StringAttribute{
 				MarkdownDescription: "Only return users with this status (`active`, `invited` or `blocked`)",
 				Optional:            true,
-				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators:          []validator.String{stringvalidator.OneOf("active", "invited", "blocked")},
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Only return users issued by this source (`api` or `integration`)",
 				Optional:            true,
-				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
+				Validators:          []validator.String{stringvalidator.OneOf("api", "integration")},
 			},
 			"is_service_user": schema.BoolAttribute{
 				MarkdownDescription: "Only return service users (`true`) or regular users (`false`)",
