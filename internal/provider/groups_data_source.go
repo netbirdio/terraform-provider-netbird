@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -52,10 +54,12 @@ func (d *GroupsDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Only return the group with this name",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Only return groups issued by this source (`api`, `integration` or `jwt`)",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of the matching groups",

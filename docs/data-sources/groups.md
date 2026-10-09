@@ -25,8 +25,9 @@ data "netbird_groups" "oidc" {
   issued = "jwt"
 }
 
+# Group names are not unique (SSO sync can create duplicates): group the IDs by name
 locals {
-  oidc_group_id_by_name = { for g in data.netbird_groups.oidc.groups : g.name => g.id }
+  oidc_group_ids_by_name = { for g in data.netbird_groups.oidc.groups : g.name => g.id... }
 }
 ```
 

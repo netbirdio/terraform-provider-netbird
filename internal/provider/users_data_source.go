@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -56,22 +59,27 @@ func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Only return users with this name",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"email": schema.StringAttribute{
 				MarkdownDescription: "Only return the user with this email",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"role": schema.StringAttribute{
 				MarkdownDescription: "Only return users with this role",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"status": schema.StringAttribute{
 				MarkdownDescription: "Only return users with this status (`active`, `invited` or `blocked`)",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"issued": schema.StringAttribute{
 				MarkdownDescription: "Only return users issued by this source (`api` or `integration`)",
 				Optional:            true,
+				Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"is_service_user": schema.BoolAttribute{
 				MarkdownDescription: "Only return service users (`true`) or regular users (`false`)",
@@ -85,6 +93,7 @@ func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 				MarkdownDescription: "Only return users having all these auto group IDs, even if they have more",
 				ElementType:         types.StringType,
 				Optional:            true,
+				Validators:          []validator.List{listvalidator.SizeAtLeast(1)},
 			},
 			"ids": schema.ListAttribute{
 				MarkdownDescription: "IDs of the matching users",

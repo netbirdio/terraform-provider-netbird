@@ -63,6 +63,23 @@ func Test_filterUsers(t *testing.T) {
 			expected: []string{"u1", "u2"},
 		},
 		{
+			name:     "name",
+			filter:   UsersModel{Name: types.StringValue("Bob")},
+			expected: []string{"u2"},
+		},
+		{
+			name:     "email",
+			filter:   UsersModel{Email: types.StringValue("alice@example.com")},
+			expected: []string{"u1"},
+		},
+		{
+			name: "auto_groups requires every listed id",
+			filter: UsersModel{
+				AutoGroups: types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g1"), types.StringValue("g2")}),
+			},
+			expected: []string{"u1"},
+		},
+		{
 			name:     "no match is an empty result",
 			filter:   UsersModel{Email: types.StringValue("nobody@example.com")},
 			expected: []string{},

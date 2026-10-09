@@ -169,7 +169,11 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	data.Email = types.StringValue(user.Email)
 	data.IsBlocked = types.BoolValue(user.IsBlocked)
 	data.IsCurrent = types.BoolPointerValue(user.IsCurrent)
-	data.IsServiceUser = types.BoolPointerValue(user.IsServiceUser)
+	// is_service_user is Required on netbird_user: keep the configured value
+	// when the API omits it. Fresh data source models are already null.
+	if user.IsServiceUser != nil {
+		data.IsServiceUser = types.BoolValue(*user.IsServiceUser)
+	}
 	data.Issued = types.StringPointerValue(user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
