@@ -157,16 +157,24 @@ func (r *User) Configure(ctx context.Context, req resource.ConfigureRequest, res
 	r.client = client
 }
 
+// userAPIToTerraform copies an API user into the Terraform model, mapping absent optional fields to null.
 func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(user.Id)
 	data.Name = types.StringValue(user.Name)
-	data.LastLogin = types.StringValue(user.LastLogin.Format(time.RFC3339))
+	data.LastLogin = types.StringNull()
+	if user.LastLogin != nil {
+		data.LastLogin = types.StringValue(user.LastLogin.Format(time.RFC3339))
+	}
 	data.Email = types.StringValue(user.Email)
 	data.IsBlocked = types.BoolValue(user.IsBlocked)
-	data.IsCurrent = types.BoolValue(*user.IsCurrent)
-	data.IsServiceUser = types.BoolValue(*user.IsServiceUser)
-	data.Issued = types.StringValue(*user.Issued)
+	data.IsCurrent = types.BoolPointerValue(user.IsCurrent)
+	// is_service_user is Required on netbird_user: keep the configured value
+	// when the API omits it. Fresh data source models are already null.
+	if user.IsServiceUser != nil {
+		data.IsServiceUser = types.BoolValue(*user.IsServiceUser)
+	}
+	data.Issued = types.StringPointerValue(user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
 	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)
