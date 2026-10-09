@@ -42,10 +42,12 @@ type UsersDataSource struct {
 	client *netbird.Client
 }
 
+// Metadata sets the data source type name.
 func (d *UsersDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_users"
 }
 
+// Schema defines the netbird_users filters and computed attributes.
 func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description:         "List Users matching all the given filters",
@@ -146,6 +148,7 @@ func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 	}
 }
 
+// Configure stores the NetBird API client provided by the provider.
 func (d *UsersDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
@@ -196,6 +199,7 @@ func filterUsers(ctx context.Context, users []api.User, data UsersModel) ([]api.
 	return filtered, d
 }
 
+// Read lists all users, applies the configured filters, and sets the state.
 func (d *UsersDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data UsersModel
 
@@ -239,6 +243,7 @@ func (d *UsersDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// usersAPIToTerraform converts API users into the Terraform users list.
 func usersAPIToTerraform(ctx context.Context, users []api.User, data *UsersModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	ids := make([]string, len(users))

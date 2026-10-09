@@ -11,6 +11,7 @@ import (
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
+// Test_filterUsers checks each users filter in isolation and combined.
 func Test_filterUsers(t *testing.T) {
 	yes, no := true, false
 	apiIssued, integration := "api", "integration"
@@ -85,6 +86,7 @@ func Test_filterUsers(t *testing.T) {
 	}
 }
 
+// Test_usersAPIToTerraform checks API users map to the Terraform list.
 func Test_usersAPIToTerraform(t *testing.T) {
 	yes, no := true, false
 	issued := "api"
@@ -110,6 +112,7 @@ func Test_usersAPIToTerraform(t *testing.T) {
 	}
 }
 
+// Test_usersAPIToTerraform_absentOptionalFields checks absent optional user fields become null.
 func Test_usersAPIToTerraform_absentOptionalFields(t *testing.T) {
 	// The optional pointers are omitempty in the API types: a user the filter
 	// accepts without them must map to nulls, not crash the provider.

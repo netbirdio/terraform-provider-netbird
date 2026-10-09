@@ -157,6 +157,7 @@ func (r *User) Configure(ctx context.Context, req resource.ConfigureRequest, res
 	r.client = client
 }
 
+// userAPIToTerraform copies an API user into the Terraform model, mapping absent optional fields to null.
 func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(user.Id)

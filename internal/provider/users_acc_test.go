@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
+// Test_Users_DataSource checks netbird_users filtering against a live NetBird.
 func Test_Users_DataSource(t *testing.T) {
 	testE2E(t)
 	rName := "u" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)

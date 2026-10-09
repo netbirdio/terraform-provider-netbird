@@ -36,10 +36,12 @@ type GroupsDataSource struct {
 	client *netbird.Client
 }
 
+// Metadata sets the data source type name.
 func (d *GroupsDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_groups"
 }
 
+// Schema defines the netbird_groups filters and computed attributes.
 func (d *GroupsDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "List Groups matching all the given filters",
@@ -94,6 +96,7 @@ func (d *GroupsDataSource) Schema(ctx context.Context, req datasource.SchemaRequ
 	}
 }
 
+// Configure stores the NetBird API client provided by the provider.
 func (d *GroupsDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
@@ -130,6 +133,7 @@ func filterGroups(groups []api.Group, data GroupsModel) []api.Group {
 	return filtered
 }
 
+// Read lists all groups, applies the configured filters, and sets the state.
 func (d *GroupsDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data GroupsModel
 
@@ -161,6 +165,7 @@ func (d *GroupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// groupsAPIToTerraform converts API groups into the Terraform groups list.
 func groupsAPIToTerraform(ctx context.Context, groups []api.Group, data *GroupsModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	ids := make([]string, len(groups))

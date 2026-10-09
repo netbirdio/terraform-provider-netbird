@@ -9,6 +9,7 @@ import (
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
+// Test_filterGroups checks each groups filter in isolation and combined.
 func Test_filterGroups(t *testing.T) {
 	jwt := api.GroupIssuedJwt
 	apiIssued := api.GroupIssuedApi
@@ -63,6 +64,7 @@ func Test_filterGroups(t *testing.T) {
 	}
 }
 
+// Test_groupsAPIToTerraform checks API groups map to the Terraform list.
 func Test_groupsAPIToTerraform(t *testing.T) {
 	jwt := api.GroupIssuedJwt
 	groups := []api.Group{

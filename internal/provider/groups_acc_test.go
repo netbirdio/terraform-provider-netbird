@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
+// Test_Groups_DataSource checks netbird_groups filtering against a live NetBird.
 func Test_Groups_DataSource(t *testing.T) {
 	testE2E(t)
 	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
