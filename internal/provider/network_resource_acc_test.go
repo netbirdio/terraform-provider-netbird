@@ -122,6 +122,93 @@ func Test_NetworkResource_Update(t *testing.T) {
 	})
 }
 
+func Test_NetworkResource_NoGroups(t *testing.T) {
+	testE2E(t)
+	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_network_resource." + rName
+	var createdID string
+	checkServerGroups := func(want ...string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+			nre, err := testClient().Networks.Resources(e2eNetworkID()).Get(context.Background(), nreID)
+			if err != nil {
+				return err
+			}
+			if !sameIDSet(nre.Groups, want...) {
+				return fmt.Errorf("NetworkResource Groups mismatch, expected %v, found %#v on management server", want, nre.Groups)
+			}
+			return nil
+		}
+	}
+	noGroupsConfig := fmt.Sprintf(`resource "netbird_network_resource" "%s" {
+	network_id = "%s"
+	address = "example.com"
+	name = "%s"
+}`, rName, e2eNetworkID(), rName)
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkResource, error) {
+			return testClient().Networks.Resources(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: noGroupsConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
+					checkServerGroups(),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(*terraform.State) (string, error) {
+					return e2eNetworkID() + "/" + createdID, nil
+				},
+			},
+			{
+				Config: testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, fmt.Sprintf("[%q]", e2eGroupNotAllID()), rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
+					checkServerGroups(e2eGroupNotAllID()),
+				),
+			},
+			{
+				Config: testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, "[]", rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
+					checkServerGroups(),
+				),
+			},
+			{
+				PreConfig: func() {
+					_, err := testClient().Networks.Resources(e2eNetworkID()).Update(context.Background(), createdID, api.NetworkResourceRequest{
+						Name:    rName,
+						Address: "example.com",
+						Enabled: true,
+						Groups:  []string{e2eGroupNotAllID()},
+					})
+					if err != nil {
+						t.Fatalf("attach group out of band: %v", err)
+					}
+				},
+				Config: fmt.Sprintf(`resource "netbird_network_resource" "%s" {
+	network_id = "%s"
+	address = "example.com"
+	name = "%s"
+}`, rName, e2eNetworkID(), rName+"Updated"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "name", rName+"Updated"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "1"),
+					checkServerGroups(e2eGroupNotAllID()),
+				),
+			},
+		},
+	})
+}
+
 func testNetworkResourceResource(rName, networkID, address, groups, name string) string {
 	return fmt.Sprintf(`resource "netbird_network_resource" "%s" {
 	network_id = "%s"
