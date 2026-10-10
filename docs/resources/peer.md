@@ -54,6 +54,7 @@ resource "netbird_peer" "example" {
 - `groups` (List of String) Peer groups
 - `hostname` (String) Peer's HOSTNAME
 - `ip` (String) Peer  IP
+- `ipv6` (String) Peer IPv6 overlay address
 - `kernel_version` (String) Peer Kernel Version
 - `last_login` (String) Time of peer last login
 - `last_seen` (String) Peer Last Seen timedate

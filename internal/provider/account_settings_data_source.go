@@ -125,6 +125,15 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
+			"network_range_v6": schema.StringAttribute{
+				MarkdownDescription: "IPv6 network range for the account in CIDR format (e.g. fd00:1234:5678::/64). Valid prefix lengths are /48 through /112.",
+				Computed:            true,
+			},
+			"ipv6_enabled_groups": schema.ListAttribute{
+				MarkdownDescription: "List of group IDs whose peers receive IPv6 overlay addresses. Defaults to the All group for new accounts.",
+				ElementType:         types.StringType,
+				Computed:            true,
+			},
 		},
 	}
 }
