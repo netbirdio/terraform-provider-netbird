@@ -103,6 +103,100 @@ func testAccountResource(rName string) string {
 	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {}`, rName)
 }
 
+func Test_Account_LocalMFA(t *testing.T) {
+	env := testE2E(t)
+	ctx := context.Background()
+	accounts, err := testClient().Accounts.List(ctx)
+	if err != nil {
+		t.Fatalf("list account settings: %v", err)
+	}
+	idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+	if idx < 0 {
+		t.Fatal("test account is missing")
+	}
+	initial := accounts[idx].Settings.LocalMfaEnabled
+	if !valOr(accounts[idx].Settings.EmbeddedIdpEnabled, false) {
+		t.Fatal("local MFA test requires the embedded identity provider")
+	}
+	t.Cleanup(func() {
+		accounts, err := testClient().Accounts.List(ctx)
+		if err != nil {
+			t.Errorf("list account settings for cleanup: %v", err)
+			return
+		}
+		idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+		if idx < 0 {
+			t.Error("test account is missing during cleanup")
+			return
+		}
+		settings := accounts[idx].Settings
+		settings.LocalMfaEnabled = initial
+		if _, err := testClient().Accounts.Update(ctx, env.AccountID, api.AccountRequest{Settings: settings}); err != nil {
+			t.Errorf("restore local MFA setting: %v", err)
+		}
+	})
+	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	rNameFull := "netbird_account_settings." + rName
+	checkAPI := func(enabled bool) resource.TestCheckFunc {
+		return func(_ *terraform.State) error {
+			accounts, err := testClient().Accounts.List(ctx)
+			if err != nil {
+				return fmt.Errorf("list account settings: %w", err)
+			}
+			idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == env.AccountID })
+			if idx < 0 {
+				return fmt.Errorf("test account is missing")
+			}
+			mfa := accounts[idx].Settings.LocalMfaEnabled
+			if mfa == nil || *mfa != enabled {
+				return fmt.Errorf("local MFA setting does not match %t", enabled)
+			}
+			return nil
+		}
+	}
+	config := func(enabled bool) string {
+		return fmt.Sprintf(`resource "netbird_account_settings" %q {
+  local_mfa_enabled = %t
+}
+data "netbird_account_settings" "test" {
+  depends_on = [netbird_account_settings.%s]
+}`, rName, enabled, rName)
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		// Account settings are a singleton; destroying the resource must not delete the account
+		// or reset its settings. The cleanup above restores the shared fixture afterward.
+		CheckDestroy: checkAPI(false),
+		Steps: []resource.TestStep{
+			{
+				Config: config(true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "local_mfa_enabled", "true"),
+					resource.TestCheckResourceAttr("data.netbird_account_settings.test", "local_mfa_enabled", "true"),
+					checkAPI(true),
+				),
+			},
+			{ResourceName: rNameFull, ImportState: true, ImportStateVerify: true},
+			{
+				Config: testAccountResource(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "local_mfa_enabled", "true"),
+					checkAPI(true),
+				),
+			},
+			{
+				Config: config(false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "local_mfa_enabled", "false"),
+					resource.TestCheckResourceAttr("data.netbird_account_settings.test", "local_mfa_enabled", "false"),
+					checkAPI(false),
+				),
+			},
+		},
+	})
+}
+
 func testAccountResourceWithJWT(rName string, enabled bool) string {
 	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {
 jwt_groups_enabled = %v
