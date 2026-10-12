@@ -133,6 +133,18 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	return ret
 }
 
+// keepPriorOrder applies preserveListOrder to the peers and resources that
+// groupAPIToTerraform has just set on data, against the values they replaced.
+func keepPriorOrder(ctx context.Context, priorPeers, priorResources types.List, data *GroupModel) diag.Diagnostics {
+	var ret diag.Diagnostics
+	var d diag.Diagnostics
+	data.Peers, d = preserveListOrder(ctx, priorPeers, data.Peers)
+	ret.Append(d...)
+	data.Resources, d = preserveListOrder(ctx, priorResources, data.Resources)
+	ret.Append(d...)
+	return ret
+}
+
 func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data GroupModel
 
@@ -172,7 +184,9 @@ func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *re
 		return
 	}
 
+	priorPeers, priorResources := data.Peers, data.Resources
 	resp.Diagnostics.Append(groupAPIToTerraform(ctx, group, &data)...)
+	resp.Diagnostics.Append(keepPriorOrder(ctx, priorPeers, priorResources, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -203,7 +217,9 @@ func (r *Group) Read(ctx context.Context, req resource.ReadRequest, resp *resour
 		return
 	}
 
+	priorPeers, priorResources := data.Peers, data.Resources
 	resp.Diagnostics.Append(groupAPIToTerraform(ctx, group, &data)...)
+	resp.Diagnostics.Append(keepPriorOrder(ctx, priorPeers, priorResources, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -257,7 +273,9 @@ func (r *Group) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 		return
 	}
 
+	priorPeers, priorResources := data.Peers, data.Resources
 	resp.Diagnostics.Append(groupAPIToTerraform(ctx, group, &data)...)
+	resp.Diagnostics.Append(keepPriorOrder(ctx, priorPeers, priorResources, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
