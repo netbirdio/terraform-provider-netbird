@@ -296,3 +296,56 @@ func Test_accountTerraformToAPI(t *testing.T) {
 		}
 	}
 }
+
+func Test_accountTerraformToAPI_keepsUnmodeledSettings(t *testing.T) {
+	enabled := true
+	groups := []string{"group6"}
+	v6Range := "fd00:1234:5678::/64"
+	account := &api.Account{
+		Id: "a",
+		Settings: api.AccountSettings{
+			AgentNetworkOnly:   &enabled,
+			AutoUpdateAlways:   &enabled,
+			DashboardFeatures:  &api.AccountDashboardFeatures{AgentNetwork: &enabled},
+			Ipv6EnabledGroups:  &groups,
+			LocalMfaEnabled:    &enabled,
+			MetricsPushEnabled: &enabled,
+			NetworkRangeV6:     &v6Range,
+			Extra:              &api.AccountExtraSettings{},
+		},
+	}
+	data := AccountSettingsModel{
+		Id:               types.StringValue("a"),
+		JwtGroupsEnabled: types.BoolValue(true),
+	}
+
+	out := accountTerraformToAPI(context.Background(), account, data).Settings
+
+	if out.JwtGroupsEnabled == nil || !*out.JwtGroupsEnabled {
+		t.Fatalf("jwt_groups_enabled: expected true, found %v", out.JwtGroupsEnabled)
+	}
+	for name, v := range map[string]*bool{
+		"agent_network_only":               out.AgentNetworkOnly,
+		"auto_update_always":               out.AutoUpdateAlways,
+		"local_mfa_enabled":                out.LocalMfaEnabled,
+		"metrics_push_enabled":             out.MetricsPushEnabled,
+		"dashboard_features.agent_network": dashboardAgentNetwork(out.DashboardFeatures),
+	} {
+		if v == nil || !*v {
+			t.Errorf("%s: expected the account's true to be kept, found %v", name, v)
+		}
+	}
+	if out.Ipv6EnabledGroups == nil || !reflect.DeepEqual(*out.Ipv6EnabledGroups, groups) {
+		t.Errorf("ipv6_enabled_groups: expected %v, found %v", groups, out.Ipv6EnabledGroups)
+	}
+	if out.NetworkRangeV6 == nil || *out.NetworkRangeV6 != v6Range {
+		t.Errorf("network_range_v6: expected %s, found %v", v6Range, out.NetworkRangeV6)
+	}
+}
+
+func dashboardAgentNetwork(f *api.AccountDashboardFeatures) *bool {
+	if f == nil {
+		return nil
+	}
+	return f.AgentNetwork
+}
