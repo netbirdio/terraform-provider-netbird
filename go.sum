@@ -355,10 +355,10 @@ github.com/netbirdio/dex v0.244.1-0.20260512110716-8d70ad8647c1 h1:4TaYr9O4xX0D2
 github.com/netbirdio/dex v0.244.1-0.20260512110716-8d70ad8647c1/go.mod h1:IHH+H8vK2GfqtIt5u/5OdPh18yk0oDHuj2vz5+Goetg=
 github.com/netbirdio/dex/api/v2 v2.0.0-20260512110716-8d70ad8647c1 h1:neE7z+FPUkldl3faK/Jt+hJK2L+1XfQ1W33TQhU9m88=
 github.com/netbirdio/dex/api/v2 v2.0.0-20260512110716-8d70ad8647c1/go.mod h1:awuTyT29CYALpEyET0S307EgNlPWrc7fFKRAyhsO45M=
-github.com/netbirdio/management-integrations/integrations v0.0.0-20260803100840-78e79ba20f87 h1:iJeUvSMC0BTpkw7u4JyWcY4/3dl7fEL9DR/TpKf2+1w=
-github.com/netbirdio/management-integrations/integrations v0.0.0-20260803100840-78e79ba20f87/go.mod h1:pmsCPx1S0nuZRxCextGpc9AV4hLgGSuTsc4NMuwGeCo=
-github.com/netbirdio/netbird v0.81.0-canary.pr-7662.1 h1:krylDbFqMpdsDoykC9TKMSItX7yiV5NOkKazfYp0QWg=
-github.com/netbirdio/netbird v0.81.0-canary.pr-7662.1/go.mod h1:wPz4AqPtKL2qFsdhx0U/6he7zBLZtU6AsHBi7enBKYk=
+github.com/netbirdio/management-integrations/integrations v0.0.0-20261006132740-6e6b0cb01f2e h1:SnDCreUnY+QDxKPueUoNrniMALCu2VFkXTCr/RIZjdg=
+github.com/netbirdio/management-integrations/integrations v0.0.0-20261006132740-6e6b0cb01f2e/go.mod h1:n47r67ZSPgwSmT/Z1o48JjZQW9YJ6m/6Bd/uAXkL3Pg=
+github.com/netbirdio/netbird v0.81.0-canary.pr-8098.1 h1:h+KqGncXgBRxEQTLjs1GX+P/XJkmJvDCcoSoeKuVLyg=
+github.com/netbirdio/netbird v0.81.0-canary.pr-8098.1/go.mod h1:/Bp4qXKMW/5h5R6g9MjNbuhYQIpRB+1DhFn/fvc0sO8=
 github.com/oapi-codegen/nullable v1.1.0 h1:eAh8JVc5430VtYVnq00Hrbpag9PFRGWLjxR1/3KntMs=
 github.com/oapi-codegen/nullable v1.1.0/go.mod h1:KUZ3vUzkmEKY90ksAmit2+5juDIhIZhfDl+0PwOQlFY=
 github.com/oapi-codegen/runtime v1.6.0 h1:7Xx+GlueD6nRuyKoCPzL434Jfi3BetbiJOrzCHp/VPU=
