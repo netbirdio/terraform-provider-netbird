@@ -263,6 +263,7 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	return ret
 }
 
+// accountTerraformToAPI builds the update request for the account's settings.
 // The management server builds the stored settings from the request alone and
 // saves every column, so a field missing from the request is reset. The
 // request therefore starts from the account's current settings, and fields

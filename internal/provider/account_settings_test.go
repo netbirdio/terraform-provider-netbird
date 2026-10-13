@@ -358,6 +358,8 @@ func Test_accountTerraformToAPI_withoutExtra(t *testing.T) {
 	}
 }
 
+// dashboardAgentNetwork reads dashboard_features.agent_network, nil when the
+// features object is absent.
 func dashboardAgentNetwork(f *api.AccountDashboardFeatures) *bool {
 	if f == nil {
 		return nil
