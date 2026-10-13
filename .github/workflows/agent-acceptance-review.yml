@@ -108,7 +108,7 @@ jobs:
       self: ${{ steps.selfmod.outputs.self }}
     steps:
       - name: Download PR metadata
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: pr-metadata
           run-id: ${{ github.event.workflow_run.id }}
@@ -445,7 +445,7 @@ jobs:
         # Missing artifact (analyze never ran/uploaded) is handled below as a
         # fail-closed verdict, not a job error.
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: edict-result
 
