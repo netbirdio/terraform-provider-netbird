@@ -270,12 +270,15 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 func accountTerraformToAPI(ctx context.Context, account *api.Account, data AccountSettingsModel) api.AccountRequest {
 	settings := account.Settings
 
-	extra := *account.Settings.Extra
-	extra.NetworkTrafficLogsEnabled = boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled)
-	extra.NetworkTrafficPacketCounterEnabled = boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled)
-	extra.PeerApprovalEnabled = boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled)
-	extra.UserApprovalRequired = boolDefault(data.UserApprovalRequired, account.Settings.Extra.UserApprovalRequired)
-	extra.NetworkTrafficLogsGroups = stringListDefault(ctx, data.NetworkTrafficLogsGroups, account.Settings.Extra.NetworkTrafficLogsGroups)
+	var extra api.AccountExtraSettings
+	if account.Settings.Extra != nil {
+		extra = *account.Settings.Extra
+	}
+	extra.NetworkTrafficLogsEnabled = boolDefault(data.NetworkTrafficLogsEnabled, extra.NetworkTrafficLogsEnabled)
+	extra.NetworkTrafficPacketCounterEnabled = boolDefault(data.NetworkTrafficPacketCounterEnabled, extra.NetworkTrafficPacketCounterEnabled)
+	extra.PeerApprovalEnabled = boolDefault(data.PeerApprovalEnabled, extra.PeerApprovalEnabled)
+	extra.UserApprovalRequired = boolDefault(data.UserApprovalRequired, extra.UserApprovalRequired)
+	extra.NetworkTrafficLogsGroups = stringListDefault(ctx, data.NetworkTrafficLogsGroups, extra.NetworkTrafficLogsGroups)
 	settings.Extra = &extra
 
 	settings.GroupsPropagationEnabled = boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled)

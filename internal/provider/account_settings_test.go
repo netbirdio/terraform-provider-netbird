@@ -343,6 +343,21 @@ func Test_accountTerraformToAPI_keepsUnmodeledSettings(t *testing.T) {
 	}
 }
 
+func Test_accountTerraformToAPI_withoutExtra(t *testing.T) {
+	account := &api.Account{Id: "a"}
+	data := AccountSettingsModel{
+		Id:                       types.StringValue("a"),
+		PeerApprovalEnabled:      types.BoolValue(true),
+		NetworkTrafficLogsGroups: types.ListNull(types.StringType),
+	}
+
+	out := accountTerraformToAPI(context.Background(), account, data).Settings
+
+	if out.Extra == nil || !out.Extra.PeerApprovalEnabled {
+		t.Fatalf("extra: expected peer_approval_enabled true, found %#v", out.Extra)
+	}
+}
+
 func dashboardAgentNetwork(f *api.AccountDashboardFeatures) *bool {
 	if f == nil {
 		return nil
