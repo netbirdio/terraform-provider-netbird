@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -1246,6 +1247,7 @@ func Test_reverseProxyServiceDataSourceSchema(t *testing.T) {
 	var _ datasource.DataSource = &ReverseProxyServiceDataSource{}
 }
 
+// Header auth is a list: a round trip must keep every entry, its value, and the order.
 func Test_reverseProxyServiceRoundtrip_headerAuth(t *testing.T) {
 	ctx := context.Background()
 
@@ -1297,6 +1299,143 @@ func Test_reverseProxyServiceRoundtrip_headerAuth(t *testing.T) {
 	}
 }
 
+// assertMappedSecret checks a mapped auth secret: null when the API blanked it, the value otherwise.
+func assertMappedSecret(t *testing.T, value attr.Value, apiValue, field string) {
+	t.Helper()
+
+	s, ok := value.(types.String)
+	if !ok {
+		t.Fatalf("%s should be a types.String, got %T", field, value)
+	}
+	if apiValue == "" {
+		if !s.IsNull() {
+			t.Errorf("%s should be null when the API redacts it, got %q", field, s.ValueString())
+		}
+		return
+	}
+	if s.ValueString() != apiValue {
+		t.Errorf("%s mismatch: expected %q, got %q", field, apiValue, s.ValueString())
+	}
+}
+
+// The API never returns auth secrets, so state must hold null: for Optional password and pin an
+// empty string diffs against a configuration that omits them. Mapping back, null must become a
+// blank inside an enabled block, or the auth method would be dropped. The "value present" case
+// covers the branch that leaves a real value alone.
+func Test_reverseProxyServiceRoundtrip_authSecrets(t *testing.T) {
+	cases := []struct {
+		name   string
+		secret string
+	}{
+		{name: "blanked by the API", secret: ""},
+		{name: "value present", secret: "s3cret"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			original := &api.Service{
+				Id:      "svc-secrets-rt",
+				Name:    "auth-secrets-roundtrip",
+				Domain:  "secrets-rt.example.com",
+				Enabled: true,
+				Targets: []api.ServiceTarget{
+					{
+						TargetId:   "peer1",
+						TargetType: api.ServiceTargetTargetTypePeer,
+						Port:       80,
+						Protocol:   api.ServiceTargetProtocolHttp,
+						Enabled:    true,
+					},
+				},
+				Auth: api.ServiceAuthConfig{
+					PasswordAuth: &api.PasswordAuthConfig{Enabled: true, Password: c.secret},
+					PinAuth:      &api.PINAuthConfig{Enabled: true, Pin: c.secret},
+					// The second header is never blank, so the redacted case also proves the
+					// loop maps each entry independently.
+					HeaderAuths: &[]api.HeaderAuthConfig{
+						{Enabled: true, Header: "X-API-Key", Value: c.secret},
+						{Enabled: true, Header: "X-Tenant", Value: "always-set"},
+					},
+				},
+			}
+
+			var model ReverseProxyServiceModel
+			if d := reverseProxyServiceAPIToTerraform(ctx, original, &model); d.HasError() {
+				t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+			}
+
+			authAttrs := model.Auth.Attributes()
+
+			pwObj, ok := authAttrs["password_auth"].(types.Object)
+			if !ok || pwObj.IsNull() {
+				t.Fatal("password_auth should be set when the API returns it")
+			}
+			assertMappedSecret(t, pwObj.Attributes()["password"], c.secret, "password_auth.password")
+			if enabled, ok := pwObj.Attributes()["enabled"].(types.Bool); !ok || !enabled.ValueBool() {
+				t.Error("password_auth.enabled should survive the mapping")
+			}
+
+			pinObj, ok := authAttrs["pin_auth"].(types.Object)
+			if !ok || pinObj.IsNull() {
+				t.Fatal("pin_auth should be set when the API returns it")
+			}
+			assertMappedSecret(t, pinObj.Attributes()["pin"], c.secret, "pin_auth.pin")
+			if enabled, ok := pinObj.Attributes()["enabled"].(types.Bool); !ok || !enabled.ValueBool() {
+				t.Error("pin_auth.enabled should survive the mapping")
+			}
+
+			headers, ok := authAttrs["header_auths"].(types.List)
+			if !ok || len(headers.Elements()) != 2 {
+				t.Fatalf("header_auths should hold the two entries the API returned, got %v", headers)
+			}
+			for i, want := range []string{c.secret, "always-set"} {
+				headerObj, ok := headers.Elements()[i].(types.Object)
+				if !ok {
+					t.Fatalf("header_auths[%d] should be an object", i)
+				}
+				assertMappedSecret(t, headerObj.Attributes()["value"], want, fmt.Sprintf("header_auths[%d].value", i))
+			}
+
+			req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+			if d.HasError() {
+				t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+			}
+			if req.Auth == nil {
+				t.Fatal("Auth should be sent")
+			}
+
+			if req.Auth.PasswordAuth == nil {
+				t.Fatal("PasswordAuth should be sent, not dropped")
+			}
+			if !req.Auth.PasswordAuth.Enabled || req.Auth.PasswordAuth.Password != c.secret {
+				t.Errorf("PasswordAuth round-trip: expected enabled with %q, got enabled=%v %q",
+					c.secret, req.Auth.PasswordAuth.Enabled, req.Auth.PasswordAuth.Password)
+			}
+
+			if req.Auth.PinAuth == nil {
+				t.Fatal("PinAuth should be sent, not dropped")
+			}
+			if !req.Auth.PinAuth.Enabled || req.Auth.PinAuth.Pin != c.secret {
+				t.Errorf("PinAuth round-trip: expected enabled with %q, got enabled=%v %q",
+					c.secret, req.Auth.PinAuth.Enabled, req.Auth.PinAuth.Pin)
+			}
+
+			if req.Auth.HeaderAuths == nil || len(*req.Auth.HeaderAuths) != 2 {
+				t.Fatal("HeaderAuths should carry both entries")
+			}
+			for i, want := range []string{c.secret, "always-set"} {
+				if h := (*req.Auth.HeaderAuths)[i]; !h.Enabled || h.Value != want {
+					t.Errorf("header_auths[%d] round-trip: expected enabled with %q, got enabled=%v %q",
+						i, want, h.Enabled, h.Value)
+				}
+			}
+		})
+	}
+}
+
+// Access restrictions are optional on both sides: a round trip must not drop the block or its lists.
 func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
 	ctx := context.Background()
 
