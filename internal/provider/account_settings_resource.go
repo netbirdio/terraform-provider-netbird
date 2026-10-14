@@ -293,6 +293,14 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 	}
 }
 
+func firstAccount(accounts []api.Account) (*api.Account, error) {
+	if len(accounts) == 0 {
+		return nil, fmt.Errorf("no accounts returned by API")
+	}
+
+	return &accounts[0], nil
+}
+
 func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AccountSettingsModel
 
@@ -309,7 +317,11 @@ func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	account := &accounts[0]
+	account, err := firstAccount(accounts)
+	if err != nil {
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
+		return
+	}
 
 	updateRequest := accountTerraformToAPI(ctx, account, data)
 
@@ -340,8 +352,6 @@ func (r *AccountSettings) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	accounts, err := r.client.Accounts.List(ctx)
-	account := &accounts[0]
-
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			resp.State.RemoveResource(ctx)
@@ -349,6 +359,12 @@ func (r *AccountSettings) Read(ctx context.Context, req resource.ReadRequest, re
 		} else {
 			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		}
+		return
+	}
+
+	account, err := firstAccount(accounts)
+	if err != nil {
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
 
@@ -382,7 +398,11 @@ func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest
 		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
-	account := &accounts[0]
+	account, err := firstAccount(accounts)
+	if err != nil {
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
+		return
+	}
 
 	updateRequest := accountTerraformToAPI(ctx, account, data)
 
