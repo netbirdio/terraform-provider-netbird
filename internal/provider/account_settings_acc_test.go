@@ -107,11 +107,16 @@ func Test_Account_Update_KeepsUnmodeledSettings(t *testing.T) {
 	env := testE2E(t)
 	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	rNameFull := "netbird_account_settings." + rName
+	original, err := testAccountSettings(env.AccountID)
+	if err != nil {
+		t.Fatalf("could not read the account's settings: %v", err)
+	}
 	t.Cleanup(func() {
-		if err := setUnmodeledAccountSettings(env.AccountID, false); err != nil {
-			t.Errorf("could not reset the unmodeled settings: %v", err)
+		if err := setUnmodeledAccountSettings(env.AccountID, original.MetricsPushEnabled, original.AutoUpdateAlways); err != nil {
+			t.Errorf("could not restore the unmodeled settings: %v", err)
 		}
 	})
+	enabled := true
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -122,7 +127,7 @@ func Test_Account_Update_KeepsUnmodeledSettings(t *testing.T) {
 			},
 			{
 				PreConfig: func() {
-					if err := setUnmodeledAccountSettings(env.AccountID, true); err != nil {
+					if err := setUnmodeledAccountSettings(env.AccountID, &enabled, &enabled); err != nil {
 						t.Fatalf("could not set the unmodeled settings: %v", err)
 					}
 				},
@@ -143,6 +148,11 @@ func Test_Account_Update_KeepsUnmodeledSettings(t *testing.T) {
 					},
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -162,14 +172,17 @@ func testAccountSettings(accountID string) (api.AccountSettings, error) {
 
 // setUnmodeledAccountSettings sets metrics_push_enabled and auto_update_always
 // through the API. It sends the account's current settings with only those two
-// changed, because the server resets any field an update request leaves out.
-func setUnmodeledAccountSettings(accountID string, enabled bool) error {
+// changed, because the server resets any field an update request leaves out,
+// and drops the two read-only fields the server computes.
+func setUnmodeledAccountSettings(accountID string, metricsPush, autoUpdateAlways *bool) error {
 	settings, err := testAccountSettings(accountID)
 	if err != nil {
 		return err
 	}
-	settings.MetricsPushEnabled = &enabled
-	settings.AutoUpdateAlways = &enabled
+	settings.MetricsPushEnabled = metricsPush
+	settings.AutoUpdateAlways = autoUpdateAlways
+	settings.EmbeddedIdpEnabled = nil
+	settings.LocalAuthDisabled = nil
 	_, err = testClient().Accounts.Update(context.Background(), accountID, api.AccountRequest{Settings: settings})
 	return err
 }

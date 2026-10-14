@@ -270,6 +270,10 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 // this resource does not model keep their values.
 func accountTerraformToAPI(ctx context.Context, account *api.Account, data AccountSettingsModel) api.AccountRequest {
 	settings := account.Settings
+	// Read-only in the API schema: the server computes them and does not read
+	// them from a request.
+	settings.EmbeddedIdpEnabled = nil
+	settings.LocalAuthDisabled = nil
 
 	var extra api.AccountExtraSettings
 	if account.Settings.Extra != nil {

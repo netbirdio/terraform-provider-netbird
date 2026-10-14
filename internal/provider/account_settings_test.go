@@ -307,6 +307,8 @@ func Test_accountTerraformToAPI_keepsUnmodeledSettings(t *testing.T) {
 			AgentNetworkOnly:   &enabled,
 			AutoUpdateAlways:   &enabled,
 			DashboardFeatures:  &api.AccountDashboardFeatures{AgentNetwork: &enabled},
+			EmbeddedIdpEnabled: &enabled,
+			LocalAuthDisabled:  &enabled,
 			Ipv6EnabledGroups:  &groups,
 			LocalMfaEnabled:    &enabled,
 			MetricsPushEnabled: &enabled,
@@ -323,6 +325,10 @@ func Test_accountTerraformToAPI_keepsUnmodeledSettings(t *testing.T) {
 
 	if out.JwtGroupsEnabled == nil || !*out.JwtGroupsEnabled {
 		t.Fatalf("jwt_groups_enabled: expected true, found %v", out.JwtGroupsEnabled)
+	}
+	if out.EmbeddedIdpEnabled != nil || out.LocalAuthDisabled != nil {
+		t.Errorf("read-only fields: expected none in the request, found embedded_idp_enabled %v, local_auth_disabled %v",
+			out.EmbeddedIdpEnabled, out.LocalAuthDisabled)
 	}
 	for name, v := range map[string]*bool{
 		"agent_network_only":               out.AgentNetworkOnly,
