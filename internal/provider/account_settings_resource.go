@@ -409,7 +409,7 @@ func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest
 	}
 	account, err := accountByID(accounts, data.Id.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
+		resp.Diagnostics.AddError("Account not found", err.Error())
 		return
 	}
 
