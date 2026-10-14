@@ -364,6 +364,21 @@ func Test_accountTerraformToAPI_withoutExtra(t *testing.T) {
 	}
 }
 
+func Test_accountByID(t *testing.T) {
+	accounts := []api.Account{{Id: "first"}, {Id: "managed"}}
+
+	got, err := accountByID(accounts, "managed")
+	if err != nil || got.Id != "managed" {
+		t.Fatalf("expected account managed, found %v (err %v)", got, err)
+	}
+	if _, err := accountByID(accounts, "missing"); err == nil {
+		t.Fatalf("expected an error for an account the list does not hold")
+	}
+	if _, err := accountByID(nil, "managed"); err == nil {
+		t.Fatalf("expected an error for an empty list")
+	}
+}
+
 // dashboardAgentNetwork reads dashboard_features.agent_network, nil when the
 // features object is absent.
 func dashboardAgentNetwork(f *api.AccountDashboardFeatures) *bool {
