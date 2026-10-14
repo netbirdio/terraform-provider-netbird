@@ -64,9 +64,9 @@ func (r *IdentityProvider) Schema(ctx context.Context, req resource.SchemaReques
 				Required:            true,
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: "Type of identity provider (entra, google, microsoft, oidc, okta, pocketid, zitadel)",
+				MarkdownDescription: "Type of identity provider (entra, google, keycloak, microsoft, oidc, okta, pocketid, zitadel)",
 				Required:            true,
-				Validators:          []validator.String{stringvalidator.OneOf("entra", "google", "microsoft", "oidc", "okta", "pocketid", "zitadel")},
+				Validators:          []validator.String{stringvalidator.OneOf("entra", "google", "keycloak", "microsoft", "oidc", "okta", "pocketid", "zitadel")},
 			},
 			"client_id": schema.StringAttribute{
 				MarkdownDescription: "OAuth2 client ID",

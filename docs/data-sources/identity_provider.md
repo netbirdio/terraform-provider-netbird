@@ -36,4 +36,4 @@ data "netbird_identity_provider" "example" {
 
 - `client_id` (String) OAuth2 client ID
 - `issuer` (String) OIDC issuer URL
-- `type` (String) Type of identity provider (entra, google, microsoft, oidc, okta, pocketid, zitadel)
+- `type` (String) Type of identity provider (entra, google, keycloak, microsoft, oidc, okta, pocketid, zitadel)
