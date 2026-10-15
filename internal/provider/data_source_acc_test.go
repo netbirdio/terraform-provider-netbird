@@ -88,6 +88,22 @@ func Test_Policy_DataSource(t *testing.T) {
 		samePair("policy", rName, "name", "description", "enabled"))
 }
 
+// The data source shares policyAPIToTerraform with the resource, so a rule
+// without a description reads as "" there too. samePair cannot catch a
+// regression here, since both sides would turn null together.
+func Test_Policy_DataSource_RuleDescription(t *testing.T) {
+	testE2E(t)
+	rName := "p" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config: testPolicyResourceRuleDescription(rName, "") + dataSourceByID("policy", rName),
+			Check:  resource.TestCheckResourceAttr("data.netbird_policy."+rName, "rule.0.description", ""),
+		}},
+	})
+}
+
 func Test_PostureCheck_DataSource(t *testing.T) {
 	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
