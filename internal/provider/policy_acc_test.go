@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -245,6 +246,125 @@ func Test_Policy_Update_Resources(t *testing.T) {
 			},
 		},
 	})
+}
+
+// Test_Policy_RuleDescription walks a rule description through omitted, set,
+// omitted again and an explicit "". The server stores and returns "" for a rule
+// without a description, so omitted and "" have to mean the same thing: the
+// explicit "" step is the one that failed with "Provider produced inconsistent
+// result after apply" while an empty description was read back as null.
+func Test_Policy_RuleDescription(t *testing.T) {
+	testE2E(t)
+	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_policy." + rName
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Policies.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: testPolicyResourceRuleDescription(rName, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					testCheckPolicyRuleDescription(rNameFull, ""),
+				),
+			},
+			{
+				Config:           testPolicyResourceRuleDescription(rName, `description = "set"`),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
+				Check:            testCheckPolicyRuleDescription(rNameFull, "set"),
+			},
+			{
+				Config:           testPolicyResourceRuleDescription(rName, ""),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
+				Check:            testCheckPolicyRuleDescription(rNameFull, ""),
+			},
+			{
+				Config: testPolicyResourceRuleDescription(rName, `description = ""`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: testCheckPolicyRuleDescription(rNameFull, ""),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// Test_Policy_RuleDescription_CreateEmpty creates a rule with an explicit ""
+// description, which has no prior state to hide behind.
+func Test_Policy_RuleDescription_CreateEmpty(t *testing.T) {
+	testE2E(t)
+	rName := "po" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_policy." + rName
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Policies.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: testPolicyResourceRuleDescription(rName, `description = ""`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					testCheckPolicyRuleDescription(rNameFull, ""),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// testCheckPolicyRuleDescription asserts the first rule's description both in
+// state and on the management server.
+func testCheckPolicyRuleDescription(address, want string) resource.TestCheckFunc {
+	return resource.ComposeAggregateTestCheckFunc(
+		resource.TestCheckResourceAttr(address, "rule.0.description", want),
+		func(s *terraform.State) error {
+			pID := s.RootModule().Resources[address].Primary.Attributes["id"]
+			policy, err := testClient().Policies.Get(context.Background(), pID)
+			if err != nil {
+				return err
+			}
+			if len(policy.Rules) != 1 {
+				return fmt.Errorf("expected 1 rule on the management server, found %d", len(policy.Rules))
+			}
+			if got := policy.Rules[0].Description; got == nil || *got != want {
+				return fmt.Errorf("expected rule description %q on the management server, found %v", want, valOr(got, "<nil>"))
+			}
+			return nil
+		},
+	)
+}
+
+// testPolicyResourceRuleDescription is a one-rule policy whose rule carries
+// ruleDescription verbatim, so an empty string leaves the attribute out.
+func testPolicyResourceRuleDescription(rName, ruleDescription string) string {
+	return fmt.Sprintf(`resource "netbird_policy" "%[1]s" {
+	name    = "%[1]s"
+	enabled = true
+
+	rule {
+		name          = "%[1]s"
+		%[2]s
+		action        = "accept"
+		bidirectional = true
+		enabled       = true
+		protocol      = "tcp"
+		sources       = ["%[3]s"]
+		destinations  = ["%[4]s"]
+		ports         = ["443"]
+	}
+}`, rName, ruleDescription, e2eGroupAllID(), e2eGroupNotAllID())
 }
 
 func testPolicyResourceGroups(rName, name, description, rAction, rProt, rSource, rDest, port string) string {
