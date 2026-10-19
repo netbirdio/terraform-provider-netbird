@@ -30,6 +30,34 @@ resource "netbird_reverse_proxy_service" "web_app" {
   }
 }
 
+# HTTP service running on the proxy host itself: a cluster target is dialed
+# through the proxy host's own network stack (direct_upstream), not the tunnel
+data "netbird_reverse_proxy_clusters" "all" {}
+
+resource "netbird_reverse_proxy_service" "local_dashboard" {
+  name   = "local-dashboard"
+  domain = "dashboard.${data.netbird_reverse_proxy_domain.free.domain}"
+
+  targets = [{
+    target_id   = data.netbird_reverse_proxy_clusters.all.clusters[0].address
+    target_type = "cluster"
+    host        = "localhost"
+    port        = 3000
+    protocol    = "http"
+
+    options = {
+      direct_upstream = true
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = var.web_app_password
+    }
+  }
+}
+
 # TCP (L4) proxy service with proxy protocol
 resource "netbird_reverse_proxy_service" "postgres" {
   name        = "postgres"

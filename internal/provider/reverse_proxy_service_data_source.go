@@ -96,11 +96,11 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"target_id": schema.StringAttribute{
-							MarkdownDescription: "Target ID (resource or peer ID)",
+							MarkdownDescription: "Target ID (resource or peer ID, or the proxy cluster address for `cluster` targets)",
 							Computed:            true,
 						},
 						"target_type": schema.StringAttribute{
-							MarkdownDescription: "Target type (peer, host, domain, subnet)",
+							MarkdownDescription: "Target type (peer, host, domain, subnet, cluster)",
 							Computed:            true,
 						},
 						"host": schema.StringAttribute{
@@ -151,6 +151,10 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 								},
 								"session_idle_timeout": schema.StringAttribute{
 									MarkdownDescription: "Idle timeout before a UDP session is reaped (UDP only)",
+									Computed:            true,
+								},
+								"direct_upstream": schema.BoolAttribute{
+									MarkdownDescription: "Dial this backend through the proxy host's own network stack instead of the NetBird tunnel",
 									Computed:            true,
 								},
 							},

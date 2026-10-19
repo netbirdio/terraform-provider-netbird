@@ -423,6 +423,70 @@ func Test_reverseProxyServiceRoundtrip_l4Options(t *testing.T) {
 	}
 }
 
+func Test_reverseProxyServiceRoundtrip_clusterTarget(t *testing.T) {
+	ctx := context.Background()
+
+	original := &api.Service{
+		Id:      "svc-cluster-rt",
+		Name:    "cluster-roundtrip",
+		Domain:  "cluster-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				// A cluster target names the proxy cluster and is dialed from the
+				// proxy host, so it carries its own host and direct_upstream.
+				TargetId:   "proxy.example.com",
+				TargetType: api.ServiceTargetTargetTypeCluster,
+				Host:       valPtr("localhost"),
+				Port:       3000,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+				Options: &api.ServiceTargetOptions{
+					DirectUpstream: valPtr(true),
+				},
+			},
+		},
+		Auth: api.ServiceAuthConfig{},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+
+	var targets []ReverseProxyServiceTargetModel
+	d = model.Targets.ElementsAs(ctx, &targets, false)
+	if d.HasError() || len(targets) != 1 {
+		t.Fatal("Failed to extract the cluster target")
+	}
+	if targets[0].TargetType.ValueString() != "cluster" {
+		t.Errorf("TargetType mismatch: got %s", targets[0].TargetType.ValueString())
+	}
+	du, ok := targets[0].Options.Attributes()["direct_upstream"].(types.Bool)
+	if !ok || !du.ValueBool() {
+		t.Error("direct_upstream should be true in state")
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+	if req.Targets == nil || len(*req.Targets) != 1 {
+		t.Fatalf("Expected 1 target")
+	}
+	target := (*req.Targets)[0]
+	if target.TargetType != api.ServiceTargetTargetTypeCluster {
+		t.Errorf("TargetType mismatch: got %s", target.TargetType)
+	}
+	if target.Host == nil || *target.Host != "localhost" {
+		t.Errorf("Host mismatch: got %v", target.Host)
+	}
+	if target.Options == nil || target.Options.DirectUpstream == nil || !*target.Options.DirectUpstream {
+		t.Error("DirectUpstream should be true in the request")
+	}
+}
+
 func Test_reverseProxyServiceTargetModelTFType(t *testing.T) {
 	tfType := ReverseProxyServiceTargetModel{}.TFType()
 	expectedKeys := []string{"target_id", "target_type", "host", "port", "protocol", "path", "enabled", "options"}
@@ -448,7 +512,7 @@ func Test_reverseProxyServiceAuthModelTFType(t *testing.T) {
 
 func Test_reverseProxyTargetOptionsModelTFType(t *testing.T) {
 	tfType := ReverseProxyTargetOptionsModel{}.TFType()
-	expectedKeys := []string{"skip_tls_verify", "request_timeout", "path_rewrite", "custom_headers", "proxy_protocol", "session_idle_timeout"}
+	expectedKeys := []string{"skip_tls_verify", "request_timeout", "path_rewrite", "custom_headers", "proxy_protocol", "session_idle_timeout", "direct_upstream"}
 	for _, key := range expectedKeys {
 		if _, ok := tfType.AttrTypes[key]; !ok {
 			t.Errorf("Expected key %s in TFType, not found", key)
@@ -517,6 +581,8 @@ func Test_reverseProxyServiceAPIToTerraform_nullOptions(t *testing.T) {
 		// means the option was never configured and must not materialize an
 		// options object in state.
 		{name: "default-valued options", options: &api.ServiceTargetOptions{ProxyProtocol: valPtr(false)}},
+		// Same for direct_upstream.
+		{name: "direct_upstream false", options: &api.ServiceTargetOptions{DirectUpstream: valPtr(false)}},
 	}
 
 	for _, c := range cases {
