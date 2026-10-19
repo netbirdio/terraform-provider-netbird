@@ -875,6 +875,87 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 	})
 }
 
+func Test_ReverseProxyService_CrowdsecMode(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	peerID := testPeerID(t, "peer1")
+
+	// The server stores the mode whether or not the cluster runs a CrowdSec
+	// bouncer, so the round-trip is testable without one.
+	checkServerMode := func(want string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+			svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+			if err != nil {
+				return fmt.Errorf("get service: %w", err)
+			}
+			if svc.AccessRestrictions == nil || svc.AccessRestrictions.CrowdsecMode == nil {
+				return fmt.Errorf("expected crowdsec_mode %q, got none", want)
+			}
+			if got := string(*svc.AccessRestrictions.CrowdsecMode); got != want {
+				return fmt.Errorf("expected crowdsec_mode %q, got %q", want, got)
+			}
+			return nil
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(rName),
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceCrowdsecMode(rName, domain, peerID, "observe"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.crowdsec_mode", "observe"),
+					checkServerMode("observe"),
+				),
+			},
+			{
+				Config: testReverseProxyServiceCrowdsecMode(rName, domain, peerID, "enforce"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.crowdsec_mode", "enforce"),
+					checkServerMode("enforce"),
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.password_auth.password"},
+			},
+		},
+	})
+}
+
+func testReverseProxyServiceCrowdsecMode(rName, domain, peerID, mode string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "peer"
+    port        = 8080
+    protocol    = "http"
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = "crowdsec-test"
+    }
+  }
+
+  access_restrictions = {
+    crowdsec_mode = %q
+  }
+}`, rName, rName, domain, peerID, mode)
+}
+
 func testReverseProxyServiceHeaderAuth(rName, domain, peerID, header, value string) string {
 	return fmt.Sprintf(`
 resource "netbird_reverse_proxy_service" "%s" {

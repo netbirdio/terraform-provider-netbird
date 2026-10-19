@@ -208,10 +208,11 @@ func (m ReverseProxyHeaderAuthModel) TFType() types.ObjectType {
 
 // ReverseProxyAccessRestrictionsModel describes access restrictions.
 type ReverseProxyAccessRestrictionsModel struct {
-	AllowedCidrs     types.List `tfsdk:"allowed_cidrs"`
-	BlockedCidrs     types.List `tfsdk:"blocked_cidrs"`
-	AllowedCountries types.List `tfsdk:"allowed_countries"`
-	BlockedCountries types.List `tfsdk:"blocked_countries"`
+	AllowedCidrs     types.List   `tfsdk:"allowed_cidrs"`
+	BlockedCidrs     types.List   `tfsdk:"blocked_cidrs"`
+	AllowedCountries types.List   `tfsdk:"allowed_countries"`
+	BlockedCountries types.List   `tfsdk:"blocked_countries"`
+	CrowdsecMode     types.String `tfsdk:"crowdsec_mode"`
 }
 
 // TFType returns the Terraform object type for access restrictions.
@@ -222,6 +223,7 @@ func (m ReverseProxyAccessRestrictionsModel) TFType() types.ObjectType {
 			"blocked_cidrs":     types.ListType{ElemType: types.StringType},
 			"allowed_countries": types.ListType{ElemType: types.StringType},
 			"blocked_countries": types.ListType{ElemType: types.StringType},
+			"crowdsec_mode":     types.StringType,
 		},
 	}
 }
@@ -441,9 +443,14 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 				},
 			},
 			"access_restrictions": schema.SingleNestedAttribute{
-				MarkdownDescription: "Connection-level access restrictions based on IP or geography",
+				MarkdownDescription: "Connection-level access restrictions based on IP, geography or CrowdSec reputation",
 				Optional:            true,
 				Attributes: map[string]schema.Attribute{
+					"crowdsec_mode": schema.StringAttribute{
+						MarkdownDescription: "CrowdSec IP reputation mode: `enforce` blocks flagged clients, `observe` only reports them, `off` disables the check. Takes effect only on proxy clusters that support CrowdSec.",
+						Optional:            true,
+						Validators:          []validator.String{stringvalidator.OneOf("enforce", "observe", "off")},
+					},
 					"allowed_cidrs": schema.ListAttribute{
 						MarkdownDescription: "CIDR allowlist",
 						Optional:            true,
@@ -736,6 +743,11 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 		} else {
 			arModel.BlockedCountries = types.ListNull(types.StringType)
 		}
+		if svc.AccessRestrictions.CrowdsecMode != nil {
+			arModel.CrowdsecMode = types.StringValue(string(*svc.AccessRestrictions.CrowdsecMode))
+		} else {
+			arModel.CrowdsecMode = types.StringNull()
+		}
 		data.AccessRestrictions, d = types.ObjectValueFrom(ctx, ReverseProxyAccessRestrictionsModel{}.TFType().AttrTypes, arModel)
 		ret.Append(d...)
 	} else {
@@ -1011,6 +1023,11 @@ func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxySe
 			var countries []string
 			ret.Append(v.ElementsAs(ctx, &countries, false)...)
 			ar.BlockedCountries = &countries
+			hasAR = true
+		}
+		if v, ok := arAttrs["crowdsec_mode"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+			mode := api.AccessRestrictionsCrowdsecMode(v.ValueString())
+			ar.CrowdsecMode = &mode
 			hasAR = true
 		}
 		if hasAR {

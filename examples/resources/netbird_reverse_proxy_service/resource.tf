@@ -100,6 +100,7 @@ resource "netbird_reverse_proxy_service" "api_gateway" {
   access_restrictions = {
     allowed_countries = ["US", "DE", "GB"]
     blocked_cidrs     = ["192.168.0.0/16"]
+    crowdsec_mode     = "enforce"
   }
 }
 
