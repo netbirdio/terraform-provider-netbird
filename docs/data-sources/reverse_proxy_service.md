@@ -40,7 +40,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 ### Read-Only
 
-- `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
+- `access_restrictions` (Attributes) Connection-level access restrictions based on IP, geography or CrowdSec reputation (see [below for nested schema](#nestedatt--access_restrictions))
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
 - `listen_port` (Number) Port the proxy listens on (L4/TLS only)
@@ -60,6 +60,7 @@ Read-Only:
 - `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
 - `blocked_cidrs` (List of String) CIDR blocklist
 - `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
+- `crowdsec_mode` (String) CrowdSec IP reputation mode (enforce, observe, off)
 
 
 <a id="nestedatt--auth"></a>

@@ -115,6 +115,7 @@ resource "netbird_reverse_proxy_service" "api_gateway" {
   access_restrictions = {
     allowed_countries = ["US", "DE", "GB"]
     blocked_cidrs     = ["192.168.0.0/16"]
+    crowdsec_mode     = "enforce"
   }
 }
 
@@ -154,7 +155,7 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
 
 ### Optional
 
-- `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
+- `access_restrictions` (Attributes) Connection-level access restrictions based on IP, geography or CrowdSec reputation (see [below for nested schema](#nestedatt--access_restrictions))
 - `enabled` (Boolean) Whether the service is enabled
 - `listen_port` (Number) Port the proxy listens on (L4/TLS only). Set to 0 for auto-assignment.
 - `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
@@ -273,3 +274,4 @@ Optional:
 - `allowed_countries` (List of String) ISO 3166-1 alpha-2 country codes to allow
 - `blocked_cidrs` (List of String) CIDR blocklist
 - `blocked_countries` (List of String) ISO 3166-1 alpha-2 country codes to block
+- `crowdsec_mode` (String) CrowdSec IP reputation mode: `enforce` blocks flagged clients, `observe` only reports them, `off` disables the check. Takes effect only on proxy clusters that support CrowdSec.

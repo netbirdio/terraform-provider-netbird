@@ -1360,6 +1360,58 @@ func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
 	if req.AccessRestrictions.BlockedCountries != nil {
 		t.Error("BlockedCountries should be nil when not set")
 	}
+	if req.AccessRestrictions.CrowdsecMode != nil {
+		t.Error("CrowdsecMode should be nil when not set")
+	}
+}
+
+func Test_reverseProxyServiceRoundtrip_crowdsecMode(t *testing.T) {
+	ctx := context.Background()
+	observe := api.AccessRestrictionsCrowdsecModeObserve
+
+	// crowdsec_mode alone, without any CIDR or country list, must still
+	// produce an access_restrictions object in both directions.
+	original := &api.Service{
+		Id:      "svc-cs-rt",
+		Name:    "crowdsec-roundtrip",
+		Domain:  "cs-rt.example.com",
+		Enabled: true,
+		Targets: []api.ServiceTarget{
+			{
+				TargetId:   "peer1",
+				TargetType: api.ServiceTargetTargetTypePeer,
+				Port:       8080,
+				Protocol:   api.ServiceTargetProtocolHttp,
+				Enabled:    true,
+			},
+		},
+		Auth:               api.ServiceAuthConfig{},
+		AccessRestrictions: &api.AccessRestrictions{CrowdsecMode: &observe},
+	}
+
+	var model ReverseProxyServiceModel
+	d := reverseProxyServiceAPIToTerraform(ctx, original, &model)
+	if d.HasError() {
+		t.Fatalf("APIToTerraform failed with %d errors", d.ErrorsCount())
+	}
+	if model.AccessRestrictions.IsNull() {
+		t.Fatal("AccessRestrictions should not be null")
+	}
+	mode, ok := model.AccessRestrictions.Attributes()["crowdsec_mode"].(types.String)
+	if !ok || mode.ValueString() != "observe" {
+		t.Errorf("crowdsec_mode mismatch in state: got %v", mode)
+	}
+
+	req, d := reverseProxyServiceTerraformToAPI(ctx, &model)
+	if d.HasError() {
+		t.Fatalf("TerraformToAPI failed with %d errors", d.ErrorsCount())
+	}
+	if req.AccessRestrictions == nil || req.AccessRestrictions.CrowdsecMode == nil {
+		t.Fatal("Expected CrowdsecMode to be set")
+	}
+	if *req.AccessRestrictions.CrowdsecMode != observe {
+		t.Errorf("CrowdsecMode mismatch: got %s", *req.AccessRestrictions.CrowdsecMode)
+	}
 }
 
 func Test_reverseProxyServiceAPIToTerraform_nullAccessRestrictions(t *testing.T) {
