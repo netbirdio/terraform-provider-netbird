@@ -14,7 +14,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -159,23 +158,22 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 							MarkdownDescription: "Cost per 1k output tokens in USD",
 							Required:            true,
 						},
+						// The three cache rates are plain Optional (no Computed,
+						// no plan modifier): an unset rate stays null, so the
+						// request omits it and the server inherits NetBird's
+						// default rate for the model instead of treating it as 0
+						// (no discount).
 						"cached_input_per_1k": schema.Float64Attribute{
 							MarkdownDescription: "OpenAI-shape cache rate — cost per 1k cached prompt tokens (a subset of input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means no discount (cached tokens bill at input_per_1k).",
 							Optional:            true,
-							Computed:            true,
-							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
 						},
 						"cache_read_per_1k": schema.Float64Attribute{
 							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-read tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache reads bill at input_per_1k.",
 							Optional:            true,
-							Computed:            true,
-							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
 						},
 						"cache_creation_per_1k": schema.Float64Attribute{
 							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-creation tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache writes bill at input_per_1k.",
 							Optional:            true,
-							Computed:            true,
-							PlanModifiers:       []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
 						},
 					},
 				},
@@ -234,6 +232,17 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	return ret
 }
 
+// modelRatePtr maps a per-model cache rate to the API pointer value. The
+// framework's ValueFloat64Pointer answers unknown with a pointer to 0, which
+// the server reads as "no discount"; an unknown rate is not one the operator
+// set, so it must go on the wire absent, as null.
+func modelRatePtr(v types.Float64) *float64 {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	return v.ValueFloat64Pointer()
+}
+
 func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetworkProviderModel) (api.AgentNetworkProviderRequest, diag.Diagnostics) {
 	var ret diag.Diagnostics
 	req := api.AgentNetworkProviderRequest{
@@ -276,9 +285,9 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 					Id:                 e.Id.ValueString(),
 					InputPer1k:         e.InputPer1k.ValueFloat64(),
 					OutputPer1k:        e.OutputPer1k.ValueFloat64(),
-					CachedInputPer1k:   e.CachedInputPer1k.ValueFloat64Pointer(),
-					CacheReadPer1k:     e.CacheReadPer1k.ValueFloat64Pointer(),
-					CacheCreationPer1k: e.CacheCreationPer1k.ValueFloat64Pointer(),
+					CachedInputPer1k:   modelRatePtr(e.CachedInputPer1k),
+					CacheReadPer1k:     modelRatePtr(e.CacheReadPer1k),
+					CacheCreationPer1k: modelRatePtr(e.CacheCreationPer1k),
 				})
 			}
 			req.Models = &models

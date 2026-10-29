@@ -275,6 +275,116 @@ func Test_AgentNetworkProvider_ModelsCacheRates(t *testing.T) {
 	})
 }
 
+// When a models block omits the cache rates, they are plain Optional, so they
+// reach the API as null (absent) and the server stores them as absent. The
+// stored nil is what tells the server to inherit NetBird's default rate
+// instead of billing that bucket at the input rate.
+func Test_AgentNetworkProvider_ModelsOmittedCacheRatesStayAbsent(t *testing.T) {
+	testE2E(t)
+	rName := "anp" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_agent_network_provider." + rName
+	var createdID string
+
+	// Only the required per-1k input/output prices are set; none of the three
+	// cache rates appear in the config.
+	config := fmt.Sprintf(`resource "netbird_agent_network_provider" "%[1]s" {
+	provider_id  = "openai_api"
+	name         = "%[1]s"
+	upstream_url = "https://api.openai.com"
+	api_key      = "sk-acc-test"
+
+	models = [
+		{
+			id            = "gpt-4o-mini"
+			input_per_1k  = 0.00015
+			output_per_1k = 0.0006
+		},
+	]
+}`, rName)
+
+	checkOmittedRatesAbsent := func(s *terraform.State) error {
+		p, err := testGetProvider(s.RootModule().Resources[rNameFull].Primary.Attributes["id"])
+		if err != nil {
+			return err
+		}
+		if len(p.Models) != 1 {
+			return fmt.Errorf("expected 1 model, found %d", len(p.Models))
+		}
+		m := p.Models[0]
+		if m.CachedInputPer1k != nil {
+			return fmt.Errorf("cached_input_per_1k must stay absent on the server, found %v", *m.CachedInputPer1k)
+		}
+		if m.CacheReadPer1k != nil {
+			return fmt.Errorf("cache_read_per_1k must stay absent on the server, found %v", *m.CacheReadPer1k)
+		}
+		if m.CacheCreationPer1k != nil {
+			return fmt.Errorf("cache_creation_per_1k must stay absent on the server, found %v", *m.CacheCreationPer1k)
+		}
+		return nil
+	}
+
+	// A second step re-adds one cache rate to prove the attributes are writable
+	// once set (they are Optional, not read-only) and round-trip.
+	configWithRate := fmt.Sprintf(`resource "netbird_agent_network_provider" "%[1]s" {
+	provider_id  = "openai_api"
+	name         = "%[1]s"
+	upstream_url = "https://api.openai.com"
+	api_key      = "sk-acc-test"
+
+	models = [
+		{
+			id                    = "gpt-4o-mini"
+			input_per_1k          = 0.00015
+			output_per_1k         = 0.0006
+			cached_input_per_1k   = 0.000075
+		},
+	]
+}`, rName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testAgentNetworkClient().GetProvider, &createdID),
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					checkOmittedRatesAbsent,
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       configWithRate,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "models.0.cached_input_per_1k", "0.000075"),
+					func(s *terraform.State) error {
+						p, err := testGetProvider(s.RootModule().Resources[rNameFull].Primary.Attributes["id"])
+						if err != nil {
+							return err
+						}
+						if len(p.Models) != 1 {
+							return fmt.Errorf("expected 1 model, found %d", len(p.Models))
+						}
+						m := p.Models[0]
+						if m.CachedInputPer1k == nil || *m.CachedInputPer1k != 0.000075 {
+							return fmt.Errorf("cached_input_per_1k not persisted, found %v", m.CachedInputPer1k)
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"api_key"},
+			},
+		},
+	})
+}
+
 // The API rebuilds the provider row from the request on update, so any field the
 // provider omits is dropped. Changing only the name must not wipe extra_values
 // or reset metadata_disabled.
