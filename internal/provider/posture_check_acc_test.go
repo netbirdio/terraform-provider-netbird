@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -155,6 +156,81 @@ func Test_PostureCheck_Update(t *testing.T) {
 							"process_check.0.mac_path":                    {"/macpathnt", pCheck.Checks.ProcessCheck.Processes[0].MacPath},
 						})
 					},
+				),
+			},
+		},
+	})
+}
+
+// Test_PostureCheck_NoDescription leaves description out of the configuration.
+// The API answers with an empty string rather than nothing, so an attribute that
+// is Optional without being Computed fails the apply with an inconsistent
+// result. Each step also asserts the plan after apply is empty, and the last
+// two cover removing a description that was set.
+func Test_PostureCheck_NoDescription(t *testing.T) {
+	testE2E(t)
+	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_posture_check." + rName
+	var createdID string
+	cfg := func(description string) string {
+		return fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+  %[2]s
+
+  netbird_version_check {
+    min_version = "0.40.0"
+  }
+}`, rName, description)
+	}
+	serverDescription := func(want string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			pID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+			pCheck, err := testClient().PostureChecks.Get(context.Background(), pID)
+			if err != nil {
+				return err
+			}
+			return matchPairs(map[string][]any{
+				"description": {want, valOr(pCheck.Description, "")},
+			})
+		}
+	}
+	emptyAfterApply := resource.ConfigPlanChecks{
+		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().PostureChecks.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config:           cfg(""),
+				ConfigPlanChecks: emptyAfterApply,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "name", rName),
+					resource.TestCheckResourceAttr(rNameFull, "description", ""),
+					serverDescription(""),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config:           cfg(`description = "set"`),
+				ConfigPlanChecks: emptyAfterApply,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "description", "set"),
+					serverDescription("set"),
+				),
+			},
+			{
+				Config:           cfg(""),
+				ConfigPlanChecks: emptyAfterApply,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "description", ""),
+					serverDescription(""),
 				),
 			},
 		},
