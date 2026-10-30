@@ -97,6 +97,18 @@ func (d *AgentNetworkProviderDataSource) Schema(_ context.Context, _ datasource.
 							MarkdownDescription: "Cost per 1k output tokens in USD",
 							Computed:            true,
 						},
+						"cached_input_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "OpenAI-shape cache rate — cost per 1k cached prompt tokens (a subset of input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means no discount (cached tokens bill at input_per_1k).",
+							Computed:            true,
+						},
+						"cache_read_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-read tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache reads bill at input_per_1k.",
+							Computed:            true,
+						},
+						"cache_creation_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-creation tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache writes bill at input_per_1k.",
+							Computed:            true,
+						},
 					},
 				},
 			},

@@ -49,16 +49,22 @@ type AgentNetworkProviderModel struct {
 }
 
 type AgentNetworkProviderModelItem struct {
-	Id          types.String  `tfsdk:"id"`
-	InputPer1k  types.Float64 `tfsdk:"input_per_1k"`
-	OutputPer1k types.Float64 `tfsdk:"output_per_1k"`
+	Id                 types.String  `tfsdk:"id"`
+	InputPer1k         types.Float64 `tfsdk:"input_per_1k"`
+	OutputPer1k        types.Float64 `tfsdk:"output_per_1k"`
+	CachedInputPer1k   types.Float64 `tfsdk:"cached_input_per_1k"`
+	CacheReadPer1k     types.Float64 `tfsdk:"cache_read_per_1k"`
+	CacheCreationPer1k types.Float64 `tfsdk:"cache_creation_per_1k"`
 }
 
 func (AgentNetworkProviderModelItem) TFType() types.ObjectType {
 	return types.ObjectType{AttrTypes: map[string]attr.Type{
-		"id":            types.StringType,
-		"input_per_1k":  types.Float64Type,
-		"output_per_1k": types.Float64Type,
+		"id":                    types.StringType,
+		"input_per_1k":          types.Float64Type,
+		"output_per_1k":         types.Float64Type,
+		"cached_input_per_1k":   types.Float64Type,
+		"cache_read_per_1k":     types.Float64Type,
+		"cache_creation_per_1k": types.Float64Type,
 	}}
 }
 
@@ -152,6 +158,23 @@ func (r *AgentNetworkProvider) Schema(_ context.Context, _ resource.SchemaReques
 							MarkdownDescription: "Cost per 1k output tokens in USD",
 							Required:            true,
 						},
+						// The three cache rates are plain Optional (no Computed,
+						// no plan modifier): an unset rate stays null, so the
+						// request omits it and the server inherits NetBird's
+						// default rate for the model instead of treating it as 0
+						// (no discount).
+						"cached_input_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "OpenAI-shape cache rate — cost per 1k cached prompt tokens (a subset of input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means no discount (cached tokens bill at input_per_1k).",
+							Optional:            true,
+						},
+						"cache_read_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-read tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache reads bill at input_per_1k.",
+							Optional:            true,
+						},
+						"cache_creation_per_1k": schema.Float64Attribute{
+							MarkdownDescription: "Anthropic-shape cache rate — cost per 1k cache-creation tokens (additive to input tokens), in USD. Omitted means inherit NetBird's default rate for this model when one exists; 0 means cache writes bill at input_per_1k.",
+							Optional:            true,
+						},
 					},
 				},
 			},
@@ -195,15 +218,29 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	modelObjs := make([]AgentNetworkProviderModelItem, 0, len(p.Models))
 	for _, m := range p.Models {
 		modelObjs = append(modelObjs, AgentNetworkProviderModelItem{
-			Id:          types.StringValue(m.Id),
-			InputPer1k:  types.Float64Value(m.InputPer1k),
-			OutputPer1k: types.Float64Value(m.OutputPer1k),
+			Id:                 types.StringValue(m.Id),
+			InputPer1k:         types.Float64Value(m.InputPer1k),
+			OutputPer1k:        types.Float64Value(m.OutputPer1k),
+			CachedInputPer1k:   types.Float64PointerValue(m.CachedInputPer1k),
+			CacheReadPer1k:     types.Float64PointerValue(m.CacheReadPer1k),
+			CacheCreationPer1k: types.Float64PointerValue(m.CacheCreationPer1k),
 		})
 	}
 	list, d := types.ListValueFrom(ctx, AgentNetworkProviderModelItem{}.TFType(), modelObjs)
 	ret.Append(d...)
 	data.Models = list
 	return ret
+}
+
+// modelRatePtr maps a per-model cache rate to the API pointer value. The
+// framework's ValueFloat64Pointer answers unknown with a pointer to 0, which
+// the server reads as "no discount"; an unknown rate is not one the operator
+// set, so it must go on the wire absent, as null.
+func modelRatePtr(v types.Float64) *float64 {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	return v.ValueFloat64Pointer()
 }
 
 func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetworkProviderModel) (api.AgentNetworkProviderRequest, diag.Diagnostics) {
@@ -245,9 +282,12 @@ func agentNetworkProviderTerraformToRequest(ctx context.Context, data *AgentNetw
 			models := make([]api.AgentNetworkProviderModel, 0, len(elems))
 			for _, e := range elems {
 				models = append(models, api.AgentNetworkProviderModel{
-					Id:          e.Id.ValueString(),
-					InputPer1k:  e.InputPer1k.ValueFloat64(),
-					OutputPer1k: e.OutputPer1k.ValueFloat64(),
+					Id:                 e.Id.ValueString(),
+					InputPer1k:         e.InputPer1k.ValueFloat64(),
+					OutputPer1k:        e.OutputPer1k.ValueFloat64(),
+					CachedInputPer1k:   modelRatePtr(e.CachedInputPer1k),
+					CacheReadPer1k:     modelRatePtr(e.CacheReadPer1k),
+					CacheCreationPer1k: modelRatePtr(e.CacheCreationPer1k),
 				})
 			}
 			req.Models = &models

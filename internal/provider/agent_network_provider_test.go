@@ -26,7 +26,7 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				MetadataDisabled:    true,
 				ExtraValues:         &map[string]string{"x-portkey-config": "pc-abc123"},
 				Models: []api.AgentNetworkProviderModel{
-					{Id: "gpt-4o-mini", InputPer1k: 0.00015, OutputPer1k: 0.0006},
+					{Id: "gpt-4o-mini", InputPer1k: 0.00015, OutputPer1k: 0.0006, CachedInputPer1k: valPtr(0.000075)},
 				},
 			},
 			expected: AgentNetworkProviderModel{
@@ -44,9 +44,12 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 				}),
 				Models: types.ListValueMust(AgentNetworkProviderModelItem{}.TFType(), []attr.Value{
 					types.ObjectValueMust(AgentNetworkProviderModelItem{}.TFType().AttrTypes, map[string]attr.Value{
-						"id":            types.StringValue("gpt-4o-mini"),
-						"input_per_1k":  types.Float64Value(0.00015),
-						"output_per_1k": types.Float64Value(0.0006),
+						"id":                    types.StringValue("gpt-4o-mini"),
+						"input_per_1k":          types.Float64Value(0.00015),
+						"output_per_1k":         types.Float64Value(0.0006),
+						"cached_input_per_1k":   types.Float64Value(0.000075),
+						"cache_read_per_1k":     types.Float64Null(),
+						"cache_creation_per_1k": types.Float64Null(),
 					}),
 				}),
 			},
@@ -86,6 +89,47 @@ func Test_agentNetworkProviderAPIToTerraform(t *testing.T) {
 		if !reflect.DeepEqual(out, c.expected) {
 			t.Fatalf("Expected:\n%#v\nFound:\n%#v", c.expected, out)
 		}
+	}
+}
+
+// Unset cache rates must reach the API as nil (field omitted on the wire) so
+// the server inherits NetBird's default rate for the model, while a value the
+// operator did set (including an explicit 0, meaning no discount) must be
+// passed through. A non-nil 0 pointer would tell the server "no discount" for
+// every omitted rate.
+func Test_agentNetworkProviderTerraformToRequest_cacheRates(t *testing.T) {
+	data := AgentNetworkProviderModel{
+		ProviderId:  types.StringValue("openai_api"),
+		Name:        types.StringValue("OpenAI"),
+		UpstreamUrl: types.StringValue("https://api.openai.com"),
+		Models: types.ListValueMust(AgentNetworkProviderModelItem{}.TFType(), []attr.Value{
+			types.ObjectValueMust(AgentNetworkProviderModelItem{}.TFType().AttrTypes, map[string]attr.Value{
+				"id":                    types.StringValue("gpt-4o-mini"),
+				"input_per_1k":          types.Float64Value(0.00015),
+				"output_per_1k":         types.Float64Value(0.0006),
+				"cached_input_per_1k":   types.Float64Null(),
+				"cache_read_per_1k":     types.Float64Value(0),
+				"cache_creation_per_1k": types.Float64Unknown(),
+			}),
+		}),
+	}
+
+	req, d := agentNetworkProviderTerraformToRequest(context.Background(), &data)
+	if d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if req.Models == nil || len(*req.Models) != 1 {
+		t.Fatalf("expected 1 model in the request, found %v", req.Models)
+	}
+	m := (*req.Models)[0]
+	if m.CachedInputPer1k != nil {
+		t.Errorf("null cached_input_per_1k must be sent as nil, got %v", *m.CachedInputPer1k)
+	}
+	if m.CacheReadPer1k == nil || *m.CacheReadPer1k != 0 {
+		t.Errorf("explicit 0 cache_read_per_1k must be sent as 0, got %v", m.CacheReadPer1k)
+	}
+	if m.CacheCreationPer1k != nil {
+		t.Errorf("unknown cache_creation_per_1k must be sent as nil, got %v", *m.CacheCreationPer1k)
 	}
 }
 
