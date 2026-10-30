@@ -120,14 +120,14 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	for i, v := range group.Peers {
 		peers[i] = v.Id
 	}
-	l, diag := types.ListValueFrom(ctx, types.StringType, peers)
+	l, diag := sortedStringList(ctx, data.Peers, peers)
 	ret.Append(diag...)
 	data.Peers = l
 	resources := make([]string, len(group.Resources))
 	for i, j := range group.Resources {
 		resources[i] = j.Id
 	}
-	l, diag = types.ListValueFrom(ctx, types.StringType, resources)
+	l, diag = sortedStringList(ctx, data.Resources, resources)
 	ret.Append(diag...)
 	data.Resources = l
 	return ret

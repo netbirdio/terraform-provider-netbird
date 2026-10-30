@@ -842,8 +842,8 @@ func Test_ReverseProxyService_AccessRestrictions(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(rNameFull, "id"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.#", "2"),
-					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.0", "US"),
-					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.1", "DE"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.0", "DE"),
+					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.allowed_countries.1", "US"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "access_restrictions.blocked_cidrs.0", "192.168.0.0/16"),
 					func(s *terraform.State) error {
@@ -919,7 +919,7 @@ resource "netbird_reverse_proxy_service" "%s" {
   }
 
   access_restrictions = {
-    allowed_countries = ["US", "DE"]
+    allowed_countries = ["DE", "US"]
     blocked_cidrs     = ["192.168.0.0/16"]
   }
 }`, rName, rName, domain, peerID)

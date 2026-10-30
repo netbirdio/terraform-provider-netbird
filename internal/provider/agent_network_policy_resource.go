@@ -309,11 +309,11 @@ func agentNetworkPolicyAPIToTerraform(ctx context.Context, p *api.AgentNetworkPo
 	data.Description = types.StringValue(p.Description)
 	data.Enabled = types.BoolValue(p.Enabled)
 
-	data.SourceGroups, d = types.ListValueFrom(ctx, types.StringType, p.SourceGroups)
+	data.SourceGroups, d = sortedStringList(ctx, data.SourceGroups, p.SourceGroups)
 	ret.Append(d...)
-	data.DestinationProviderIds, d = types.ListValueFrom(ctx, types.StringType, p.DestinationProviderIds)
+	data.DestinationProviderIds, d = sortedStringList(ctx, data.DestinationProviderIds, p.DestinationProviderIds)
 	ret.Append(d...)
-	data.GuardrailIds, d = types.ListValueFrom(ctx, types.StringType, p.GuardrailIds)
+	data.GuardrailIds, d = sortedStringList(ctx, data.GuardrailIds, p.GuardrailIds)
 	ret.Append(d...)
 
 	tl := p.Limits.TokenLimit

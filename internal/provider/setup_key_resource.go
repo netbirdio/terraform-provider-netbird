@@ -272,7 +272,7 @@ func setupKeyAPIToTerraform(ctx context.Context, setupKey *api.SetupKey, data *S
 	data.UpdatedAt = types.StringValue(setupKey.UpdatedAt.Format(time.RFC3339))
 	data.LastUsed = types.StringValue(setupKey.LastUsed.Format(time.RFC3339))
 	data.AllowExtraDnsLabels = types.BoolValue(setupKey.AllowExtraDnsLabels)
-	l, diag := types.ListValueFrom(ctx, types.StringType, setupKey.AutoGroups)
+	l, diag := sortedStringList(ctx, data.AutoGroups, setupKey.AutoGroups)
 	ret.Append(diag...)
 	data.AutoGroups = l
 	data.Ephemeral = types.BoolValue(setupKey.Ephemeral)
