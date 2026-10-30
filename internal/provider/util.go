@@ -154,24 +154,13 @@ func sameElements(a, b types.List) bool {
 	if a.IsNull() || a.IsUnknown() || b.IsNull() || b.IsUnknown() {
 		return false
 	}
-	ae, be := a.Elements(), b.Elements()
-	if len(ae) != len(be) {
+	if len(a.Elements()) != len(b.Elements()) {
 		return false
 	}
-	used := make([]bool, len(be))
-	for _, x := range ae {
-		found := false
-		for i, y := range be {
-			if !used[i] && x.Equal(y) {
-				used[i], found = true, true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
+	ae, be := slices.Clone(a.Elements()), slices.Clone(b.Elements())
+	slices.SortFunc(ae, compareAttrValues)
+	slices.SortFunc(be, compareAttrValues)
+	return slices.EqualFunc(ae, be, attr.Value.Equal)
 }
 
 // compareAttrValues orders attribute values of the same type, nulls first. Objects compare

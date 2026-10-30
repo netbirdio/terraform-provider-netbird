@@ -60,9 +60,8 @@ func Test_Peers_Create(t *testing.T) {
 						for i := range wantIDs {
 							gotIDs = append(gotIDs, attrs[fmt.Sprintf("ids.%d", i)])
 						}
-						slices.Sort(gotIDs)
 						if !slices.Equal(gotIDs, wantIDs) {
-							return fmt.Errorf("Peer IDs mismatch, expected %v, found %v", wantIDs, gotIDs)
+							return fmt.Errorf("Peer IDs mismatch, expected sorted %v, found %v", wantIDs, gotIDs)
 						}
 						return nil
 					},

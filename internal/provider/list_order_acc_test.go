@@ -68,8 +68,29 @@ func hclList(vals []string) string {
 	return out + "]"
 }
 
+// testImportedAttrs checks attribute values on the imported instance, for imports whose
+// state legitimately differs from the applied one and so cannot use ImportStateVerify.
+func testImportedAttrs(id *string, want map[string]string) resource.ImportStateCheckFunc {
+	return func(states []*terraform.InstanceState) error {
+		for _, s := range states {
+			if s.ID != *id {
+				continue
+			}
+			for k, v := range want {
+				if got := s.Attributes[k]; got != v {
+					return fmt.Errorf("imported %s = %q, want %q", k, got, v)
+				}
+			}
+			return nil
+		}
+		return fmt.Errorf("no imported instance with id %q", *id)
+	}
+}
+
 // listOrderCase runs the reorder-behind-Terraform's-back scenario shared by every case.
-func listOrderCase(t *testing.T, address, resourceConfig, dataSourceConfig string, gone func(id *string) func(*terraform.State) error, reorder func(id string) error, inOrder, sorted []resource.TestCheckFunc) {
+// An import has no configured order to keep, so importSorted lists the resource
+// attributes that must come back sorted.
+func listOrderCase(t *testing.T, address, resourceConfig, dataSourceConfig string, gone func(id *string) func(*terraform.State) error, reorder func(id string) error, inOrder, sorted []resource.TestCheckFunc, importSorted map[string]string) {
 	t.Helper()
 	var id string
 	resource.Test(t, resource.TestCase{
@@ -96,6 +117,12 @@ func listOrderCase(t *testing.T, address, resourceConfig, dataSourceConfig strin
 			{
 				Config: resourceConfig + dataSourceConfig,
 				Check:  resource.ComposeAggregateTestCheckFunc(sorted...),
+			},
+			{
+				Config:           resourceConfig + dataSourceConfig,
+				ResourceName:     address,
+				ImportState:      true,
+				ImportStateCheck: testImportedAttrs(&id, importSorted),
 			},
 		},
 	})
@@ -135,6 +162,7 @@ data "netbird_setup_key" "%[1]s" {
 			resource.TestCheckResourceAttr("data.netbird_setup_key."+rName, "auto_groups.0", asc[0]),
 			resource.TestCheckResourceAttr("data.netbird_setup_key."+rName, "auto_groups.1", asc[1]),
 		},
+		map[string]string{"auto_groups.0": asc[0], "auto_groups.1": asc[1]},
 	)
 }
 
@@ -198,6 +226,7 @@ data "netbird_policy" "%[1]s" {
 			resource.TestCheckResourceAttr("data.netbird_policy."+rName, "rule.0.destinations.0", asc[0]),
 			resource.TestCheckResourceAttr("data.netbird_policy."+rName, "rule.0.ports.0", "443"),
 		},
+		map[string]string{"rule.0.sources.0": asc[0], "rule.0.destinations.0": asc[0], "rule.0.ports.0": "443"},
 	)
 }
 
@@ -307,6 +336,172 @@ data "netbird_nameserver_group" "%[1]s" {
 		[]resource.TestCheckFunc{
 			resource.TestCheckResourceAttr("data.netbird_nameserver_group."+rName, "domains.0", domainsAsc[0]),
 			resource.TestCheckResourceAttr("data.netbird_nameserver_group."+rName, "groups.0", asc[0]),
+		},
+		map[string]string{"domains.0": domainsAsc[0], "groups.0": asc[0]},
+	)
+}
+
+func Test_ListOrder_GroupPeers(t *testing.T) {
+	testE2E(t)
+	rName := "lo" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_group." + rName
+	asc := []string{testPeerID(t, "peer1"), testPeerID(t, "peer2")}
+	slices.Sort(asc)
+	desc := descending(asc)
+
+	cfg := fmt.Sprintf(`resource "netbird_group" "%[1]s" {
+  name  = "%[1]s"
+  peers = %[2]s
+}
+`, rName, hclList(desc))
+	ds := fmt.Sprintf(`
+data "netbird_group" "%[1]s" {
+  id = netbird_group.%[1]s.id
+}
+`, rName)
+
+	listOrderCase(t, address, cfg, ds,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Groups.Get, id) },
+		func(id string) error {
+			_, err := testClient().Groups.Update(context.Background(), id, api.GroupRequest{Name: rName, Peers: &asc})
+			return err
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr(address, "peers.0", desc[0]),
+			resource.TestCheckResourceAttr(address, "peers.1", desc[1]),
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr("data.netbird_group."+rName, "peers.0", asc[0]),
+			resource.TestCheckResourceAttr("data.netbird_group."+rName, "peers.1", asc[1]),
+		},
+		map[string]string{"peers.0": asc[0], "peers.1": asc[1]},
+	)
+}
+
+// Test_ListOrder_GuardrailModels covers a list nested in an object attribute.
+func Test_ListOrder_GuardrailModels(t *testing.T) {
+	testE2E(t)
+	rName := "lo" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_agent_network_guardrail." + rName
+	asc := []string{"gpt-4.1", "o4-mini"}
+	desc := descending(asc)
+
+	cfg := fmt.Sprintf(`resource "netbird_agent_network_guardrail" "%[1]s" {
+  name        = "%[1]s"
+  description = "list order"
+  model_allowlist = {
+    enabled = true
+    models  = %[2]s
+  }
+  prompt_capture = {
+    enabled    = false
+    redact_pii = false
+  }
+}
+`, rName, hclList(desc))
+	ds := fmt.Sprintf(`
+data "netbird_agent_network_guardrail" "%[1]s" {
+  id = netbird_agent_network_guardrail.%[1]s.id
+}
+`, rName)
+
+	listOrderCase(t, address, cfg, ds,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testAgentNetworkClient().GetGuardrail, id)
+		},
+		func(id string) error {
+			g, err := testAgentNetworkClient().GetGuardrail(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			checks := g.Checks
+			checks.ModelAllowlist.Models = asc
+			_, err = testAgentNetworkClient().UpdateGuardrail(context.Background(), id, api.AgentNetworkGuardrailRequest{
+				Name: g.Name, Description: &g.Description, Checks: checks,
+			})
+			return err
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr(address, "model_allowlist.models.0", desc[0]),
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr("data.netbird_agent_network_guardrail."+rName, "model_allowlist.models.0", asc[0]),
+		},
+		map[string]string{"model_allowlist.models.0": asc[0]},
+	)
+}
+
+// Test_ListOrder_PostureCheck covers lists of objects: geo locations nested in a block,
+// network ranges nested in a block, and the process_check blocks themselves.
+func Test_ListOrder_PostureCheck(t *testing.T) {
+	testE2E(t)
+	rName := "lo" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_posture_check." + rName
+
+	cfg := fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name        = "%[1]s"
+  description = "list order"
+
+  geo_location_check {
+    locations = [
+      { country_code = "EG", city_name = "Cairo" },
+      { country_code = "DE", city_name = "Berlin" },
+    ]
+    action = "allow"
+  }
+
+  peer_network_range_check {
+    ranges = ["10.2.0.0/16", "10.1.0.0/16"]
+    action = "deny"
+  }
+
+  process_check {
+    linux_path = "/usr/bin/zsh"
+  }
+
+  process_check {
+    linux_path = "/usr/bin/bash"
+  }
+}
+`, rName)
+	ds := fmt.Sprintf(`
+data "netbird_posture_check" "%[1]s" {
+  id = netbird_posture_check.%[1]s.id
+}
+`, rName)
+
+	listOrderCase(t, address, cfg, ds,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testClient().PostureChecks.Get, id)
+		},
+		func(id string) error {
+			pc, err := testClient().PostureChecks.Get(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			checks := pc.Checks
+			slices.Reverse(checks.GeoLocationCheck.Locations)
+			slices.Reverse(checks.PeerNetworkRangeCheck.Ranges)
+			slices.Reverse(checks.ProcessCheck.Processes)
+			_, err = testClient().PostureChecks.Update(context.Background(), id, api.PostureCheckUpdate{
+				Name: pc.Name, Description: valOr(pc.Description, ""), Checks: &checks,
+			})
+			return err
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr(address, "geo_location_check.locations.0.city_name", "Cairo"),
+			resource.TestCheckResourceAttr(address, "peer_network_range_check.ranges.0", "10.2.0.0/16"),
+			resource.TestCheckResourceAttr(address, "process_check.0.linux_path", "/usr/bin/zsh"),
+		},
+		[]resource.TestCheckFunc{
+			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "geo_location_check.locations.0.city_name", "Berlin"),
+			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "peer_network_range_check.ranges.0", "10.1.0.0/16"),
+			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "process_check.0.linux_path", "/usr/bin/bash"),
+		},
+		map[string]string{
+			"geo_location_check.locations.0.city_name": "Berlin",
+			"peer_network_range_check.ranges.0":        "10.1.0.0/16",
+			"process_check.0.linux_path":               "/usr/bin/bash",
 		},
 	)
 }
