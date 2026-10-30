@@ -99,6 +99,94 @@ func Test_Account_Update(t *testing.T) {
 	})
 }
 
+// Test_Account_Update_KeepsUnmodeledSettings sets settings the resource does
+// not model through the API, then applies a change to a modeled one. The
+// server rebuilds the settings from the update request, so the apply keeps
+// them only if the provider carries them into the request.
+func Test_Account_Update_KeepsUnmodeledSettings(t *testing.T) {
+	env := testE2E(t)
+	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	rNameFull := "netbird_account_settings." + rName
+	original, err := testAccountSettings(env.AccountID)
+	if err != nil {
+		t.Fatalf("could not read the account's settings: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := setUnmodeledAccountSettings(env.AccountID, original.MetricsPushEnabled, original.AutoUpdateAlways); err != nil {
+			t.Errorf("could not restore the unmodeled settings: %v", err)
+		}
+	})
+	enabled := true
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccountResourceWithJWT(rName, true),
+				Check:  resource.TestCheckResourceAttr(rNameFull, "jwt_groups_enabled", "true"),
+			},
+			{
+				PreConfig: func() {
+					if err := setUnmodeledAccountSettings(env.AccountID, &enabled, &enabled); err != nil {
+						t.Fatalf("could not set the unmodeled settings: %v", err)
+					}
+				},
+				Config:           testAccountResourceWithJWT(rName, false),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "jwt_groups_enabled", "false"),
+					func(s *terraform.State) error {
+						settings, err := testAccountSettings(env.AccountID)
+						if err != nil {
+							return err
+						}
+						return matchPairs(map[string][]any{
+							"jwt_groups_enabled":   {false, valOr(settings.JwtGroupsEnabled, true)},
+							"metrics_push_enabled": {true, valOr(settings.MetricsPushEnabled, false)},
+							"auto_update_always":   {true, valOr(settings.AutoUpdateAlways, false)},
+						})
+					},
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// testAccountSettings reads the account's settings from the server, by ID.
+func testAccountSettings(accountID string) (api.AccountSettings, error) {
+	accounts, err := testClient().Accounts.List(context.Background())
+	if err != nil {
+		return api.AccountSettings{}, err
+	}
+	idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == accountID })
+	if idx < 0 {
+		return api.AccountSettings{}, fmt.Errorf("account %s is not among the %d accounts on the management server", accountID, len(accounts))
+	}
+	return accounts[idx].Settings, nil
+}
+
+// setUnmodeledAccountSettings sets metrics_push_enabled and auto_update_always
+// through the API. It sends the account's current settings with only those two
+// changed, because the server resets any field an update request leaves out,
+// and drops the two read-only fields the server computes.
+func setUnmodeledAccountSettings(accountID string, metricsPush, autoUpdateAlways *bool) error {
+	settings, err := testAccountSettings(accountID)
+	if err != nil {
+		return err
+	}
+	settings.MetricsPushEnabled = metricsPush
+	settings.AutoUpdateAlways = autoUpdateAlways
+	settings.EmbeddedIdpEnabled = nil
+	settings.LocalAuthDisabled = nil
+	_, err = testClient().Accounts.Update(context.Background(), accountID, api.AccountRequest{Settings: settings})
+	return err
+}
+
 func testAccountResource(rName string) string {
 	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {}`, rName)
 }

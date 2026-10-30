@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
@@ -263,34 +264,58 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	return ret
 }
 
-func accountTerraformToAPI(ctx context.Context, account *api.Account, data AccountSettingsModel) api.AccountRequest {
-	return api.AccountRequest{
-		Settings: api.AccountSettings{
-			Extra: &api.AccountExtraSettings{
-				NetworkTrafficLogsEnabled:          boolDefault(data.NetworkTrafficLogsEnabled, account.Settings.Extra.NetworkTrafficLogsEnabled),
-				NetworkTrafficPacketCounterEnabled: boolDefault(data.NetworkTrafficPacketCounterEnabled, account.Settings.Extra.NetworkTrafficPacketCounterEnabled),
-				PeerApprovalEnabled:                boolDefault(data.PeerApprovalEnabled, account.Settings.Extra.PeerApprovalEnabled),
-				UserApprovalRequired:               boolDefault(data.UserApprovalRequired, account.Settings.Extra.UserApprovalRequired),
-				NetworkTrafficLogsGroups:           stringListDefault(ctx, data.NetworkTrafficLogsGroups, account.Settings.Extra.NetworkTrafficLogsGroups),
-			},
-			GroupsPropagationEnabled:        boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled),
-			JwtAllowGroups:                  stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups),
-			JwtGroupsClaimName:              stringDefaultPointer(data.JwtGroupsClaimName, account.Settings.JwtGroupsClaimName),
-			JwtGroupsEnabled:                boolDefaultPointer(data.JwtGroupsEnabled, account.Settings.JwtGroupsEnabled),
-			PeerInactivityExpiration:        int(int32Default(data.PeerInactivityExpiration, int32(account.Settings.PeerInactivityExpiration))),
-			PeerInactivityExpirationEnabled: boolDefault(data.PeerInactivityExpirationEnabled, account.Settings.PeerInactivityExpirationEnabled),
-			PeerLoginExpiration:             int(int32Default(data.PeerLoginExpiration, int32(account.Settings.PeerLoginExpiration))),
-			PeerLoginExpirationEnabled:      boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled),
-			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
-			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
-			AutoUpdateVersion:               stringDefaultPointer(data.AutoUpdateVersion, account.Settings.AutoUpdateVersion),
-			DnsDomain:                       stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain),
-			NetworkRange:                    stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange),
-			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),
-			PeerExposeEnabled:               boolDefault(data.PeerExposeEnabled, account.Settings.PeerExposeEnabled),
-			PeerExposeGroups:                stringListDefault(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups),
-		},
+// accountByID returns the listed account with the given ID. The update request
+// starts from that account's settings, so it must be the account being updated,
+// not whichever one the list returns first.
+func accountByID(accounts []api.Account, id string) (*api.Account, error) {
+	idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == id })
+	if idx < 0 {
+		return nil, fmt.Errorf("account %s is not among the %d accounts the management server lists", id, len(accounts))
 	}
+	return &accounts[idx], nil
+}
+
+// accountTerraformToAPI builds the update request for the account's settings.
+// The management server builds the stored settings from the request alone and
+// saves every column, so a field missing from the request is reset. The
+// request therefore starts from the account's current settings, and fields
+// this resource does not model keep their values.
+func accountTerraformToAPI(ctx context.Context, account *api.Account, data AccountSettingsModel) api.AccountRequest {
+	settings := account.Settings
+	// Read-only in the API schema: the server computes them and does not read
+	// them from a request.
+	settings.EmbeddedIdpEnabled = nil
+	settings.LocalAuthDisabled = nil
+
+	var extra api.AccountExtraSettings
+	if account.Settings.Extra != nil {
+		extra = *account.Settings.Extra
+	}
+	extra.NetworkTrafficLogsEnabled = boolDefault(data.NetworkTrafficLogsEnabled, extra.NetworkTrafficLogsEnabled)
+	extra.NetworkTrafficPacketCounterEnabled = boolDefault(data.NetworkTrafficPacketCounterEnabled, extra.NetworkTrafficPacketCounterEnabled)
+	extra.PeerApprovalEnabled = boolDefault(data.PeerApprovalEnabled, extra.PeerApprovalEnabled)
+	extra.UserApprovalRequired = boolDefault(data.UserApprovalRequired, extra.UserApprovalRequired)
+	extra.NetworkTrafficLogsGroups = stringListDefault(ctx, data.NetworkTrafficLogsGroups, extra.NetworkTrafficLogsGroups)
+	settings.Extra = &extra
+
+	settings.GroupsPropagationEnabled = boolDefaultPointer(data.GroupsPropagationEnabled, account.Settings.GroupsPropagationEnabled)
+	settings.JwtAllowGroups = stringListDefaultPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups)
+	settings.JwtGroupsClaimName = stringDefaultPointer(data.JwtGroupsClaimName, account.Settings.JwtGroupsClaimName)
+	settings.JwtGroupsEnabled = boolDefaultPointer(data.JwtGroupsEnabled, account.Settings.JwtGroupsEnabled)
+	settings.PeerInactivityExpiration = int(int32Default(data.PeerInactivityExpiration, int32(account.Settings.PeerInactivityExpiration)))
+	settings.PeerInactivityExpirationEnabled = boolDefault(data.PeerInactivityExpirationEnabled, account.Settings.PeerInactivityExpirationEnabled)
+	settings.PeerLoginExpiration = int(int32Default(data.PeerLoginExpiration, int32(account.Settings.PeerLoginExpiration)))
+	settings.PeerLoginExpirationEnabled = boolDefault(data.PeerLoginExpirationEnabled, account.Settings.PeerLoginExpirationEnabled)
+	settings.RegularUsersViewBlocked = boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked)
+	settings.RoutingPeerDnsResolutionEnabled = boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled)
+	settings.AutoUpdateVersion = stringDefaultPointer(data.AutoUpdateVersion, account.Settings.AutoUpdateVersion)
+	settings.DnsDomain = stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain)
+	settings.NetworkRange = stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange)
+	settings.LazyConnectionEnabled = boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled)
+	settings.PeerExposeEnabled = boolDefault(data.PeerExposeEnabled, account.Settings.PeerExposeEnabled)
+	settings.PeerExposeGroups = stringListDefault(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups)
+
+	return api.AccountRequest{Settings: settings}
 }
 
 func (r *AccountSettings) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -382,7 +407,11 @@ func (r *AccountSettings) Update(ctx context.Context, req resource.UpdateRequest
 		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
-	account := &accounts[0]
+	account, err := accountByID(accounts, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Account not found", err.Error())
+		return
+	}
 
 	updateRequest := accountTerraformToAPI(ctx, account, data)
 
