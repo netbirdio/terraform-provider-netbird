@@ -1124,6 +1124,103 @@ func Test_preserveTargetPlanValues_extraAPITarget(t *testing.T) {
 	}
 }
 
+func Test_preserveTargetPlanValues_sameTargetDifferentPaths(t *testing.T) {
+	ctx := context.Background()
+
+	// Path-based routing to one backend: both targets share the same network resource.
+	preserveOpts, d := types.ObjectValueFrom(ctx, ReverseProxyTargetOptionsModel{}.TFType().AttrTypes, ReverseProxyTargetOptionsModel{
+		SkipTLSVerify:      types.BoolNull(),
+		RequestTimeout:     types.StringNull(),
+		PathRewrite:        types.StringValue("preserve"),
+		CustomHeaders:      types.MapNull(types.StringType),
+		ProxyProtocol:      types.BoolNull(),
+		SessionIdleTimeout: types.StringNull(),
+	})
+	if d.HasError() {
+		t.Fatal("Failed to build target options")
+	}
+
+	planModels := []ReverseProxyServiceTargetModel{
+		{
+			TargetId:   types.StringValue("res1"),
+			TargetType: types.StringValue("host"),
+			Port:       types.Int64Value(8080),
+			Protocol:   types.StringValue("http"),
+			Enabled:    types.BoolValue(true),
+			Host:       types.StringNull(),
+			Path:       types.StringValue("/realms/"),
+			Options:    preserveOpts,
+		},
+		{
+			TargetId:   types.StringValue("res1"),
+			TargetType: types.StringValue("host"),
+			Port:       types.Int64Value(8080),
+			Protocol:   types.StringValue("http"),
+			Enabled:    types.BoolValue(true),
+			Host:       types.StringNull(),
+			Path:       types.StringValue("/resources/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
+		},
+	}
+	planTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), planModels)
+	if d.HasError() {
+		t.Fatal("Failed to build plan targets")
+	}
+
+	apiModels := []ReverseProxyServiceTargetModel{
+		{
+			TargetId:   types.StringValue("res1"),
+			TargetType: types.StringValue("host"),
+			Port:       types.Int64Value(8080),
+			Protocol:   types.StringValue("http"),
+			Enabled:    types.BoolValue(true),
+			Host:       types.StringValue("10.32.0.12"),
+			Path:       types.StringValue("/realms/"),
+			Options:    preserveOpts,
+		},
+		{
+			TargetId:   types.StringValue("res1"),
+			TargetType: types.StringValue("host"),
+			Port:       types.Int64Value(8080),
+			Protocol:   types.StringValue("http"),
+			Enabled:    types.BoolValue(true),
+			Host:       types.StringValue("10.32.0.12"),
+			Path:       types.StringValue("/resources/"),
+			Options:    types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes),
+		},
+	}
+	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
+	if d.HasError() {
+		t.Fatal("Failed to build API targets")
+	}
+
+	result, d := preserveTargetPlanValues(ctx, planTargets, apiTargets)
+	if d.HasError() {
+		t.Fatalf("preserveTargetPlanValues failed with %d errors", d.ErrorsCount())
+	}
+
+	var resultModels []ReverseProxyServiceTargetModel
+	d = result.ElementsAs(ctx, &resultModels, false)
+	if d.HasError() {
+		t.Fatal("Failed to extract result targets")
+	}
+
+	if len(resultModels) != 2 {
+		t.Fatalf("Expected 2 targets, got %d", len(resultModels))
+	}
+	for i, want := range []string{"/realms/", "/resources/"} {
+		if got := resultModels[i].Path.ValueString(); got != want {
+			t.Errorf("Target %d: expected path %q, got %q", i, want, got)
+		}
+	}
+	if resultModels[0].Options.IsNull() {
+		t.Error("Target 0: expected options to be kept")
+	}
+	if !resultModels[1].Options.IsNull() {
+		t.Error("Target 1: expected options to stay null")
+	}
+}
+
 func Test_preserveTargetPlanValues_nullPlan(t *testing.T) {
 	ctx := context.Background()
 

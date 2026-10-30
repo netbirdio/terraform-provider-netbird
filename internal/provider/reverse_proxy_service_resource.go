@@ -821,7 +821,8 @@ func preserveAuthSecrets(priorAuth, currentAuth types.Object) (types.Object, dia
 
 // preserveTargetPlanValues keeps the user's planned host/path/options values in targets
 // since the API may override them (e.g. resolving host from the peer's IP).
-// Targets are matched by target_id to handle potential reordering by the API.
+// Targets are matched by target_id and path to handle potential reordering by the API,
+// see matchPlanTarget.
 func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types.List) (types.List, diag.Diagnostics) {
 	var ret diag.Diagnostics
 
@@ -836,13 +837,8 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 		return apiTargets, ret
 	}
 
-	planByID := make(map[string]ReverseProxyServiceTargetModel, len(planModels))
-	for _, p := range planModels {
-		planByID[p.TargetId.ValueString()] = p
-	}
-
 	for i, apiModel := range apiModels {
-		planModel, ok := planByID[apiModel.TargetId.ValueString()]
+		planModel, ok := matchPlanTarget(planModels, apiModel)
 		if !ok {
 			continue
 		}
@@ -860,6 +856,35 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 	result, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
 	ret.Append(d...)
 	return result, ret
+}
+
+// matchPlanTarget finds the planned target an API target was built from. Several targets
+// can share a target_id when they route different paths to the same backend, so the path
+// disambiguates them; target_id alone is only trusted when it is unique in the plan.
+func matchPlanTarget(planModels []ReverseProxyServiceTargetModel, apiModel ReverseProxyServiceTargetModel) (ReverseProxyServiceTargetModel, bool) {
+	var byID []ReverseProxyServiceTargetModel
+	for _, p := range planModels {
+		if p.TargetId.ValueString() != apiModel.TargetId.ValueString() {
+			continue
+		}
+		if targetPath(p.Path) == targetPath(apiModel.Path) {
+			return p, true
+		}
+		byID = append(byID, p)
+	}
+
+	if len(byID) == 1 {
+		return byID[0], true
+	}
+	return ReverseProxyServiceTargetModel{}, false
+}
+
+// targetPath mirrors the API, which routes an unset or empty path as "/".
+func targetPath(path types.String) string {
+	if path.IsNull() || path.IsUnknown() || path.ValueString() == "" {
+		return "/"
+	}
+	return path.ValueString()
 }
 
 func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxyServiceModel) (api.ServiceRequest, diag.Diagnostics) {
