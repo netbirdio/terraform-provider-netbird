@@ -683,7 +683,8 @@ data "netbird_account_settings" "%[1]s" {
 `, rName)
 	dsCase(t, cfg, samePair("account_settings", rName, "peer_login_expiration",
 		"peer_inactivity_expiration", "peer_login_expiration_enabled",
-		"regular_users_view_blocked", "groups_propagation_enabled", "jwt_groups_enabled"))
+		"regular_users_view_blocked", "groups_propagation_enabled", "jwt_groups_enabled",
+		"metrics_push_enabled"))
 }
 
 // The identity provider data source rounds out the same three cases. The

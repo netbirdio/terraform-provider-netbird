@@ -62,6 +62,7 @@ type AccountSettingsModel struct {
 	NetworkTrafficLogsGroups           types.List   `tfsdk:"network_traffic_logs_groups"`
 	PeerExposeEnabled                  types.Bool   `tfsdk:"peer_expose_enabled"`
 	PeerExposeGroups                   types.List   `tfsdk:"peer_expose_groups"`
+	MetricsPushEnabled                 types.Bool   `tfsdk:"metrics_push_enabled"`
 }
 
 func (r *AccountSettings) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -209,6 +210,12 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 			},
+			"metrics_push_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables client metrics push for all peers in the account.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -260,6 +267,7 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	data.PeerExposeEnabled = types.BoolValue(account.Settings.PeerExposeEnabled)
 	data.PeerExposeGroups, d = types.ListValueFrom(ctx, types.StringType, account.Settings.PeerExposeGroups)
 	ret.Append(d...)
+	data.MetricsPushEnabled = types.BoolPointerValue(account.Settings.MetricsPushEnabled)
 	return ret
 }
 
@@ -289,6 +297,7 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),
 			PeerExposeEnabled:               boolDefault(data.PeerExposeEnabled, account.Settings.PeerExposeEnabled),
 			PeerExposeGroups:                stringListDefault(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups),
+			MetricsPushEnabled:              boolDefaultPointer(data.MetricsPushEnabled, account.Settings.MetricsPushEnabled),
 		},
 	}
 }

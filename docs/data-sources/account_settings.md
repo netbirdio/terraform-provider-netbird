@@ -30,6 +30,7 @@ data "netbird_account_settings" "example" {}
 - `jwt_groups_claim_name` (String) Name of the claim from which we extract groups names to add it to account groups.
 - `jwt_groups_enabled` (Boolean) Allows extract groups from JWT claim and add it to account groups.
 - `lazy_connection_enabled` (Boolean) Enables or disables experimental lazy connection
+- `metrics_push_enabled` (Boolean) Enables or disables client metrics push for all peers in the account.
 - `network_range` (String) Allows to define a custom network range for the account in CIDR format
 - `network_traffic_logs_enabled` (Boolean) Enables or disables network traffic logging. If enabled, all network traffic events from peers will be stored.
 - `network_traffic_logs_groups` (List of String) Limits traffic logging to these groups. If unset all peers are enabled.
