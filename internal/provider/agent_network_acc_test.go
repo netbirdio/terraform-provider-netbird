@@ -215,7 +215,7 @@ func Test_AgentNetworkProvider_ModelsCacheRates(t *testing.T) {
 	config := fmt.Sprintf(`resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id  = "openai_api"
 	name         = "%[1]s"
-	upstream_url = "https://api.openai.com"
+	upstream_url = %[2]q
 	api_key      = "sk-acc-test"
 
 	models = [
@@ -228,7 +228,7 @@ func Test_AgentNetworkProvider_ModelsCacheRates(t *testing.T) {
 			cache_creation_per_1k = 0.00375
 		},
 	]
-}`, rName)
+}`, rName, e2eUpstreamURL())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
@@ -290,7 +290,7 @@ func Test_AgentNetworkProvider_ModelsOmittedCacheRatesStayAbsent(t *testing.T) {
 	config := fmt.Sprintf(`resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id  = "openai_api"
 	name         = "%[1]s"
-	upstream_url = "https://api.openai.com"
+	upstream_url = %[2]q
 	api_key      = "sk-acc-test"
 
 	models = [
@@ -300,7 +300,7 @@ func Test_AgentNetworkProvider_ModelsOmittedCacheRatesStayAbsent(t *testing.T) {
 			output_per_1k = 0.0006
 		},
 	]
-}`, rName)
+}`, rName, e2eUpstreamURL())
 
 	checkOmittedRatesAbsent := func(s *terraform.State) error {
 		p, err := testGetProvider(s.RootModule().Resources[rNameFull].Primary.Attributes["id"])
@@ -328,7 +328,7 @@ func Test_AgentNetworkProvider_ModelsOmittedCacheRatesStayAbsent(t *testing.T) {
 	configWithRate := fmt.Sprintf(`resource "netbird_agent_network_provider" "%[1]s" {
 	provider_id  = "openai_api"
 	name         = "%[1]s"
-	upstream_url = "https://api.openai.com"
+	upstream_url = %[2]q
 	api_key      = "sk-acc-test"
 
 	models = [
@@ -339,7 +339,7 @@ func Test_AgentNetworkProvider_ModelsOmittedCacheRatesStayAbsent(t *testing.T) {
 			cached_input_per_1k   = 0.000075
 		},
 	]
-}`, rName)
+}`, rName, e2eUpstreamURL())
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
