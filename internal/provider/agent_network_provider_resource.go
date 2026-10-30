@@ -228,6 +228,8 @@ func agentNetworkProviderAPIToTerraform(ctx context.Context, p *api.AgentNetwork
 	}
 	list, d := types.ListValueFrom(ctx, AgentNetworkProviderModelItem{}.TFType(), modelObjs)
 	ret.Append(d...)
+	list, d = sortedList(ctx, data.Models, list)
+	ret.Append(d...)
 	data.Models = list
 	return ret
 }

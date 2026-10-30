@@ -169,7 +169,7 @@ func userAPIToTerraform(ctx context.Context, user *api.User, data *UserModel) di
 	data.Issued = types.StringValue(*user.Issued)
 	data.Role = types.StringValue(user.Role)
 	data.Status = types.StringValue(string(user.Status))
-	l, diag := types.ListValueFrom(ctx, types.StringType, user.AutoGroups)
+	l, diag := sortedStringList(ctx, data.AutoGroups, user.AutoGroups)
 	ret.Append(diag...)
 	data.AutoGroups = l
 	return ret

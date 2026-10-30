@@ -139,7 +139,7 @@ func networkRouterAPIToTerraform(ctx context.Context, networkRouter *api.Network
 	data.Enabled = types.BoolValue(networkRouter.Enabled)
 	data.Masquerade = types.BoolValue(networkRouter.Masquerade)
 	data.Metric = types.Int32Value(int32(networkRouter.Metric))
-	data.PeerGroups, d = types.ListValueFrom(ctx, types.StringType, networkRouter.PeerGroups)
+	data.PeerGroups, d = sortedStringListPointer(ctx, data.PeerGroups, networkRouter.PeerGroups)
 	ret.Append(d...)
 	return ret
 }

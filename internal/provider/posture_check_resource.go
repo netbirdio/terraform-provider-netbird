@@ -260,16 +260,17 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 
 	if postureCheck.Checks.GeoLocationCheck != nil {
 		geoValues := struct {
-			Action    string `tfsdk:"action"`
-			Locations []struct {
-				CountryCode string  `tfsdk:"country_code"`
-				CityName    *string `tfsdk:"city_name"`
-			} `tfsdk:"locations"`
+			Action    string     `tfsdk:"action"`
+			Locations types.List `tfsdk:"locations"`
 		}{
 			Action: string(postureCheck.Checks.GeoLocationCheck.Action),
 		}
+		var locations []struct {
+			CountryCode string  `tfsdk:"country_code"`
+			CityName    *string `tfsdk:"city_name"`
+		}
 		for _, v := range postureCheck.Checks.GeoLocationCheck.Locations {
-			geoValues.Locations = append(geoValues.Locations, struct {
+			locations = append(locations, struct {
 				CountryCode string  "tfsdk:\"country_code\""
 				CityName    *string "tfsdk:\"city_name\""
 			}{
@@ -277,6 +278,14 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 				CityName:    v.CityName,
 			})
 		}
+		locationType := types.ObjectType{AttrTypes: map[string]attr.Type{
+			"country_code": types.StringType,
+			"city_name":    types.StringType,
+		}}
+		geoValues.Locations, d = types.ListValueFrom(ctx, locationType, locations)
+		ret.Append(d...)
+		geoValues.Locations, d = sortedList(ctx, objectListAttr(data.GeoLocationCheck, "locations"), geoValues.Locations)
+		ret.Append(d...)
 		data.GeoLocationCheck, d = types.ObjectValueFrom(
 			ctx,
 			map[string]attr.Type{
@@ -308,6 +317,8 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 	}
 
 	if postureCheck.Checks.PeerNetworkRangeCheck != nil {
+		ranges, rd := sortedStringList(ctx, objectListAttr(data.PeerNetworkRangeCheck, "ranges"), postureCheck.Checks.PeerNetworkRangeCheck.Ranges)
+		ret.Append(rd...)
 		data.PeerNetworkRangeCheck, d = types.ObjectValueFrom(
 			ctx,
 			map[string]attr.Type{
@@ -315,10 +326,10 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 				"action": types.StringType,
 			},
 			struct {
-				Ranges []string `tfsdk:"ranges"`
-				Action string   `tfsdk:"action"`
+				Ranges types.List `tfsdk:"ranges"`
+				Action string     `tfsdk:"action"`
 			}{
-				Ranges: postureCheck.Checks.PeerNetworkRangeCheck.Ranges,
+				Ranges: ranges,
 				Action: string(postureCheck.Checks.PeerNetworkRangeCheck.Action),
 			},
 		)
@@ -357,6 +368,7 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 			}
 			processData = append(processData, i)
 		}
+		prior := data.ProcessCheck
 		data.ProcessCheck, d = types.ListValueFrom(
 			ctx,
 			types.ObjectType{
@@ -368,6 +380,8 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 			},
 			processData,
 		)
+		ret.Append(d...)
+		data.ProcessCheck, d = sortedList(ctx, prior, data.ProcessCheck)
 		ret.Append(d...)
 	} else {
 		data.ProcessCheck = types.ListNull(types.ObjectType{
