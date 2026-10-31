@@ -821,7 +821,8 @@ func preserveAuthSecrets(priorAuth, currentAuth types.Object) (types.Object, dia
 
 // preserveTargetPlanValues keeps the user's planned host/path/options values in targets
 // since the API may override them (e.g. resolving host from the peer's IP).
-// Targets are matched by target_id to handle potential reordering by the API.
+// Targets are matched by target_id and path to handle potential reordering by the API,
+// see matchPlanTarget.
 func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types.List) (types.List, diag.Diagnostics) {
 	var ret diag.Diagnostics
 
@@ -836,13 +837,8 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 		return apiTargets, ret
 	}
 
-	planByID := make(map[string]ReverseProxyServiceTargetModel, len(planModels))
-	for _, p := range planModels {
-		planByID[p.TargetId.ValueString()] = p
-	}
-
 	for i, apiModel := range apiModels {
-		planModel, ok := planByID[apiModel.TargetId.ValueString()]
+		planModel, ok := matchPlanTarget(planModels, apiModel)
 		if !ok {
 			continue
 		}
@@ -860,6 +856,51 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 	result, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), apiModels)
 	ret.Append(d...)
 	return result, ret
+}
+
+// matchPlanTarget finds the planned target an API target was built from. Several targets
+// can share a target_id when they route different paths to the same backend, so the path
+// disambiguates them. The exact path wins, so an omitted path and "/" stay distinct; the
+// normalized path and then target_id alone are only trusted when they are unambiguous.
+func matchPlanTarget(planModels []ReverseProxyServiceTargetModel, apiModel ReverseProxyServiceTargetModel) (ReverseProxyServiceTargetModel, bool) {
+	var byID, byNormalizedPath []ReverseProxyServiceTargetModel
+	for _, p := range planModels {
+		if p.TargetId.ValueString() != apiModel.TargetId.ValueString() {
+			continue
+		}
+		if plannedPath(p.Path).Equal(apiModel.Path) {
+			return p, true
+		}
+		if targetPath(p.Path) == targetPath(apiModel.Path) {
+			byNormalizedPath = append(byNormalizedPath, p)
+		}
+		byID = append(byID, p)
+	}
+
+	if len(byNormalizedPath) == 1 {
+		return byNormalizedPath[0], true
+	}
+	if len(byID) == 1 {
+		return byID[0], true
+	}
+	return ReverseProxyServiceTargetModel{}, false
+}
+
+// plannedPath maps an unknown planned path to null. Configured values are known by apply
+// time, so an unknown path is an omitted one, which the API reads back as null.
+func plannedPath(path types.String) types.String {
+	if path.IsUnknown() {
+		return types.StringNull()
+	}
+	return path
+}
+
+// targetPath mirrors the API, which routes an unset or empty path as "/".
+func targetPath(path types.String) string {
+	if path.IsNull() || path.IsUnknown() || path.ValueString() == "" {
+		return "/"
+	}
+	return path.ValueString()
 }
 
 func reverseProxyServiceTerraformToAPI(ctx context.Context, data *ReverseProxyServiceModel) (api.ServiceRequest, diag.Diagnostics) {
