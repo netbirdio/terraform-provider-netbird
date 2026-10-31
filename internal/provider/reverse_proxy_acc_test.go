@@ -370,6 +370,8 @@ func Test_ReverseProxyService_SameTargetPaths(t *testing.T) {
 			if len(svc.Targets) != len(want) {
 				return fmt.Errorf("expected %d targets, got %d", len(want), len(svc.Targets))
 			}
+			// With the count checked above, rejecting repeats means every wanted path is present.
+			seen := make(map[string]bool, len(want))
 			for _, target := range svc.Targets {
 				if target.Path == nil {
 					return fmt.Errorf("target %s has no path", target.TargetId)
@@ -378,6 +380,10 @@ func Test_ReverseProxyService_SameTargetPaths(t *testing.T) {
 				if !ok {
 					return fmt.Errorf("unexpected target path %s", *target.Path)
 				}
+				if seen[*target.Path] {
+					return fmt.Errorf("target path %s returned more than once", *target.Path)
+				}
+				seen[*target.Path] = true
 				gotRewrite := ""
 				if target.Options != nil && target.Options.PathRewrite != nil {
 					gotRewrite = string(*target.Options.PathRewrite)
