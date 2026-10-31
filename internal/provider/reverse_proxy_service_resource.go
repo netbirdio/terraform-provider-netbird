@@ -860,19 +860,26 @@ func preserveTargetPlanValues(ctx context.Context, planTargets, apiTargets types
 
 // matchPlanTarget finds the planned target an API target was built from. Several targets
 // can share a target_id when they route different paths to the same backend, so the path
-// disambiguates them; target_id alone is only trusted when it is unique in the plan.
+// disambiguates them. The exact path wins, so an omitted path and "/" stay distinct; the
+// normalized path and then target_id alone are only trusted when they are unambiguous.
 func matchPlanTarget(planModels []ReverseProxyServiceTargetModel, apiModel ReverseProxyServiceTargetModel) (ReverseProxyServiceTargetModel, bool) {
-	var byID []ReverseProxyServiceTargetModel
+	var byID, byNormalizedPath []ReverseProxyServiceTargetModel
 	for _, p := range planModels {
 		if p.TargetId.ValueString() != apiModel.TargetId.ValueString() {
 			continue
 		}
-		if targetPath(p.Path) == targetPath(apiModel.Path) {
+		if p.Path.Equal(apiModel.Path) {
 			return p, true
+		}
+		if targetPath(p.Path) == targetPath(apiModel.Path) {
+			byNormalizedPath = append(byNormalizedPath, p)
 		}
 		byID = append(byID, p)
 	}
 
+	if len(byNormalizedPath) == 1 {
+		return byNormalizedPath[0], true
+	}
 	if len(byID) == 1 {
 		return byID[0], true
 	}
