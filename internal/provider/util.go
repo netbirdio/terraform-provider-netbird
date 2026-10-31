@@ -123,3 +123,27 @@ func knownCount(vals ...attr.Value) int {
 	}
 	return ret
 }
+
+// preserveListOrder returns prior when it holds the same elements as current, in any
+// order, and current otherwise. The API returns some ID lists, such as a group's peers,
+// in no stable order, so a reordered read of a list attribute would plan a change on
+// every run. A membership change still returns current, so a real change is never hidden.
+func preserveListOrder(ctx context.Context, prior, current types.List) (types.List, diag.Diagnostics) {
+	if prior.IsNull() || prior.IsUnknown() || current.IsNull() || current.IsUnknown() {
+		return current, nil
+	}
+	var p, c []string
+	var diags diag.Diagnostics
+	diags.Append(prior.ElementsAs(ctx, &p, false)...)
+	diags.Append(current.ElementsAs(ctx, &c, false)...)
+	if diags.HasError() || len(p) != len(c) {
+		return current, diags
+	}
+	p, c = slices.Clone(p), slices.Clone(c)
+	slices.Sort(p)
+	slices.Sort(c)
+	if slices.Equal(p, c) {
+		return prior, diags
+	}
+	return current, diags
+}
