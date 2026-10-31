@@ -868,7 +868,7 @@ func matchPlanTarget(planModels []ReverseProxyServiceTargetModel, apiModel Rever
 		if p.TargetId.ValueString() != apiModel.TargetId.ValueString() {
 			continue
 		}
-		if p.Path.Equal(apiModel.Path) {
+		if plannedPath(p.Path).Equal(apiModel.Path) {
 			return p, true
 		}
 		if targetPath(p.Path) == targetPath(apiModel.Path) {
@@ -884,6 +884,15 @@ func matchPlanTarget(planModels []ReverseProxyServiceTargetModel, apiModel Rever
 		return byID[0], true
 	}
 	return ReverseProxyServiceTargetModel{}, false
+}
+
+// plannedPath maps an unknown planned path to null. Configured values are known by apply
+// time, so an unknown path is an omitted one, which the API reads back as null.
+func plannedPath(path types.String) types.String {
+	if path.IsUnknown() {
+		return types.StringNull()
+	}
+	return path
 }
 
 // targetPath mirrors the API, which routes an unset or empty path as "/".

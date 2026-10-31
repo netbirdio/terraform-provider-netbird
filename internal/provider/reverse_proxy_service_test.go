@@ -1252,15 +1252,17 @@ func Test_preserveTargetPlanValues_sameTargetOmittedAndRootPath(t *testing.T) {
 	}
 	nullOpts := types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes)
 
+	// An omitted Optional+Computed path is planned as unknown and read back from the API as null.
 	planTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), []ReverseProxyServiceTargetModel{
-		target(types.StringNull(), preserveOpts),
+		target(types.StringUnknown(), preserveOpts),
 		target(types.StringValue("/"), nullOpts),
 	})
 	if d.HasError() {
 		t.Fatal("Failed to build plan targets")
 	}
+	// The API answers without the omitted-path target's options, which the plan must restore.
 	apiTargets, d := types.ListValueFrom(ctx, ReverseProxyServiceTargetModel{}.TFType(), []ReverseProxyServiceTargetModel{
-		target(types.StringNull(), preserveOpts),
+		target(types.StringNull(), nullOpts),
 		target(types.StringValue("/"), nullOpts),
 	})
 	if d.HasError() {
@@ -1280,6 +1282,9 @@ func Test_preserveTargetPlanValues_sameTargetOmittedAndRootPath(t *testing.T) {
 
 	if !resultModels[0].Path.IsNull() {
 		t.Errorf("Target 0: expected path to stay null, got %q", resultModels[0].Path.ValueString())
+	}
+	if resultModels[0].Options.IsNull() {
+		t.Error("Target 0: expected its planned options to be kept")
 	}
 	if resultModels[1].Path.ValueString() != "/" {
 		t.Errorf("Target 1: expected path \"/\", got %q", resultModels[1].Path.ValueString())
