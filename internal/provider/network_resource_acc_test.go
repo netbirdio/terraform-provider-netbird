@@ -68,6 +68,49 @@ func Test_NetworkResource_Create(t *testing.T) {
 	})
 }
 
+func Test_NetworkResource_Create_NoGroups(t *testing.T) {
+	testE2E(t)
+	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_network_resource." + rName
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: testCheckGone(func(ctx context.Context, id string) (*api.NetworkResource, error) {
+			return testClient().Networks.Resources(e2eNetworkID()).Get(ctx, id)
+		}, &createdID),
+		Steps: []resource.TestStep{
+			{
+				ResourceName: rName,
+				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, `null`, rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "groups.#", "0"),
+					func(s *terraform.State) error {
+						nreID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						resource, err := testClient().Networks.Resources(e2eNetworkID()).Get(context.Background(), nreID)
+						if err != nil {
+							return err
+						}
+
+						if len(resource.Groups) != 0 {
+							return fmt.Errorf("NetworkResource Groups mismatch, expected empty, found %#v on management server", resource.Groups)
+						}
+
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName: rName,
+				Config:       testNetworkResourceResource(rName, e2eNetworkID(), `example.com`, `null`, rName),
+				PlanOnly:     true,
+			},
+		},
+	})
+}
+
 func Test_NetworkResource_Update(t *testing.T) {
 	testE2E(t)
 	rName := "nre" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
