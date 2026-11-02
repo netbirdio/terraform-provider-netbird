@@ -283,7 +283,7 @@ jobs:
       # the only writable path is edict-result.json via Edit. No bare Write.
       - name: Run Edict verification (Claude agent, keyless via NetBird)
         id: agent
-        uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         env:
           # Read-only token (this job's permissions are read), scoped to this step.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
