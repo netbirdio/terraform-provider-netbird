@@ -242,6 +242,39 @@ func Test_Drift_Policy(t *testing.T) {
 	)
 }
 
+// A rule description the configuration leaves out defaults to "", so one set
+// elsewhere is drift to put back rather than a value to adopt. The server
+// rebuilds every rule from the update request, so omitting the field would
+// clear it anyway; the default makes the plan say so.
+func Test_Drift_PolicyRuleDescription(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_policy." + rName
+	driftCase(t, address, testPolicyResourceRuleDescription(rName, ""),
+		func(id string) error {
+			p, err := testClient().Policies.Get(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			desc := "changed elsewhere"
+			rules := make([]api.PolicyRuleUpdate, 0, len(p.Rules))
+			for _, r := range p.Rules {
+				rules = append(rules, api.PolicyRuleUpdate{
+					Id: r.Id, Name: r.Name, Description: &desc, Enabled: r.Enabled,
+					Action: api.PolicyRuleUpdateAction(r.Action), Bidirectional: r.Bidirectional,
+					Protocol: api.PolicyRuleUpdateProtocol(r.Protocol),
+					Ports:    r.Ports, Sources: groupIDs(r.Sources), Destinations: groupIDs(r.Destinations),
+				})
+			}
+			_, err = testClient().Policies.Update(context.Background(), id, api.PolicyCreate{
+				Name: p.Name, Description: p.Description, Enabled: p.Enabled, Rules: rules,
+			})
+			return err
+		},
+		testCheckPolicyRuleDescription(address, ""),
+	)
+}
+
 // groupIDs turns the group objects a policy read returns back into the IDs an
 // update takes.
 func groupIDs(groups *[]api.GroupMinimum) *[]string {
