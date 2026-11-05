@@ -174,9 +174,9 @@ func nameserverGroupAPIToTerraform(ctx context.Context, nameserverGroup *api.Nam
 	data.Enabled = types.BoolValue(nameserverGroup.Enabled)
 	data.SearchDomainsEnabled = types.BoolValue(nameserverGroup.SearchDomainsEnabled)
 	data.Primary = types.BoolValue(nameserverGroup.Primary)
-	data.Groups, d = types.ListValueFrom(ctx, types.StringType, nameserverGroup.Groups)
+	data.Groups, d = sortedStringList(ctx, data.Groups, nameserverGroup.Groups)
 	ret.Append(d...)
-	data.Domains, d = types.ListValueFrom(ctx, types.StringType, nameserverGroup.Domains)
+	data.Domains, d = sortedStringList(ctx, data.Domains, nameserverGroup.Domains)
 	ret.Append(d...)
 	nameservers := make([]struct {
 		IP     types.String `tfsdk:"ip"`

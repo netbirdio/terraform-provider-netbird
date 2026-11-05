@@ -140,10 +140,10 @@ func (d *ScimDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	data.ProviderName = types.StringValue(scim.Provider)
 	data.Enabled = types.BoolValue(scim.Enabled)
 	data.LastSyncedAt = types.StringValue(scim.LastSyncedAt.Format("2006-01-02T15:04:05Z"))
-	gp, diags := types.ListValueFrom(ctx, types.StringType, scim.GroupPrefixes)
+	gp, diags := sortedStringList(ctx, data.GroupPrefixes, scim.GroupPrefixes)
 	resp.Diagnostics.Append(diags...)
 	data.GroupPrefixes = gp
-	ugp, diags := types.ListValueFrom(ctx, types.StringType, scim.UserGroupPrefixes)
+	ugp, diags := sortedStringList(ctx, data.UserGroupPrefixes, scim.UserGroupPrefixes)
 	resp.Diagnostics.Append(diags...)
 	data.UserGroupPrefixes = ugp
 	if resp.Diagnostics.HasError() {

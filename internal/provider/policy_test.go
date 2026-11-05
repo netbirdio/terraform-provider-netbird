@@ -177,7 +177,7 @@ func Test_policyAPIToTerraform(t *testing.T) {
 					"source_resource":      types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
 					"destination_resource": types.ObjectNull(PolicyRuleResourceModel{}.TFType().AttrTypes),
 					"authorized_groups": types.MapValueMust(types.ListType{ElemType: types.StringType}, map[string]attr.Value{
-						"g1": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("root"), types.StringValue("admin")}),
+						"g1": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("admin"), types.StringValue("root")}),
 					}),
 				})}),
 			},

@@ -672,7 +672,7 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 			Enabled: types.BoolValue(svc.Auth.BearerAuth.Enabled),
 		}
 		if svc.Auth.BearerAuth.DistributionGroups != nil {
-			bearerModel.DistributionGroups, d = types.ListValueFrom(ctx, types.StringType, *svc.Auth.BearerAuth.DistributionGroups)
+			bearerModel.DistributionGroups, d = sortedStringList(ctx, objectListAttr(data.Auth, "bearer_auth", "distribution_groups"), *svc.Auth.BearerAuth.DistributionGroups)
 			ret.Append(d...)
 		} else {
 			bearerModel.DistributionGroups = types.ListNull(types.StringType)
@@ -713,25 +713,25 @@ func reverseProxyServiceAPIToTerraform(ctx context.Context, svc *api.Service, da
 	if svc.AccessRestrictions != nil {
 		arModel := ReverseProxyAccessRestrictionsModel{}
 		if svc.AccessRestrictions.AllowedCidrs != nil {
-			arModel.AllowedCidrs, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.AllowedCidrs)
+			arModel.AllowedCidrs, d = sortedStringList(ctx, objectListAttr(data.AccessRestrictions, "allowed_cidrs"), *svc.AccessRestrictions.AllowedCidrs)
 			ret.Append(d...)
 		} else {
 			arModel.AllowedCidrs = types.ListNull(types.StringType)
 		}
 		if svc.AccessRestrictions.BlockedCidrs != nil {
-			arModel.BlockedCidrs, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.BlockedCidrs)
+			arModel.BlockedCidrs, d = sortedStringList(ctx, objectListAttr(data.AccessRestrictions, "blocked_cidrs"), *svc.AccessRestrictions.BlockedCidrs)
 			ret.Append(d...)
 		} else {
 			arModel.BlockedCidrs = types.ListNull(types.StringType)
 		}
 		if svc.AccessRestrictions.AllowedCountries != nil {
-			arModel.AllowedCountries, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.AllowedCountries)
+			arModel.AllowedCountries, d = sortedStringList(ctx, objectListAttr(data.AccessRestrictions, "allowed_countries"), *svc.AccessRestrictions.AllowedCountries)
 			ret.Append(d...)
 		} else {
 			arModel.AllowedCountries = types.ListNull(types.StringType)
 		}
 		if svc.AccessRestrictions.BlockedCountries != nil {
-			arModel.BlockedCountries, d = types.ListValueFrom(ctx, types.StringType, *svc.AccessRestrictions.BlockedCountries)
+			arModel.BlockedCountries, d = sortedStringList(ctx, objectListAttr(data.AccessRestrictions, "blocked_countries"), *svc.AccessRestrictions.BlockedCountries)
 			ret.Append(d...)
 		} else {
 			arModel.BlockedCountries = types.ListNull(types.StringType)

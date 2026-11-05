@@ -308,7 +308,7 @@ func (d *PeersDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	data.Ids, di = types.ListValueFrom(ctx, types.StringType, filteredPeers)
+	data.Ids, di = sortedStringList(ctx, data.Ids, filteredPeers)
 	resp.Diagnostics.Append(di...)
 	if resp.Diagnostics.HasError() {
 		return

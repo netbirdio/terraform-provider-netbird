@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -99,6 +101,9 @@ func (d *ReverseProxyClustersDataSource) Read(ctx context.Context, req datasourc
 			ConnectedProxies: types.Int64Value(int64(c.ConnectedProxies)),
 		}
 	}
+	slices.SortStableFunc(data.Clusters, func(a, b ReverseProxyClusterModel) int {
+		return strings.Compare(a.Address.ValueString(), b.Address.ValueString())
+	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

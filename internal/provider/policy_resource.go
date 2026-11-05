@@ -318,10 +318,11 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 		data.Description = types.StringValue(*policy.Description)
 	}
 	data.Enabled = types.BoolValue(policy.Enabled)
-	data.SourcePostureChecks, diag = types.ListValueFrom(ctx, types.StringType, policy.SourcePostureChecks)
+	data.SourcePostureChecks, diag = sortedStringList(ctx, data.SourcePostureChecks, policy.SourcePostureChecks)
 	ret.Append(diag...)
 	var rulesList []PolicyRuleModel
-	for _, r := range policy.Rules {
+	for i, r := range policy.Rules {
+		prior := listElementObject(data.Rules, i)
 		ruleModel := PolicyRuleModel{
 			Id:            types.StringValue(*r.Id),
 			Name:          types.StringValue(r.Name),
@@ -339,7 +340,7 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 			for _, v := range *r.Sources {
 				sources = append(sources, v.Id)
 			}
-			ruleModel.Sources, diag = types.ListValueFrom(ctx, types.StringType, sources)
+			ruleModel.Sources, diag = sortedStringList(ctx, objectListAttr(prior, "sources"), sources)
 			ret.Append(diag...)
 		} else {
 			ruleModel.Sources = types.ListNull(types.StringType)
@@ -349,13 +350,13 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 			for _, v := range *r.Destinations {
 				destinations = append(destinations, v.Id)
 			}
-			ruleModel.Destinations, diag = types.ListValueFrom(ctx, types.StringType, destinations)
+			ruleModel.Destinations, diag = sortedStringList(ctx, objectListAttr(prior, "destinations"), destinations)
 			ret.Append(diag...)
 		} else {
 			ruleModel.Destinations = types.ListNull(types.StringType)
 		}
 		if r.Ports != nil {
-			ruleModel.Ports, diag = types.ListValueFrom(ctx, types.StringType, *r.Ports)
+			ruleModel.Ports, diag = sortedStringList(ctx, objectListAttr(prior, "ports"), *r.Ports)
 			ret.Append(diag...)
 		} else {
 			ruleModel.Ports = types.ListNull(types.StringType)
@@ -369,6 +370,8 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 				})
 			}
 			ruleModel.PortRanges, diag = types.ListValueFrom(ctx, PolicyRulePortRangeModel{}.TFType(), portRanges)
+			ret.Append(diag...)
+			ruleModel.PortRanges, diag = sortedList(ctx, objectListAttr(prior, "port_ranges"), ruleModel.PortRanges)
 			ret.Append(diag...)
 		} else {
 			ruleModel.PortRanges = types.ListNull(PolicyRulePortRangeModel{}.TFType())
@@ -394,8 +397,10 @@ func policyAPIToTerraform(ctx context.Context, policy *api.Policy, data *PolicyM
 		mapElemType := types.ListType{ElemType: types.StringType}
 		if r.AuthorizedGroups != nil && len(*r.AuthorizedGroups) > 0 {
 			mapValues := map[string]attr.Value{}
+			priorGroups, _ := prior.Attributes()["authorized_groups"].(types.Map)
 			for k, v := range *r.AuthorizedGroups {
-				listVal, d := types.ListValueFrom(ctx, types.StringType, v)
+				priorList, _ := priorGroups.Elements()[k].(types.List)
+				listVal, d := sortedStringList(ctx, priorList, v)
 				ret.Append(d...)
 				mapValues[k] = listVal
 			}

@@ -236,7 +236,7 @@ func (r *AccountSettings) Configure(ctx context.Context, req resource.ConfigureR
 func accountAPIToTerraform(ctx context.Context, account *api.Account, data *AccountSettingsModel) diag.Diagnostics {
 	var ret diag.Diagnostics
 	data.Id = types.StringValue(account.Id)
-	data.JwtAllowGroups, ret = types.ListValueFrom(ctx, types.StringType, account.Settings.JwtAllowGroups)
+	data.JwtAllowGroups, ret = sortedStringListPointer(ctx, data.JwtAllowGroups, account.Settings.JwtAllowGroups)
 	data.JwtGroupsClaimName = types.StringPointerValue(account.Settings.JwtGroupsClaimName)
 	data.PeerLoginExpiration = types.Int32Value(int32(account.Settings.PeerLoginExpiration))
 	data.PeerInactivityExpiration = types.Int32Value(int32(account.Settings.PeerInactivityExpiration))
@@ -254,11 +254,11 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	data.NetworkRange = types.StringPointerValue(account.Settings.NetworkRange)
 	data.LazyConnectionEnabled = types.BoolPointerValue(account.Settings.LazyConnectionEnabled)
 	data.UserApprovalRequired = types.BoolValue(account.Settings.Extra.UserApprovalRequired)
-	logsGroups, d := types.ListValueFrom(ctx, types.StringType, account.Settings.Extra.NetworkTrafficLogsGroups)
+	logsGroups, d := sortedStringList(ctx, data.NetworkTrafficLogsGroups, account.Settings.Extra.NetworkTrafficLogsGroups)
 	ret.Append(d...)
 	data.NetworkTrafficLogsGroups = logsGroups
 	data.PeerExposeEnabled = types.BoolValue(account.Settings.PeerExposeEnabled)
-	data.PeerExposeGroups, d = types.ListValueFrom(ctx, types.StringType, account.Settings.PeerExposeGroups)
+	data.PeerExposeGroups, d = sortedStringList(ctx, data.PeerExposeGroups, account.Settings.PeerExposeGroups)
 	ret.Append(d...)
 	return ret
 }

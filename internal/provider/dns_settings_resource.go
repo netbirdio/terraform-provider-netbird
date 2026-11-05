@@ -85,7 +85,7 @@ func (r *DNSSettings) Configure(ctx context.Context, req resource.ConfigureReque
 
 func dnsSettingsAPIToTerraform(ctx context.Context, dnsSettings *api.DNSSettings, data *DNSSettingsModel) diag.Diagnostics {
 	var ret diag.Diagnostics
-	l, diag := types.ListValueFrom(ctx, types.StringType, dnsSettings.DisabledManagementGroups)
+	l, diag := sortedStringList(ctx, data.DisabledManagementGroups, dnsSettings.DisabledManagementGroups)
 	ret.Append(diag...)
 	data.DisabledManagementGroups = l
 	return ret

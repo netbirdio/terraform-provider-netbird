@@ -1348,7 +1348,7 @@ func Test_reverseProxyServiceRoundtrip_accessRestrictions(t *testing.T) {
 		t.Fatalf("Expected 2 allowed countries, got %v", req.AccessRestrictions.AllowedCountries)
 	}
 	countries := *req.AccessRestrictions.AllowedCountries
-	if countries[0] != "US" || countries[1] != "DE" {
+	if countries[0] != "DE" || countries[1] != "US" {
 		t.Errorf("Allowed countries mismatch: got %v", countries)
 	}
 	if req.AccessRestrictions.BlockedCidrs == nil || len(*req.AccessRestrictions.BlockedCidrs) != 2 {

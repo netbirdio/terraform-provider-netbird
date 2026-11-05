@@ -40,7 +40,7 @@ func Test_agentNetworkGuardrailAPIToTerraform(t *testing.T) {
 				ModelAllowlist: types.ObjectValueMust(AgentNetworkModelAllowlistModel{}.TFType().AttrTypes, map[string]attr.Value{
 					"enabled": types.BoolValue(true),
 					"models": types.ListValueMust(types.StringType, []attr.Value{
-						types.StringValue("gpt-4o-mini"), types.StringValue("gpt-4o"),
+						types.StringValue("gpt-4o"), types.StringValue("gpt-4o-mini"),
 					}),
 				}),
 				PromptCapture: types.ObjectValueMust(AgentNetworkPromptCaptureModel{}.TFType().AttrTypes, map[string]attr.Value{

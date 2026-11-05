@@ -145,7 +145,7 @@ func agentNetworkGuardrailAPIToTerraform(ctx context.Context, g *api.AgentNetwor
 	data.Name = types.StringValue(g.Name)
 	data.Description = types.StringValue(g.Description)
 
-	modelsList, d := types.ListValueFrom(ctx, types.StringType, g.Checks.ModelAllowlist.Models)
+	modelsList, d := sortedStringList(ctx, objectListAttr(data.ModelAllowlist, "models"), g.Checks.ModelAllowlist.Models)
 	ret.Append(d...)
 	data.ModelAllowlist, d = types.ObjectValueFrom(ctx, AgentNetworkModelAllowlistModel{}.TFType().AttrTypes, AgentNetworkModelAllowlistModel{
 		Enabled: types.BoolValue(g.Checks.ModelAllowlist.Enabled),

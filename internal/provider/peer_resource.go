@@ -240,10 +240,10 @@ func peerAPIToTerraform(ctx context.Context, peer *api.Peer, data *PeerModel) di
 	for i, g := range peer.Groups {
 		groupIDs[i] = g.Id
 	}
-	l, diag := types.ListValueFrom(ctx, types.StringType, groupIDs)
+	l, diag := sortedStringList(ctx, data.Groups, groupIDs)
 	ret.Append(diag...)
 	data.Groups = l
-	l, diag = types.ListValueFrom(ctx, types.StringType, peer.ExtraDnsLabels)
+	l, diag = sortedStringList(ctx, data.ExtraDnsLabels, peer.ExtraDnsLabels)
 	ret.Append(diag...)
 	data.ExtraDnsLabels = l
 	return ret
