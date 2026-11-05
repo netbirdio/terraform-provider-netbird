@@ -54,9 +54,11 @@ func TestProviderUserAgent(t *testing.T) {
 	}
 	req.Config = tfsdk.Config{
 		Raw: tftypes.NewValue(configValue, map[string]tftypes.Value{
-			"management_url": tftypes.NewValue(tftypes.String, nil),
-			"token":          tftypes.NewValue(tftypes.String, nil),
-			"tenant_account": tftypes.NewValue(tftypes.String, nil),
+			"management_url":  tftypes.NewValue(tftypes.String, nil),
+			"token":           tftypes.NewValue(tftypes.String, nil),
+			"tenant_account":  tftypes.NewValue(tftypes.String, nil),
+			"request_timeout": tftypes.NewValue(tftypes.Number, nil),
+			"max_retries":     tftypes.NewValue(tftypes.Number, nil),
 		}),
 		Schema: schemaResp.Schema,
 	}
