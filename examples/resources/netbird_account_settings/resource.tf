@@ -8,6 +8,7 @@ resource "netbird_account_settings" "example" {
   regular_users_view_blocked             = true
   groups_propagation_enabled             = true
   jwt_groups_enabled                     = false
+  local_mfa_enabled                      = true
   routing_peer_dns_resolution_enabled    = false
   peer_approval_enabled                  = false
   network_traffic_logs_enabled           = false

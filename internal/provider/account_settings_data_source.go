@@ -107,6 +107,10 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				MarkdownDescription: "Enables or disables experimental lazy connection",
 				Computed:            true,
 			},
+			"local_mfa_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Enables or disables TOTP multi-factor authentication for local users. Only applicable when the embedded identity provider is enabled.",
+				Computed:            true,
+			},
 			"user_approval_required": schema.BoolAttribute{
 				MarkdownDescription: "Enables manual approval for new users joining via domain matching. When enabled, users are blocked with pending approval status until explicitly approved by an admin.",
 				Computed:            true,
