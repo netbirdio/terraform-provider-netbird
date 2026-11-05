@@ -31,7 +31,7 @@ resource "netbird_identity_provider" "example" {
 - `client_secret` (String, Sensitive) OAuth2 client secret
 - `issuer` (String) OIDC issuer URL
 - `name` (String) Human-readable name for the identity provider
-- `type` (String) Type of identity provider (entra, google, microsoft, oidc, okta, pocketid, zitadel)
+- `type` (String) Type of identity provider (entra, google, keycloak, microsoft, oidc, okta, pocketid, zitadel)
 
 ### Read-Only
 
