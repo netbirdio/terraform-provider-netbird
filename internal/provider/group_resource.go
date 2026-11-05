@@ -133,6 +133,70 @@ func groupAPIToTerraform(ctx context.Context, group *api.Group, data *GroupModel
 	return ret
 }
 
+// groupRequestResources turns the planned resource IDs into the id and type pairs the
+// API wants. The server detaches every resource when the field is omitted, so a plan
+// without a value resends the current list instead of leaving it out.
+func (r *Group) groupRequestResources(ctx context.Context, planned types.List, current []api.Resource) (*[]api.Resource, diag.Diagnostics) {
+	var ret diag.Diagnostics
+
+	if planned.IsNull() || planned.IsUnknown() {
+		if current == nil {
+			return nil, ret
+		}
+		return &current, ret
+	}
+
+	var ids []string
+	ret.Append(planned.ElementsAs(ctx, &ids, false)...)
+	if ret.HasError() {
+		return nil, ret
+	}
+
+	resourceTypes := make(map[string]api.ResourceType, len(current))
+	for _, res := range current {
+		resourceTypes[res.Id] = res.Type
+	}
+
+	for _, id := range ids {
+		if _, ok := resourceTypes[id]; ok {
+			continue
+		}
+		if err := r.addNetworkResourceTypes(ctx, resourceTypes); err != nil {
+			ret.AddError("Error listing network resources", err.Error())
+			return nil, ret
+		}
+		break
+	}
+
+	resources := make([]api.Resource, 0, len(ids))
+	for _, id := range ids {
+		resourceType, ok := resourceTypes[id]
+		if !ok {
+			ret.AddError("Unknown network resource", fmt.Sprintf("Network resource %q was not found.", id))
+			return nil, ret
+		}
+		resources = append(resources, api.Resource{Id: id, Type: resourceType})
+	}
+	return &resources, ret
+}
+
+func (r *Group) addNetworkResourceTypes(ctx context.Context, resourceTypes map[string]api.ResourceType) error {
+	networks, err := r.client.Networks.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list networks: %w", err)
+	}
+	for _, network := range networks {
+		networkResources, err := r.client.Networks.Resources(network.Id).List(ctx)
+		if err != nil {
+			return fmt.Errorf("list resources of network %s: %w", network.Id, err)
+		}
+		for _, res := range networkResources {
+			resourceTypes[res.Id] = api.ResourceType(res.Type)
+		}
+	}
+	return nil
+}
+
 func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data GroupModel
 
@@ -143,21 +207,10 @@ func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *re
 		return
 	}
 
-	var resources *[]api.Resource
-	if len(data.Resources.Elements()) > 0 {
-		var tfVal []map[string]string
-		var resourcesVal []api.Resource
-		resp.Diagnostics.Append(data.Resources.ElementsAs(ctx, &tfVal, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, v := range tfVal {
-			resourcesVal = append(resourcesVal, api.Resource{
-				Id:   v["id"],
-				Type: api.ResourceType(v["type"]),
-			})
-		}
-		resources = &resourcesVal
+	resources, diags := r.groupRequestResources(ctx, data.Resources, nil)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	groupReq := api.GroupRequest{
@@ -228,21 +281,18 @@ func (r *Group) Update(ctx context.Context, req resource.UpdateRequest, resp *re
 		return
 	}
 
-	var resources *[]api.Resource
-	if len(data.Resources.Elements()) > 0 {
-		var tfVal []map[string]string
-		var resourcesVal []api.Resource
-		resp.Diagnostics.Append(data.Resources.ElementsAs(ctx, &tfVal, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, v := range tfVal {
-			resourcesVal = append(resourcesVal, api.Resource{
-				Id:   v["id"],
-				Type: api.ResourceType(v["type"]),
-			})
-		}
-		resources = &resourcesVal
+	// The live group already knows the types of its resources, which spares a scan of
+	// every network on the common update that leaves them unchanged.
+	currentGroup, err := r.client.Groups.Get(ctx, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Error getting Group", err.Error())
+		return
+	}
+
+	resources, diags := r.groupRequestResources(ctx, data.Resources, currentGroup.Resources)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	groupReq := api.GroupRequest{

@@ -111,6 +111,105 @@ func Test_Group_Update(t *testing.T) {
 	})
 }
 
+// A group gets resources from netbird_network_resource.groups, so any later change
+// to that group has to round-trip them. They must survive the update, not just
+// stop it from erroring.
+func Test_Group_Update_KeepsAttachedResources(t *testing.T) {
+	testE2E(t)
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_group." + rName
+	renamed := rName + "renamed"
+	// Resolved up front: a fixture helper failing inside a Check would abort mid-apply.
+	peerID := testPeerID(t, "peer1")
+	withPeer := fmt.Sprintf("[%q]", peerID)
+	var createdID string
+
+	config := func(name, peers string) string {
+		return fmt.Sprintf(`resource "netbird_group" "%[1]s" {
+	name  = "%[2]s"
+	peers = %[4]s
+
+	lifecycle {
+		ignore_changes = [resources]
+	}
+}
+
+resource "netbird_network_resource" "%[1]s" {
+	network_id = %[3]q
+	name       = "%[1]s"
+	address    = "example.com"
+	groups     = [netbird_group.%[1]s.id]
+}`, rName, name, e2eNetworkID(), peers)
+	}
+
+	checkServer := func(name string, peers int) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+			group, err := testClient().Groups.Get(context.Background(), gID)
+			if err != nil {
+				return err
+			}
+			if group.Name != name {
+				return fmt.Errorf("group name mismatch, expected %s, found %s on management server", name, group.Name)
+			}
+			if len(group.Resources) != 1 {
+				return fmt.Errorf("expected 1 attached resource on management server, found %d", len(group.Resources))
+			}
+			if len(group.Peers) != peers {
+				return fmt.Errorf("expected %d peers on management server, found %d", peers, len(group.Peers))
+			}
+			return nil
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Groups.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: config(rName, `[]`),
+				Check:  testRecordID(rNameFull, &createdID),
+			},
+			{
+				// The first apply attaches the resource after the group exists, so
+				// only a refresh shows it on the group.
+				Config: config(rName, `[]`),
+				Check:  checkServer(rName, 0),
+			},
+			{
+				Config: config(renamed, `[]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "name", renamed),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					checkServer(renamed, 0),
+				),
+			},
+			{
+				Config: config(renamed, withPeer),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					checkServer(renamed, 1),
+				),
+			},
+			{
+				Config: config(renamed, `[]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "0"),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					checkServer(renamed, 0),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func testGroupResource(rName, peers string) string {
 	return fmt.Sprintf(`resource "netbird_group" "%s" {
 	name = "%s"
