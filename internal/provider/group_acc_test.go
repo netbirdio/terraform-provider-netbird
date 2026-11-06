@@ -180,6 +180,7 @@ resource "netbird_network_resource" "%[1]s" {
 			{
 				Config: config(renamed, `[]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "name", renamed),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
 					checkServer(renamed, 0),
@@ -188,6 +189,7 @@ resource "netbird_network_resource" "%[1]s" {
 			{
 				Config: config(renamed, withPeer),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "peers.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
 					checkServer(renamed, 1),
@@ -196,6 +198,7 @@ resource "netbird_network_resource" "%[1]s" {
 			{
 				Config: config(renamed, `[]`),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "peers.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
 					checkServer(renamed, 0),
