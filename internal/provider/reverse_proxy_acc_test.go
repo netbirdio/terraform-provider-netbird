@@ -350,6 +350,93 @@ func Test_ReverseProxyService_MultipleTargets(t *testing.T) {
 	})
 }
 
+// Routing several paths to the same backend gives the targets the same target_id; each
+// one must keep its own path and options after create, update, read and import.
+func Test_ReverseProxyService_SameTargetPaths(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+	var createdID string
+	peerID := testPeerID(t, "peer1")
+
+	// Asserts the server holds exactly these paths, each with the expected path_rewrite.
+	checkServerTargets := func(want map[string]string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			svc, err := testClient().ReverseProxyServices.Get(context.Background(), createdID)
+			if err != nil {
+				return fmt.Errorf("get service: %w", err)
+			}
+			if len(svc.Targets) != len(want) {
+				return fmt.Errorf("expected %d targets, got %d", len(want), len(svc.Targets))
+			}
+			// With the count checked above, rejecting repeats means every wanted path is present.
+			seen := make(map[string]bool, len(want))
+			for _, target := range svc.Targets {
+				if target.Path == nil {
+					return fmt.Errorf("target %s has no path", target.TargetId)
+				}
+				wantRewrite, ok := want[*target.Path]
+				if !ok {
+					return fmt.Errorf("unexpected target path %s", *target.Path)
+				}
+				if seen[*target.Path] {
+					return fmt.Errorf("target path %s returned more than once", *target.Path)
+				}
+				seen[*target.Path] = true
+				gotRewrite := ""
+				if target.Options != nil && target.Options.PathRewrite != nil {
+					gotRewrite = string(*target.Options.PathRewrite)
+				}
+				if gotRewrite != wantRewrite {
+					return fmt.Errorf("path %s: expected path_rewrite %q, got %q", *target.Path, wantRewrite, gotRewrite)
+				}
+			}
+			return nil
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().ReverseProxyServices.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceSameTargetPaths(rName, domain, peerID, "/realms/", false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "2"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.path", "/realms/"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.path_rewrite", "preserve"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.1.path", "/resources/"),
+					resource.TestCheckNoResourceAttr(rNameFull, "targets.1.options"),
+					checkServerTargets(map[string]string{"/realms/": "preserve", "/resources/": ""}),
+				),
+			},
+			{
+				// Update runs the same plan/API reconciliation as create: move one target to a
+				// new path and give the other options, and each must keep its own values.
+				Config:           testReverseProxyServiceSameTargetPaths(rName, domain, peerID, "/auth/", true),
+				ConfigPlanChecks: updatesInPlace(rNameFull),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "2"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.path", "/auth/"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.path_rewrite", "preserve"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.1.path", "/resources/"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.1.options.path_rewrite", "preserve"),
+					checkServerTargets(map[string]string{"/auth/": "preserve", "/resources/": "preserve"}),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func Test_AccountSettings_PeerExpose(t *testing.T) {
 	testE2E(t)
 	groupID := e2eGroupAllID()
@@ -516,6 +603,45 @@ resource "netbird_reverse_proxy_service" "%s" {
     }
   }
 }`, rName, rName, domain, peerID1, peerID2)
+}
+
+func testReverseProxyServiceSameTargetPaths(rName, domain, peerID, firstPath string, secondPreserves bool) string {
+	secondOptions := ""
+	if secondPreserves {
+		secondOptions = `
+      options = {
+        path_rewrite = "preserve"
+      }`
+	}
+
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [
+    {
+      target_id   = %q
+      target_type = "peer"
+      port        = 8080
+      protocol    = "http"
+      path        = %q
+
+      options = {
+        path_rewrite = "preserve"
+      }
+    },
+    {
+      target_id   = %q
+      target_type = "peer"
+      port        = 8080
+      protocol    = "http"
+      path        = "/resources/"%s
+    }
+  ]
+
+  auth = {}
+}`, rName, rName, domain, peerID, firstPath, peerID, secondOptions)
 }
 
 func testReverseProxyServiceWithDataSource(rName, domain, peerID string) string {
