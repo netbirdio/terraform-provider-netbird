@@ -157,15 +157,11 @@ func (r *Group) groupRequestResources(ctx context.Context, planned types.List, c
 		resourceTypes[res.Id] = res.Type
 	}
 
-	for _, id := range ids {
-		if _, ok := resourceTypes[id]; ok {
-			continue
-		}
-		if err := r.addNetworkResourceTypes(ctx, resourceTypes); err != nil {
+	if !allResourceTypesKnown(ids, resourceTypes) {
+		if err := r.addNetworkResourceTypes(ctx, ids, resourceTypes); err != nil {
 			ret.AddError("Error listing network resources", err.Error())
 			return nil, ret
 		}
-		break
 	}
 
 	resources := make([]api.Resource, 0, len(ids))
@@ -180,7 +176,9 @@ func (r *Group) groupRequestResources(ctx context.Context, planned types.List, c
 	return &resources, ret
 }
 
-func (r *Group) addNetworkResourceTypes(ctx context.Context, resourceTypes map[string]api.ResourceType) error {
+// addNetworkResourceTypes scans networks until every ID has a type, so an error on a
+// network listed after that point can't fail the request.
+func (r *Group) addNetworkResourceTypes(ctx context.Context, ids []string, resourceTypes map[string]api.ResourceType) error {
 	networks, err := r.client.Networks.List(ctx)
 	if err != nil {
 		return fmt.Errorf("list networks: %w", err)
@@ -193,8 +191,20 @@ func (r *Group) addNetworkResourceTypes(ctx context.Context, resourceTypes map[s
 		for _, res := range networkResources {
 			resourceTypes[res.Id] = api.ResourceType(res.Type)
 		}
+		if allResourceTypesKnown(ids, resourceTypes) {
+			return nil
+		}
 	}
 	return nil
+}
+
+func allResourceTypesKnown(ids []string, resourceTypes map[string]api.ResourceType) bool {
+	for _, id := range ids {
+		if _, ok := resourceTypes[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Group) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

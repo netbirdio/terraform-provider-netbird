@@ -155,6 +155,10 @@ resource "netbird_network_resource" "%[1]s" {
 			if len(group.Resources) != 1 {
 				return fmt.Errorf("expected 1 attached resource on management server, found %d", len(group.Resources))
 			}
+			netResourceID := s.RootModule().Resources["netbird_network_resource."+rName].Primary.Attributes["id"]
+			if group.Resources[0].Id != netResourceID {
+				return fmt.Errorf("expected attached resource %s on management server, found %s", netResourceID, group.Resources[0].Id)
+			}
 			if len(group.Peers) != peers {
 				return fmt.Errorf("expected %d peers on management server, found %d", peers, len(group.Peers))
 			}
@@ -183,6 +187,7 @@ resource "netbird_network_resource" "%[1]s" {
 					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "name", renamed),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "resources.0", "netbird_network_resource."+rName, "id"),
 					checkServer(renamed, 0),
 				),
 			},
@@ -192,6 +197,7 @@ resource "netbird_network_resource" "%[1]s" {
 					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "peers.#", "1"),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "resources.0", "netbird_network_resource."+rName, "id"),
 					checkServer(renamed, 1),
 				),
 			},
@@ -201,7 +207,115 @@ resource "netbird_network_resource" "%[1]s" {
 					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
 					resource.TestCheckResourceAttr(rNameFull, "peers.#", "0"),
 					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "resources.0", "netbird_network_resource."+rName, "id"),
 					checkServer(renamed, 0),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// Setting resources on the group itself resolves each ID's type through the network
+// scan, which the round-trip test above never reaches. The network resources are
+// attached to a separate group: referencing this group from them would be a cycle.
+func Test_Group_ConfiguredResources(t *testing.T) {
+	testE2E(t)
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_group." + rName
+	resA := "netbird_network_resource." + rName + "_a"
+	resB := "netbird_network_resource." + rName + "_b"
+	var createdID string
+
+	config := func(resources string) string {
+		return fmt.Sprintf(`resource "netbird_group" "%[1]s_anchor" {
+	name = "%[1]s_anchor"
+}
+
+resource "netbird_network_resource" "%[1]s_a" {
+	network_id = %[2]q
+	name       = "%[1]s_a"
+	address    = "a.example.com"
+	groups     = [netbird_group.%[1]s_anchor.id]
+
+	# Attaching from the group also adds the group here.
+	lifecycle {
+		ignore_changes = [groups]
+	}
+}
+
+resource "netbird_network_resource" "%[1]s_b" {
+	network_id = %[2]q
+	name       = "%[1]s_b"
+	address    = "b.example.com"
+	groups     = [netbird_group.%[1]s_anchor.id]
+
+	lifecycle {
+		ignore_changes = [groups]
+	}
+}
+
+resource "netbird_group" "%[1]s" {
+	name      = "%[1]s"
+	resources = %[3]s
+}`, rName, e2eNetworkID(), resources)
+	}
+
+	// checkServer compares the group's resources on the server with the IDs of the
+	// named network resources in state.
+	checkServer := func(names ...string) resource.TestCheckFunc {
+		return func(s *terraform.State) error {
+			gID := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+			group, err := testClient().Groups.Get(context.Background(), gID)
+			if err != nil {
+				return err
+			}
+			if len(group.Resources) != len(names) {
+				return fmt.Errorf("expected %d attached resources on management server, found %d", len(names), len(group.Resources))
+			}
+			for i, name := range names {
+				want := s.RootModule().Resources[name].Primary.Attributes["id"]
+				if group.Resources[i].Id != want {
+					return fmt.Errorf("expected attached resource %s on management server, found %s", want, group.Resources[i].Id)
+				}
+			}
+			return nil
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Groups.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: config(fmt.Sprintf("[%s.id]", resA)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "resources.0", resA, "id"),
+					checkServer(resA),
+				),
+			},
+			{
+				Config: config(fmt.Sprintf("[%s.id]", resB)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "1"),
+					resource.TestCheckResourceAttrPair(rNameFull, "resources.0", resB, "id"),
+					checkServer(resB),
+				),
+			},
+			{
+				Config: config(`[]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPtr(rNameFull, "id", &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "resources.#", "0"),
+					checkServer(),
 				),
 			},
 			{
