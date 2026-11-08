@@ -957,6 +957,7 @@ resource "netbird_reverse_proxy_service" "test" {
  mode = "http"
  private = %t
  access_groups = %s
+ auth = {}
  targets = [{
   target_id = %q
   target_type = "peer"

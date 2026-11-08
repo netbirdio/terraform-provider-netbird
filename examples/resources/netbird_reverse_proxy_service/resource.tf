@@ -134,6 +134,7 @@ resource "netbird_reverse_proxy_service" "internal_app" {
   mode          = "http"
   private       = true
   access_groups = [netbird_group.internal_users.id]
+  auth          = {}
 
   targets = [{
     target_id   = netbird_peer.web.id
