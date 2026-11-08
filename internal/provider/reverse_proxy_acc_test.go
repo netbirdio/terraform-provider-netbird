@@ -1013,9 +1013,18 @@ data "netbird_reverse_proxy_service" "lookup" {
 		}
 		return resource.ComposeAggregateTestCheckFunc(checks...)
 	}
-	omitted := strings.Replace(config(true, e2eGroupAllID()), " private = true\n", "", 1)
-	omitted = strings.Replace(omitted, fmt.Sprintf(" access_groups = [%q]\n", e2eGroupAllID()), "", 1)
-	omitted = strings.Replace(omitted, " auth = {}", " enabled = false\n auth = {}", 1)
+	replaceOnce := func(config, old, replacement string) string {
+		t.Helper()
+		if strings.Count(config, old) != 1 {
+			t.Fatalf("expected exactly one config fragment %q", old)
+		}
+		return strings.Replace(config, old, replacement, 1)
+	}
+	omitted := replaceOnce(config(true, e2eGroupAllID()), " private = true\n", "")
+	omitted = replaceOnce(omitted, fmt.Sprintf(" access_groups = [%q]\n", e2eGroupAllID()), "")
+	// Force an unrelated update after import, so omission cannot pass as a no-op.
+	omitted = replaceOnce(omitted, " auth = {}", " enabled = false\n auth = {}")
+	publicOmitted := replaceOnce(config(false, ""), " access_groups = []\n", "")
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -1023,8 +1032,9 @@ data "netbird_reverse_proxy_service" "lookup" {
 		Steps: []resource.TestStep{
 			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
 			{ResourceName: resourceName, ImportState: true, ImportStateVerify: true},
-			{Config: omitted, Check: check(true, e2eGroupAllID())},
+			{Config: omitted, Check: resource.ComposeAggregateTestCheckFunc(check(true, e2eGroupAllID()), resource.TestCheckResourceAttr(resourceName, "enabled", "false"))},
 			{Config: config(true, e2eGroupNotAllID()), Check: check(true, e2eGroupNotAllID())},
+			{Config: publicOmitted, Check: check(false, "")},
 			{Config: config(false, ""), Check: check(false, "")},
 			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
 		},

@@ -1195,7 +1195,11 @@ func (r *ReverseProxyService) Update(ctx context.Context, req resource.UpdateReq
 		data.Private = prior.Private
 	}
 	if data.AccessGroups.IsUnknown() || data.AccessGroups.IsNull() {
-		data.AccessGroups = prior.AccessGroups
+		if data.Private.ValueBool() {
+			data.AccessGroups = prior.AccessGroups
+		} else {
+			data.AccessGroups = types.ListValueMust(types.StringType, []attr.Value{})
+		}
 	}
 
 	serviceReq, d := reverseProxyServiceTerraformToAPI(ctx, &data)
