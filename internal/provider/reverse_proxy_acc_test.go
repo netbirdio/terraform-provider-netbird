@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -971,6 +972,7 @@ data "netbird_reverse_proxy_service" "lookup" {
 }
 `, name, name+"."+cluster.Address, private, groups, peerID, peer.Ip)
 	}
+	var createdID string
 	check := func(private bool, group string) resource.TestCheckFunc {
 		count := "0"
 		if group != "" {
@@ -983,6 +985,11 @@ data "netbird_reverse_proxy_service" "lookup" {
 			resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "access_groups.#", count),
 			func(s *terraform.State) error {
 				id := s.RootModule().Resources[resourceName].Primary.Attributes["id"]
+				if createdID == "" {
+					createdID = id
+				} else if createdID != id {
+					return fmt.Errorf("service replaced: got %s, want %s", id, createdID)
+				}
 				svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
 				if err != nil {
 					return fmt.Errorf("get private service: %w", err)
@@ -1006,6 +1013,9 @@ data "netbird_reverse_proxy_service" "lookup" {
 		}
 		return resource.ComposeAggregateTestCheckFunc(checks...)
 	}
+	omitted := strings.Replace(config(true, e2eGroupAllID()), " private = true\n", "", 1)
+	omitted = strings.Replace(omitted, fmt.Sprintf(" access_groups = [%q]\n", e2eGroupAllID()), "", 1)
+	omitted = strings.Replace(omitted, " auth = {}", " enabled = false\n auth = {}", 1)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -1013,6 +1023,7 @@ data "netbird_reverse_proxy_service" "lookup" {
 		Steps: []resource.TestStep{
 			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
 			{ResourceName: resourceName, ImportState: true, ImportStateVerify: true},
+			{Config: omitted, Check: check(true, e2eGroupAllID())},
 			{Config: config(true, e2eGroupNotAllID()), Check: check(true, e2eGroupNotAllID())},
 			{Config: config(false, ""), Check: check(false, "")},
 			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},

@@ -232,6 +232,39 @@ func (r *ReverseProxyService) Metadata(ctx context.Context, req resource.Metadat
 	resp.TypeName = req.ProviderTypeName + "_reverse_proxy_service"
 }
 
+// ValidateConfig rejects known private-service conflicts before an API request.
+func (r *ReverseProxyService) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data ReverseProxyServiceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(validatePrivateService(&data)...)
+}
+
+func validatePrivateService(data *ReverseProxyServiceModel) diag.Diagnostics {
+	var diagnostics diag.Diagnostics
+	if !data.Private.ValueBool() {
+		return diagnostics
+	}
+	if !data.Mode.IsNull() && !data.Mode.IsUnknown() && data.Mode.ValueString() != "http" {
+		diagnostics.AddAttributeError(path.Root("mode"), "Invalid private service mode", "Private services require HTTP mode.")
+	}
+	// Omitted computed groups may be adopted from imported state. Unknown groups
+	// are checked by the API once their values are resolved.
+	if !data.AccessGroups.IsNull() && !data.AccessGroups.IsUnknown() && len(data.AccessGroups.Elements()) == 0 {
+		diagnostics.AddAttributeError(path.Root("access_groups"), "Missing private access groups", "Private services require at least one access group.")
+	}
+	if !data.Auth.IsNull() && !data.Auth.IsUnknown() {
+		if bearer, ok := data.Auth.Attributes()["bearer_auth"].(types.Object); ok && !bearer.IsNull() && !bearer.IsUnknown() {
+			if enabled, ok := bearer.Attributes()["enabled"].(types.Bool); ok && enabled.ValueBool() {
+				diagnostics.AddAttributeError(path.Root("auth").AtName("bearer_auth"), "Conflicting private authentication", "Private services cannot enable bearer authentication.")
+			}
+		}
+	}
+	return diagnostics
+}
+
 func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description:         "Create and manage Reverse Proxy Services",
@@ -1149,6 +1182,20 @@ func (r *ReverseProxyService) Update(ctx context.Context, req resource.UpdateReq
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// The API replaces access settings on update; omission would make an
+	// imported private service public during an unrelated edit.
+	var prior ReverseProxyServiceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if data.Private.IsUnknown() || data.Private.IsNull() {
+		data.Private = prior.Private
+	}
+	if data.AccessGroups.IsUnknown() || data.AccessGroups.IsNull() {
+		data.AccessGroups = prior.AccessGroups
 	}
 
 	serviceReq, d := reverseProxyServiceTerraformToAPI(ctx, &data)

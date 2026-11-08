@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 	"github.com/stretchr/testify/require"
@@ -86,5 +87,38 @@ func TestReverseProxyPrivateUnconfiguredRequest(t *testing.T) {
 			require.Nil(t, request.Private, "unset visibility must be omitted")
 			require.Nil(t, request.AccessGroups, "unset groups must be omitted")
 		}
+	}
+}
+
+func TestPrivateServiceValidation(t *testing.T) {
+	groups := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("all")})
+	bearer := func(enabled types.Bool) types.Object {
+		b := types.ObjectValueMust(map[string]attr.Type{"enabled": types.BoolType}, map[string]attr.Value{"enabled": enabled})
+		return types.ObjectValueMust(map[string]attr.Type{"bearer_auth": b.Type(context.Background())}, map[string]attr.Value{"bearer_auth": b})
+	}
+	for _, tc := range []struct {
+		name      string
+		mode      types.String
+		groups    types.List
+		auth      types.Object
+		wantError bool
+	}{
+		{"valid", types.StringValue("http"), groups, types.ObjectNull(map[string]attr.Type{}), false},
+		{"tcp", types.StringValue("tcp"), groups, types.ObjectNull(map[string]attr.Type{}), true},
+		{"empty groups", types.StringValue("http"), types.ListValueMust(types.StringType, nil), types.ObjectNull(map[string]attr.Type{}), true},
+		{"enabled bearer", types.StringValue("http"), groups, bearer(types.BoolValue(true)), true},
+		{"disabled bearer", types.StringValue("http"), groups, bearer(types.BoolValue(false)), false},
+		{"unknown bearer", types.StringValue("http"), groups, bearer(types.BoolUnknown()), false},
+		{"unknown fields", types.StringUnknown(), types.ListUnknown(types.StringType), types.ObjectUnknown(map[string]attr.Type{}), false},
+		{"imported groups", types.StringValue("http"), types.ListNull(types.StringType), types.ObjectNull(map[string]attr.Type{}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := ReverseProxyServiceModel{Private: types.BoolValue(true), Mode: tc.mode, AccessGroups: tc.groups, Auth: tc.auth}
+			require.Equal(t, tc.wantError, validatePrivateService(&model).HasError())
+			model.Private = types.BoolValue(false)
+			require.False(t, validatePrivateService(&model).HasError())
+			model.Private = types.BoolUnknown()
+			require.False(t, validatePrivateService(&model).HasError())
+		})
 	}
 }
