@@ -935,3 +935,86 @@ func testAccountSettingsPeerExpose(enabled bool, groupID string) string {
   peer_expose_groups  = %s
 }`, enabled, groups)
 }
+
+func Test_ReverseProxyService_Private(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	peerID := testPeerID(t, "peer1")
+	peer, err := testClient().Peers.Get(context.Background(), peerID)
+	if err != nil {
+		t.Fatalf("get target peer: %v", err)
+	}
+	name := "private" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	resourceName := "netbird_reverse_proxy_service.test"
+	config := func(private bool, group string) string {
+		groups := "[]"
+		if group != "" {
+			groups = fmt.Sprintf("[%q]", group)
+		}
+		return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "test" {
+ name = %q
+ domain = %q
+ mode = "http"
+ private = %t
+ access_groups = %s
+ targets = [{
+  target_id = %q
+  target_type = "peer"
+  host = %q
+  protocol = "http"
+  port = 8080
+ }]
+}
+data "netbird_reverse_proxy_service" "lookup" {
+ id = netbird_reverse_proxy_service.test.id
+}
+`, name, name+"."+cluster.Address, private, groups, peerID, peer.Ip)
+	}
+	check := func(private bool, group string) resource.TestCheckFunc {
+		count := "0"
+		if group != "" {
+			count = "1"
+		}
+		checks := []resource.TestCheckFunc{
+			resource.TestCheckResourceAttr(resourceName, "private", fmt.Sprint(private)),
+			resource.TestCheckResourceAttr(resourceName, "access_groups.#", count),
+			resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "private", fmt.Sprint(private)),
+			resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "access_groups.#", count),
+			func(s *terraform.State) error {
+				id := s.RootModule().Resources[resourceName].Primary.Attributes["id"]
+				svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+				if err != nil {
+					return fmt.Errorf("get private service: %w", err)
+				}
+				if (svc.Private != nil && *svc.Private) != private {
+					return fmt.Errorf("server private flag does not match %t", private)
+				}
+				if group != "" && (svc.AccessGroups == nil || len(*svc.AccessGroups) != 1 || (*svc.AccessGroups)[0] != group) {
+					return fmt.Errorf("server access groups do not match %s", group)
+				}
+				if group == "" && svc.AccessGroups != nil && len(*svc.AccessGroups) != 0 {
+					return fmt.Errorf("server retained access groups after public transition")
+				}
+				return nil
+			},
+		}
+		if group != "" {
+			checks = append(checks,
+				resource.TestCheckResourceAttr(resourceName, "access_groups.0", group),
+				resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "access_groups.0", group))
+		}
+		return resource.ComposeAggregateTestCheckFunc(checks...)
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(name),
+		Steps: []resource.TestStep{
+			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
+			{ResourceName: resourceName, ImportState: true, ImportStateVerify: true},
+			{Config: config(true, e2eGroupNotAllID()), Check: check(true, e2eGroupNotAllID())},
+			{Config: config(false, ""), Check: check(false, "")},
+			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
+		},
+	})
+}

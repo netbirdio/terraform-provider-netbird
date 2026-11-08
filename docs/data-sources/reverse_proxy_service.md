@@ -40,6 +40,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 
 ### Read-Only
 
+- `access_groups` (List of String) NetBird group IDs whose peers may reach a private service. Required when private is true; ignored for public services.
 - `access_restrictions` (Attributes) Connection-level access restrictions based on IP or geography (see [below for nested schema](#nestedatt--access_restrictions))
 - `auth` (Attributes) Authentication configuration (see [below for nested schema](#nestedatt--auth))
 - `enabled` (Boolean) Whether the service is enabled
@@ -47,6 +48,7 @@ data "netbird_reverse_proxy_service" "by_id" {
 - `mode` (String) Service mode: "http" for L7 reverse proxy, "tcp"/"udp"/"tls" for L4 passthrough
 - `pass_host_header` (Boolean) When true, the original client Host header is passed through to the backend
 - `port_auto_assigned` (Boolean) Whether the listen port was auto-assigned by the server
+- `private` (Boolean) Whether the service is accessible only over NetBird. Requires HTTP mode and access_groups. Mutually exclusive with bearer authentication.
 - `proxy_cluster` (String) The proxy cluster handling this service
 - `rewrite_redirects` (Boolean) When true, Location headers in backend responses are rewritten to replace the backend address with the public-facing domain
 - `targets` (Attributes List) List of target backends for this service (see [below for nested schema](#nestedatt--targets))

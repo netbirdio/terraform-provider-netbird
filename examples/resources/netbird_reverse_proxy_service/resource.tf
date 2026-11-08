@@ -125,3 +125,21 @@ resource "netbird_reverse_proxy_service" "tls_backend" {
   # L4 modes do not support authentication
   auth = {}
 }
+
+# Private HTTP service available to peers in the selected group.
+# The proxy cluster must support private services.
+resource "netbird_reverse_proxy_service" "internal_app" {
+  name          = "internal-app"
+  domain        = "internal.${data.netbird_reverse_proxy_domain.free.domain}"
+  mode          = "http"
+  private       = true
+  access_groups = [netbird_group.internal_users.id]
+
+  targets = [{
+    target_id   = netbird_peer.web.id
+    target_type = "peer"
+    host        = netbird_peer.web.ip
+    port        = 8080
+    protocol    = "http"
+  }]
+}
