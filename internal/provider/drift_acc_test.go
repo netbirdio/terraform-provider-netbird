@@ -20,6 +20,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -74,6 +75,41 @@ func Test_Drift_Group(t *testing.T) {
 			return err
 		},
 		resource.TestCheckResourceAttr("netbird_group."+rName, "name", rName),
+	)
+}
+
+// Test_Drift_GroupPeerRemoved removes one of a group's peers out of band. The
+// provider keeps the stored order of the peers when a read returns the same
+// members, and this is the case that must not be mistaken for a reordering: a
+// different membership has to reach the plan and be put back.
+func Test_Drift_GroupPeerRemoved(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_group." + rName
+	peers := []string{testPeerID(t, "peer1"), testPeerID(t, "peer2")}
+	var id string
+	driftCase(t, address, testGroupResource(rName, testHCLList(peers)),
+		func(gid string) error {
+			id = gid
+			_, err := testClient().Groups.Update(context.Background(), gid, api.GroupRequest{
+				Name: rName, Peers: &[]string{peers[1]},
+			})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "peers.#", "2"),
+		resource.TestCheckResourceAttr(address, "peers.0", peers[0]),
+		resource.TestCheckResourceAttr(address, "peers.1", peers[1]),
+		func(s *terraform.State) error {
+			group, err := testClient().Groups.Get(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			got := groupPeerIDs(group)
+			if !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(peers))) {
+				return fmt.Errorf("management holds the peers %v, expected %v", got, peers)
+			}
+			return nil
+		},
 	)
 }
 

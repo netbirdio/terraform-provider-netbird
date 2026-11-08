@@ -5,11 +5,16 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/netbirdio/netbird/shared/management/http/api"
 )
 
 func Test_Group_Create(t *testing.T) {
@@ -109,6 +114,108 @@ func Test_Group_Update(t *testing.T) {
 			},
 		},
 	})
+}
+
+// Test_Group_PeerOrderStable configures a group's peers in the opposite order to
+// the one the API reads them back in, and requires the plan to stay empty.
+//
+// Management keeps membership in a join table and reads it back with no ORDER BY,
+// so the order a read returns is the store's, not the order the peers were sent
+// in. A provider that copies that order into state shows a change to `peers` on
+// every plan for any configuration that lists them differently.
+func Test_Group_PeerOrderStable(t *testing.T) {
+	testE2E(t)
+	rName := "g" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	rNameFull := "netbird_group." + rName
+	// The order is learned rather than assumed, so the test does not depend on
+	// which store the deployment runs; the configuration is its reverse.
+	readOrder := testGroupPeerReadOrder(t, testPeerID(t, "peer1"), testPeerID(t, "peer2"))
+	configured := slices.Clone(readOrder)
+	slices.Reverse(configured)
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().Groups.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				// The post-apply plan the framework runs after this step is the
+				// check on Create: it fails if state took the API's order.
+				Config: testGroupResource(rName, testHCLList(configured)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(rNameFull, &createdID),
+					resource.TestCheckResourceAttr(rNameFull, "peers.#", "2"),
+					resource.TestCheckResourceAttr(rNameFull, "peers.0", configured[0]),
+					resource.TestCheckResourceAttr(rNameFull, "peers.1", configured[1]),
+					// Without this the test passes vacuously on a server that
+					// happens to return the configured order.
+					func(s *terraform.State) error {
+						group, err := testClient().Groups.Get(context.Background(), createdID)
+						if err != nil {
+							return err
+						}
+						got := groupPeerIDs(group)
+						if !slices.Equal(got, readOrder) {
+							return fmt.Errorf("management read the peers as %v, expected %v: the read is not reordered, so this proves nothing", got, readOrder)
+						}
+						return nil
+					},
+				),
+			},
+			{
+				// The refresh opening this step is the check on Read, with the
+				// group's prior state to compare against.
+				Config: testGroupResource(rName, testHCLList(configured)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+// testGroupPeerReadOrder returns the order management reads the given peers back
+// in, from a group created and deleted through the API for that purpose alone.
+func testGroupPeerReadOrder(t *testing.T, peerIDs ...string) []string {
+	t.Helper()
+	ctx := context.Background()
+	group, err := testClient().Groups.Create(ctx, api.GroupRequest{
+		Name:  "order-probe-" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha),
+		Peers: &peerIDs,
+	})
+	if err != nil {
+		t.Fatalf("create the probe group: %v", err)
+	}
+	defer func() {
+		if err := testClient().Groups.Delete(ctx, group.Id); err != nil {
+			t.Errorf("delete the probe group: %v", err)
+		}
+	}()
+	read, err := testClient().Groups.Get(ctx, group.Id)
+	if err != nil {
+		t.Fatalf("read the probe group: %v", err)
+	}
+	got := groupPeerIDs(read)
+	if len(got) != len(peerIDs) {
+		t.Fatalf("the probe group holds %v, expected the peers %v", got, peerIDs)
+	}
+	return got
+}
+
+func groupPeerIDs(group *api.Group) []string {
+	ids := make([]string, len(group.Peers))
+	for i, p := range group.Peers {
+		ids[i] = p.Id
+	}
+	return ids
+}
+
+func testHCLList(v []string) string {
+	q := make([]string, len(v))
+	for i, s := range v {
+		q[i] = fmt.Sprintf("%q", s)
+	}
+	return "[" + strings.Join(q, ", ") + "]"
 }
 
 func testGroupResource(rName, peers string) string {
