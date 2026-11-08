@@ -31,6 +31,8 @@ type ReverseProxyServiceDataSourceModel struct {
 	ListenPort         types.Int64  `tfsdk:"listen_port"`
 	PortAutoAssigned   types.Bool   `tfsdk:"port_auto_assigned"`
 	Enabled            types.Bool   `tfsdk:"enabled"`
+	Private            types.Bool   `tfsdk:"private"`
+	AccessGroups       types.List   `tfsdk:"access_groups"`
 	PassHostHeader     types.Bool   `tfsdk:"pass_host_header"`
 	RewriteRedirects   types.Bool   `tfsdk:"rewrite_redirects"`
 	ProxyCluster       types.String `tfsdk:"proxy_cluster"`
@@ -76,6 +78,15 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 			},
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the service is enabled",
+				Computed:            true,
+			},
+			"private": schema.BoolAttribute{
+				MarkdownDescription: "Whether the service is accessible only over NetBird. Requires HTTP mode and access_groups. Mutually exclusive with bearer authentication.",
+				Computed:            true,
+			},
+			"access_groups": schema.ListAttribute{
+				MarkdownDescription: "NetBird group IDs whose peers may reach a private service. Required when private is true; ignored for public services.",
+				ElementType:         types.StringType,
 				Computed:            true,
 			},
 			"pass_host_header": schema.BoolAttribute{
@@ -332,6 +343,8 @@ func (d *ReverseProxyServiceDataSource) Read(ctx context.Context, req datasource
 		ListenPort:         match.ListenPort,
 		PortAutoAssigned:   match.PortAutoAssigned,
 		Enabled:            match.Enabled,
+		Private:            match.Private,
+		AccessGroups:       match.AccessGroups,
 		PassHostHeader:     match.PassHostHeader,
 		RewriteRedirects:   match.RewriteRedirects,
 		ProxyCluster:       match.ProxyCluster,

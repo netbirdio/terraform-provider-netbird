@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -934,4 +935,108 @@ func testAccountSettingsPeerExpose(enabled bool, groupID string) string {
   peer_expose_enabled = %t
   peer_expose_groups  = %s
 }`, enabled, groups)
+}
+
+func Test_ReverseProxyService_Private(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	peerID := testPeerID(t, "peer1")
+	peer, err := testClient().Peers.Get(context.Background(), peerID)
+	if err != nil {
+		t.Fatalf("get target peer: %v", err)
+	}
+	name := "private" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	resourceName := "netbird_reverse_proxy_service.test"
+	config := func(private bool, group string) string {
+		groups := "[]"
+		if group != "" {
+			groups = fmt.Sprintf("[%q]", group)
+		}
+		return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "test" {
+ name = %q
+ domain = %q
+ mode = "http"
+ private = %t
+ access_groups = %s
+ auth = {}
+ targets = [{
+  target_id = %q
+  target_type = "peer"
+  host = %q
+  protocol = "http"
+  port = 8080
+ }]
+}
+data "netbird_reverse_proxy_service" "lookup" {
+ id = netbird_reverse_proxy_service.test.id
+}
+`, name, name+"."+cluster.Address, private, groups, peerID, peer.Ip)
+	}
+	var createdID string
+	check := func(private bool, group string) resource.TestCheckFunc {
+		count := "0"
+		if group != "" {
+			count = "1"
+		}
+		checks := []resource.TestCheckFunc{
+			resource.TestCheckResourceAttr(resourceName, "private", fmt.Sprint(private)),
+			resource.TestCheckResourceAttr(resourceName, "access_groups.#", count),
+			resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "private", fmt.Sprint(private)),
+			resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "access_groups.#", count),
+			func(s *terraform.State) error {
+				id := s.RootModule().Resources[resourceName].Primary.Attributes["id"]
+				if createdID == "" {
+					createdID = id
+				} else if createdID != id {
+					return fmt.Errorf("service replaced: got %s, want %s", id, createdID)
+				}
+				svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+				if err != nil {
+					return fmt.Errorf("get private service: %w", err)
+				}
+				if (svc.Private != nil && *svc.Private) != private {
+					return fmt.Errorf("server private flag does not match %t", private)
+				}
+				if group != "" && (svc.AccessGroups == nil || len(*svc.AccessGroups) != 1 || (*svc.AccessGroups)[0] != group) {
+					return fmt.Errorf("server access groups do not match %s", group)
+				}
+				if group == "" && svc.AccessGroups != nil && len(*svc.AccessGroups) != 0 {
+					return fmt.Errorf("server retained access groups after public transition")
+				}
+				return nil
+			},
+		}
+		if group != "" {
+			checks = append(checks,
+				resource.TestCheckResourceAttr(resourceName, "access_groups.0", group),
+				resource.TestCheckResourceAttr("data.netbird_reverse_proxy_service.lookup", "access_groups.0", group))
+		}
+		return resource.ComposeAggregateTestCheckFunc(checks...)
+	}
+	replaceOnce := func(config, old, replacement string) string {
+		t.Helper()
+		if strings.Count(config, old) != 1 {
+			t.Fatalf("expected exactly one config fragment %q", old)
+		}
+		return strings.Replace(config, old, replacement, 1)
+	}
+	omitted := replaceOnce(config(true, e2eGroupAllID()), " private = true\n", "")
+	omitted = replaceOnce(omitted, fmt.Sprintf(" access_groups = [%q]\n", e2eGroupAllID()), "")
+	// Force an unrelated update after import, so omission cannot pass as a no-op.
+	omitted = replaceOnce(omitted, " auth = {}", " enabled = false\n auth = {}")
+	publicOmitted := replaceOnce(config(false, ""), " access_groups = []\n", "")
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(name),
+		Steps: []resource.TestStep{
+			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
+			{ResourceName: resourceName, ImportState: true, ImportStateVerify: true},
+			{Config: omitted, Check: resource.ComposeAggregateTestCheckFunc(check(true, e2eGroupAllID()), resource.TestCheckResourceAttr(resourceName, "enabled", "false"))},
+			{Config: config(true, e2eGroupNotAllID()), Check: check(true, e2eGroupNotAllID())},
+			{Config: publicOmitted, Check: check(false, "")},
+			{Config: config(false, ""), Check: check(false, "")},
+			{Config: config(true, e2eGroupAllID()), Check: check(true, e2eGroupAllID())},
+		},
+	})
 }
