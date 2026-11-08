@@ -60,3 +60,15 @@ func Test_userAPIToTerraform(t *testing.T) {
 		}
 	}
 }
+
+func Test_userAPIToTerraform_keepsConfiguredServiceUser(t *testing.T) {
+	// is_service_user is Required on netbird_user: an API response without it
+	// must leave the configured value in place, not null it.
+	out := UserModel{IsServiceUser: types.BoolValue(true)}
+	if d := userAPIToTerraform(context.Background(), &api.User{Id: "r1", Status: api.UserStatusActive}, &out); d.HasError() {
+		t.Fatalf("Expected no error diagnostics, found %d errors", d.ErrorsCount())
+	}
+	if !out.IsServiceUser.Equal(types.BoolValue(true)) {
+		t.Fatalf("Expected the configured is_service_user to be kept, found %s", out.IsServiceUser)
+	}
+}
