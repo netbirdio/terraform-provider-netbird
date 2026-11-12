@@ -234,9 +234,13 @@ func (d *ReverseProxyServiceDataSource) Schema(ctx context.Context, req datasour
 				},
 			},
 			"access_restrictions": schema.SingleNestedAttribute{
-				MarkdownDescription: "Connection-level access restrictions based on IP or geography",
+				MarkdownDescription: "Connection-level access restrictions based on IP, geography or CrowdSec reputation",
 				Computed:            true,
 				Attributes: map[string]schema.Attribute{
+					"crowdsec_mode": schema.StringAttribute{
+						MarkdownDescription: "CrowdSec IP reputation mode (enforce, observe, off)",
+						Computed:            true,
+					},
 					"allowed_cidrs": schema.ListAttribute{
 						MarkdownDescription: "CIDR allowlist",
 						Computed:            true,
