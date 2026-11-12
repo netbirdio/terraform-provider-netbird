@@ -28,10 +28,11 @@ import (
 
 // The shapes terraform-plugin-framework produces for the validators used here.
 var (
-	outOfRange = regexp.MustCompile(`(?s)value must be between|Invalid Attribute Value`)
-	wrongSize  = regexp.MustCompile(`(?s)list must contain|Invalid Attribute Value|Insufficient|Too few`)
-	tooLong    = regexp.MustCompile(`(?s)length must be|Invalid Attribute Value`)
-	conflicts  = regexp.MustCompile(`(?s)Invalid Attribute Combination|cannot be specified when`)
+	outOfRange    = regexp.MustCompile(`(?s)value must be between|Invalid Attribute Value`)
+	wrongSize     = regexp.MustCompile(`(?s)list must contain|Invalid Attribute Value|Insufficient|Too few`)
+	tooLong       = regexp.MustCompile(`(?s)length must be|Invalid Attribute Value`)
+	conflicts     = regexp.MustCompile(`(?s)Invalid Attribute Combination|cannot be specified when`)
+	invalidDomain = regexp.MustCompile(`(?s)Invalid domain name|Invalid Attribute Value`)
 )
 
 // Test_Rejects_MutuallyExclusiveAttributes covers the thirteen ConflictsWith
@@ -430,6 +431,50 @@ resource "netbird_setup_key" "%[1]s" {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			rejects(t, c.config, c.want)
+		})
+	}
+}
+
+// Test_Rejects_InvalidMatchDomains covers the other half of the match-domain
+// validator: Test_NameserverGroup_MatchDomains applies the shapes it accepts,
+// these are the ones it must keep refusing now that a single label is legal.
+//
+// The wildcard is the one the API would also refuse, and the only reason to check
+// it here rather than in the unit test: a wildcard is a valid domain elsewhere in
+// the product — a route and a network resource both take one — so the provider
+// refusing it for a nameserver is a choice about this resource, and the choice is
+// only worth anything if the plan fails before the request is made.
+func Test_Rejects_InvalidMatchDomains(t *testing.T) {
+	testE2E(t)
+	rName := "v" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+
+	cases := []struct {
+		name   string
+		domain string
+	}{
+		{name: "wildcard prefix", domain: "*.lab"},
+		{name: "leading hyphen", domain: "-lab"},
+		{name: "trailing hyphen", domain: "lab-"},
+		{name: "comma", domain: "company,name.internal"},
+		{name: "bare dot", domain: "."},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rejects(t, fmt.Sprintf(`
+resource "netbird_nameserver_group" "%[1]s" {
+  name        = "%[1]s"
+  description = "rejection fixture"
+  enabled     = true
+  groups      = [%[2]q]
+  domains     = [%[3]q]
+
+  nameservers = [{
+    ip      = "1.1.1.1"
+    ns_type = "udp"
+    port    = 53
+  }]
+}`, rName, e2eGroupNotAllID(), c.domain), invalidDomain)
 		})
 	}
 }
