@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -160,17 +159,15 @@ func (d *AccountSettingsDataSource) Read(ctx context.Context, req datasource.Rea
 	}
 
 	accounts, err := d.client.Accounts.List(ctx)
-	account := accounts[0]
-
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			resp.State.RemoveResource(ctx)
-			return
-		} else {
-			resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
-		}
+		resp.Diagnostics.AddError("Error getting AccountSettings", err.Error())
 		return
 	}
+	if len(accounts) == 0 {
+		resp.Diagnostics.AddError("Error getting AccountSettings", "the API returned no account")
+		return
+	}
+	account := accounts[0]
 
 	resp.Diagnostics.Append(accountAPIToTerraform(ctx, &account, &data)...)
 
