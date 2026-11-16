@@ -2,13 +2,298 @@ package provider
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	tfdatasource "github.com/hashicorp/terraform-plugin-framework/datasource"
+	tfresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
+
+func Test_firstAccount(t *testing.T) {
+	t.Run("returns first account", func(t *testing.T) {
+		accounts := []api.Account{{Id: "first"}, {Id: "second"}}
+
+		account, err := firstAccount(accounts)
+
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if account.Id != "first" {
+			t.Fatalf("Expected first account, got %q", account.Id)
+		}
+	})
+
+	t.Run("returns error for empty response", func(t *testing.T) {
+		account, err := firstAccount(nil)
+
+		if account != nil {
+			t.Fatalf("Expected no account, got %#v", account)
+		}
+		if err == nil || !strings.Contains(err.Error(), "no accounts returned") {
+			t.Fatalf("Expected empty response error, got %v", err)
+		}
+	})
+}
+
+func Test_AccountSettingsReadHandlesInvalidAccountResponses(t *testing.T) {
+	tests := []struct {
+		name           string
+		status         int
+		response       string
+		expectedDetail string
+	}{
+		{
+			name:           "API error",
+			status:         http.StatusInternalServerError,
+			response:       `{"message":"internal error"}`,
+			expectedDetail: "internal error",
+		},
+		{
+			name:           "empty account list",
+			status:         http.StatusOK,
+			response:       `[]`,
+			expectedDetail: "no accounts returned by API",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			accountSettings := &AccountSettings{
+				client: netbird.New(server.URL, "test-token"),
+			}
+			schemaResponse := tfresource.SchemaResponse{}
+			accountSettings.Schema(context.Background(), tfresource.SchemaRequest{}, &schemaResponse)
+
+			state := tfsdk.State{Schema: schemaResponse.Schema}
+			diags := state.Set(context.Background(), &AccountSettingsModel{
+				Id:                       types.StringValue("account-id"),
+				JwtAllowGroups:           types.ListNull(types.StringType),
+				NetworkTrafficLogsGroups: types.ListNull(types.StringType),
+				PeerExposeGroups:         types.ListNull(types.StringType),
+			})
+			if diags.HasError() {
+				t.Fatalf("Failed to prepare resource state: %v", diags.Errors())
+			}
+
+			response := tfresource.ReadResponse{State: state}
+			accountSettings.Read(
+				context.Background(),
+				tfresource.ReadRequest{State: state},
+				&response,
+			)
+
+			if !response.Diagnostics.HasError() {
+				t.Fatal("Expected an error diagnostic")
+			}
+			if !strings.Contains(response.Diagnostics.Errors()[0].Detail(), tt.expectedDetail) {
+				t.Fatalf(
+					"Expected diagnostic containing %q, got %q",
+					tt.expectedDetail,
+					response.Diagnostics.Errors()[0].Detail(),
+				)
+			}
+		})
+	}
+}
+
+func Test_AccountSettingsCreateHandlesInvalidAccountResponses(t *testing.T) {
+	testAccountSettingsWriteHandlesInvalidAccountResponses(t, "Create")
+}
+
+func Test_AccountSettingsUpdateHandlesInvalidAccountResponses(t *testing.T) {
+	testAccountSettingsWriteHandlesInvalidAccountResponses(t, "Update")
+}
+
+func testAccountSettingsWriteHandlesInvalidAccountResponses(t *testing.T, operation string) {
+	t.Helper()
+
+	tests := []struct {
+		name           string
+		status         int
+		response       string
+		expectedDetail string
+	}{
+		{
+			name:           "API error",
+			status:         http.StatusInternalServerError,
+			response:       `{"message":"internal error"}`,
+			expectedDetail: "internal error",
+		},
+		{
+			name:           "empty account list",
+			status:         http.StatusOK,
+			response:       `[]`,
+			expectedDetail: "no accounts returned by API",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var updateRequests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					updateRequests.Add(1)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			accountSettings := &AccountSettings{
+				client: netbird.New(server.URL, "test-token"),
+			}
+			schemaResponse := tfresource.SchemaResponse{}
+			accountSettings.Schema(context.Background(), tfresource.SchemaRequest{}, &schemaResponse)
+
+			plan := tfsdk.Plan{Schema: schemaResponse.Schema}
+			diags := plan.Set(context.Background(), &AccountSettingsModel{
+				Id:                       types.StringValue("account-id"),
+				JwtAllowGroups:           types.ListNull(types.StringType),
+				NetworkTrafficLogsGroups: types.ListNull(types.StringType),
+				PeerExposeGroups:         types.ListNull(types.StringType),
+			})
+			if diags.HasError() {
+				t.Fatalf("Failed to prepare resource plan: %v", diags.Errors())
+			}
+
+			var diagnosticsError bool
+			var diagnosticDetail string
+			switch operation {
+			case "Create":
+				response := tfresource.CreateResponse{
+					State: tfsdk.State{Schema: schemaResponse.Schema},
+				}
+				accountSettings.Create(
+					context.Background(),
+					tfresource.CreateRequest{Plan: plan},
+					&response,
+				)
+				diagnosticsError = response.Diagnostics.HasError()
+				if diagnosticsError {
+					diagnosticDetail = response.Diagnostics.Errors()[0].Detail()
+				}
+			case "Update":
+				response := tfresource.UpdateResponse{
+					State: tfsdk.State{Schema: schemaResponse.Schema},
+				}
+				accountSettings.Update(
+					context.Background(),
+					tfresource.UpdateRequest{Plan: plan},
+					&response,
+				)
+				diagnosticsError = response.Diagnostics.HasError()
+				if diagnosticsError {
+					diagnosticDetail = response.Diagnostics.Errors()[0].Detail()
+				}
+			default:
+				t.Fatalf("Unsupported operation %q", operation)
+			}
+
+			if !diagnosticsError {
+				t.Fatal("Expected an error diagnostic")
+			}
+			if !strings.Contains(diagnosticDetail, tt.expectedDetail) {
+				t.Fatalf(
+					"Expected diagnostic containing %q, got %q",
+					tt.expectedDetail,
+					diagnosticDetail,
+				)
+			}
+			if got := updateRequests.Load(); got != 0 {
+				t.Fatalf("Expected no account update request, got %d", got)
+			}
+		})
+	}
+}
+
+func Test_AccountSettingsDataSourceReadHandlesInvalidAccountResponses(t *testing.T) {
+	tests := []struct {
+		name           string
+		status         int
+		response       string
+		expectedDetail string
+	}{
+		{
+			name:           "API error",
+			status:         http.StatusInternalServerError,
+			response:       `{"message":"internal error"}`,
+			expectedDetail: "internal error",
+		},
+		{
+			name:           "empty account list",
+			status:         http.StatusOK,
+			response:       `[]`,
+			expectedDetail: "no accounts returned by API",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			accountSettings := &AccountSettingsDataSource{
+				client: netbird.New(server.URL, "test-token"),
+			}
+			schemaResponse := tfdatasource.SchemaResponse{}
+			accountSettings.Schema(context.Background(), tfdatasource.SchemaRequest{}, &schemaResponse)
+
+			configValues := make(map[string]tftypes.Value, len(schemaResponse.Schema.Attributes))
+			for name, attribute := range schemaResponse.Schema.Attributes {
+				attributeType := attribute.GetType().TerraformType(context.Background())
+				configValues[name] = tftypes.NewValue(attributeType, nil)
+			}
+			config := tfsdk.Config{
+				Raw: tftypes.NewValue(
+					schemaResponse.Schema.Type().TerraformType(context.Background()),
+					configValues,
+				),
+				Schema: schemaResponse.Schema,
+			}
+			response := tfdatasource.ReadResponse{
+				State: tfsdk.State{Schema: schemaResponse.Schema},
+			}
+			accountSettings.Read(
+				context.Background(),
+				tfdatasource.ReadRequest{Config: config},
+				&response,
+			)
+
+			if !response.Diagnostics.HasError() {
+				t.Fatal("Expected an error diagnostic")
+			}
+			if !strings.Contains(response.Diagnostics.Errors()[0].Detail(), tt.expectedDetail) {
+				t.Fatalf(
+					"Expected diagnostic containing %q, got %q",
+					tt.expectedDetail,
+					response.Diagnostics.Errors()[0].Detail(),
+				)
+			}
+		})
+	}
+}
 
 func Test_accountAPIToTerraform(t *testing.T) {
 	cases := []struct {
