@@ -84,6 +84,7 @@ type ReverseProxyTargetOptionsModel struct {
 	CustomHeaders      types.Map    `tfsdk:"custom_headers"`
 	ProxyProtocol      types.Bool   `tfsdk:"proxy_protocol"`
 	SessionIdleTimeout types.String `tfsdk:"session_idle_timeout"`
+	DirectUpstream     types.Bool   `tfsdk:"direct_upstream"`
 }
 
 // TFType returns the Terraform object type for target options.
@@ -98,6 +99,7 @@ func (m ReverseProxyTargetOptionsModel) TFType() types.ObjectType {
 			},
 			"proxy_protocol":       types.BoolType,
 			"session_idle_timeout": types.StringType,
+			"direct_upstream":      types.BoolType,
 		},
 	}
 }
@@ -295,13 +297,13 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"target_id": schema.StringAttribute{
-							MarkdownDescription: "Target ID (resource or peer ID)",
+							MarkdownDescription: "Target ID (resource or peer ID, or the proxy cluster address for `cluster` targets)",
 							Required:            true,
 						},
 						"target_type": schema.StringAttribute{
-							MarkdownDescription: "Target type (peer, host, domain, subnet)",
+							MarkdownDescription: "Target type (peer, host, domain, subnet, cluster). A `cluster` target is reached from the proxy host itself and needs `host` and `options.direct_upstream`.",
 							Required:            true,
-							Validators:          []validator.String{stringvalidator.OneOf("peer", "host", "domain", "subnet")},
+							Validators:          []validator.String{stringvalidator.OneOf("peer", "host", "domain", "subnet", "cluster")},
 						},
 						"host": schema.StringAttribute{
 							MarkdownDescription: "Backend IP or domain for this target. If omitted, the API resolves it from the target peer.",
@@ -358,6 +360,10 @@ func (r *ReverseProxyService) Schema(ctx context.Context, req resource.SchemaReq
 								},
 								"session_idle_timeout": schema.StringAttribute{
 									MarkdownDescription: "Idle timeout before a UDP session is reaped, as a Go duration string (e.g. \"30s\", \"2m\"). Maximum 10m. (UDP only)",
+									Optional:            true,
+								},
+								"direct_upstream": schema.BoolAttribute{
+									MarkdownDescription: "Dial this backend through the proxy host's own network stack and resolver instead of the NetBird tunnel. Required for `cluster` targets.",
 									Optional:            true,
 								},
 							},
@@ -495,21 +501,18 @@ func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOpt
 	// If all fields are at zero/nil, treat as no options set.
 	if opts.SkipTlsVerify == nil && opts.RequestTimeout == nil && opts.PathRewrite == nil &&
 		opts.CustomHeaders == nil && opts.SessionIdleTimeout == nil &&
-		(opts.ProxyProtocol == nil || !*opts.ProxyProtocol) {
+		(opts.ProxyProtocol == nil || !*opts.ProxyProtocol) &&
+		(opts.DirectUpstream == nil || !*opts.DirectUpstream) {
 		return types.ObjectNull(ReverseProxyTargetOptionsModel{}.TFType().AttrTypes), nil
-	}
-
-	// Treat proxy_protocol=false the same as nil so it doesn't appear in
-	// state when the user never configured it.
-	var proxyProtocol *bool
-	if opts.ProxyProtocol != nil && *opts.ProxyProtocol {
-		proxyProtocol = opts.ProxyProtocol
 	}
 
 	model := ReverseProxyTargetOptionsModel{
 		SkipTLSVerify:  types.BoolPointerValue(opts.SkipTlsVerify),
 		RequestTimeout: types.StringPointerValue(opts.RequestTimeout),
-		ProxyProtocol:  types.BoolPointerValue(proxyProtocol),
+		// The server serializes these two only when true, so false maps to
+		// null and stays out of state when the user never configured it.
+		ProxyProtocol:  types.BoolPointerValue(trueOrNil(opts.ProxyProtocol)),
+		DirectUpstream: types.BoolPointerValue(trueOrNil(opts.DirectUpstream)),
 	}
 
 	if opts.PathRewrite != nil {
@@ -534,6 +537,14 @@ func targetOptionsAPIToTerraform(ctx context.Context, opts *api.ServiceTargetOpt
 	obj, objD := types.ObjectValueFrom(ctx, ReverseProxyTargetOptionsModel{}.TFType().AttrTypes, model)
 	d.Append(objD...)
 	return obj, d
+}
+
+// trueOrNil returns b only when it points at true.
+func trueOrNil(b *bool) *bool {
+	if b != nil && *b {
+		return b
+	}
+	return nil
 }
 
 func targetOptionsTerraformToAPI(ctx context.Context, opts types.Object) (*api.ServiceTargetOptions, diag.Diagnostics) {
@@ -575,6 +586,11 @@ func targetOptionsTerraformToAPI(ctx context.Context, opts types.Object) (*api.S
 	if v, ok := attrs["session_idle_timeout"].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
 		s := v.ValueString()
 		result.SessionIdleTimeout = &s
+		hasValue = true
+	}
+	if v, ok := attrs["direct_upstream"].(types.Bool); ok && !v.IsNull() && !v.IsUnknown() {
+		b := v.ValueBool()
+		result.DirectUpstream = &b
 		hasValue = true
 	}
 

@@ -45,6 +45,34 @@ resource "netbird_reverse_proxy_service" "web_app" {
   }
 }
 
+# HTTP service running on the proxy host itself: a cluster target is dialed
+# through the proxy host's own network stack (direct_upstream), not the tunnel
+data "netbird_reverse_proxy_clusters" "all" {}
+
+resource "netbird_reverse_proxy_service" "local_dashboard" {
+  name   = "local-dashboard"
+  domain = "dashboard.${data.netbird_reverse_proxy_domain.free.domain}"
+
+  targets = [{
+    target_id   = data.netbird_reverse_proxy_clusters.all.clusters[0].address
+    target_type = "cluster"
+    host        = "localhost"
+    port        = 3000
+    protocol    = "http"
+
+    options = {
+      direct_upstream = true
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = var.web_app_password
+    }
+  }
+}
+
 # TCP (L4) proxy service with proxy protocol
 resource "netbird_reverse_proxy_service" "postgres" {
   name        = "postgres"
@@ -240,8 +268,8 @@ Required:
 
 - `port` (Number) Backend port for this target (0 for scheme default)
 - `protocol` (String) Protocol to use when connecting to the backend (http, https for HTTP mode; tcp, udp for L4 mode)
-- `target_id` (String) Target ID (resource or peer ID)
-- `target_type` (String) Target type (peer, host, domain, subnet)
+- `target_id` (String) Target ID (resource or peer ID, or the proxy cluster address for `cluster` targets)
+- `target_type` (String) Target type (peer, host, domain, subnet, cluster). A `cluster` target is reached from the proxy host itself and needs `host` and `options.direct_upstream`.
 
 Optional:
 
@@ -256,6 +284,7 @@ Optional:
 Optional:
 
 - `custom_headers` (Map of String, Sensitive) Extra headers sent to the backend (HTTP only). Marked sensitive since values commonly carry credentials, e.g. an `Authorization` header.
+- `direct_upstream` (Boolean) Dial this backend through the proxy host's own network stack and resolver instead of the NetBird tunnel. Required for `cluster` targets.
 - `path_rewrite` (String) Controls how the request path is rewritten before forwarding. Default strips the matched prefix. "preserve" keeps the full original path. (HTTP only)
 - `proxy_protocol` (Boolean) Send PROXY Protocol v2 header to this backend (TCP/TLS only)
 - `request_timeout` (String) Per-target response timeout as a Go duration string (e.g. "30s", "2m")

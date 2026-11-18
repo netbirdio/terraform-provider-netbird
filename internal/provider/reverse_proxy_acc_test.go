@@ -629,6 +629,85 @@ resource "netbird_reverse_proxy_service" "%s" {
 }`, rName, rName, domain, peerID)
 }
 
+func Test_ReverseProxyService_ClusterTarget(t *testing.T) {
+	cluster := testRequireProxyCluster(t)
+	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
+	domain := rName + "." + cluster.Address
+	rNameFull := "netbird_reverse_proxy_service." + rName
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testReverseProxyServiceDestroyed(rName),
+		Steps: []resource.TestStep{
+			{
+				Config: testReverseProxyServiceClusterTarget(rName, domain, cluster.Address),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(rNameFull, "id"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.#", "1"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.target_type", "cluster"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.target_id", cluster.Address),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.host", "localhost"),
+					resource.TestCheckResourceAttr(rNameFull, "targets.0.options.direct_upstream", "true"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources[rNameFull].Primary.Attributes["id"]
+						svc, err := testClient().ReverseProxyServices.Get(context.Background(), id)
+						if err != nil {
+							return fmt.Errorf("get service: %w", err)
+						}
+						if len(svc.Targets) != 1 {
+							return fmt.Errorf("expected 1 target, got %d", len(svc.Targets))
+						}
+						target := svc.Targets[0]
+						if target.TargetType != "cluster" {
+							return fmt.Errorf("expected target type cluster, got %s", target.TargetType)
+						}
+						if target.Options == nil || target.Options.DirectUpstream == nil || !*target.Options.DirectUpstream {
+							return fmt.Errorf("expected direct_upstream to be true")
+						}
+						return nil
+					},
+				),
+			},
+			{
+				ResourceName:            rNameFull,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"auth.password_auth.password"},
+			},
+		},
+	})
+}
+
+// The server rejects loopback IPs as a direct upstream host, so the target
+// uses a name.
+func testReverseProxyServiceClusterTarget(rName, domain, clusterAddress string) string {
+	return fmt.Sprintf(`
+resource "netbird_reverse_proxy_service" "%s" {
+  name   = %q
+  domain = %q
+
+  targets = [{
+    target_id   = %q
+    target_type = "cluster"
+    host        = "localhost"
+    port        = 3000
+    protocol    = "http"
+
+    options = {
+      direct_upstream = true
+    }
+  }]
+
+  auth = {
+    password_auth = {
+      enabled  = true
+      password = "cluster-test"
+    }
+  }
+}`, rName, rName, domain, clusterAddress)
+}
+
 func Test_ReverseProxyService_TCPMode(t *testing.T) {
 	cluster := testRequireProxyCluster(t)
 	rName := "s" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
