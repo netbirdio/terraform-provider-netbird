@@ -143,6 +143,11 @@ func Test_Account_AutoUpdateAlways(t *testing.T) {
 
 func Test_Account_AutoUpdateAlwaysAdoptsServerValue(t *testing.T) {
 	env := testE2E(t)
+	t.Cleanup(func() {
+		if err := setAccountAutoUpdateAlways(env.AccountID, false); err != nil {
+			t.Errorf("restore auto_update_always after test: %v", err)
+		}
+	})
 	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	rNameFull := "netbird_account_settings." + rName
 	resource.Test(t, resource.TestCase{
