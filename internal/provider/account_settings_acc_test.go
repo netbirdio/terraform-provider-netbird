@@ -193,6 +193,11 @@ func Test_Account_AutoUpdateAlwaysAdoptsServerValue(t *testing.T) {
 					testCheckAccountAutoUpdateAlways(env.AccountID, false),
 				),
 			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
