@@ -55,6 +55,7 @@ type AccountSettingsModel struct {
 	NetworkTrafficLogsEnabled          types.Bool   `tfsdk:"network_traffic_logs_enabled"`
 	NetworkTrafficPacketCounterEnabled types.Bool   `tfsdk:"network_traffic_packet_counter_enabled"`
 	AutoUpdateVersion                  types.String `tfsdk:"auto_update_version"`
+	AutoUpdateAlways                   types.Bool   `tfsdk:"auto_update_always"`
 	DnsDomain                          types.String `tfsdk:"dns_domain"`
 	NetworkRange                       types.String `tfsdk:"network_range"`
 	LazyConnectionEnabled              types.Bool   `tfsdk:"lazy_connection_enabled"`
@@ -165,6 +166,13 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"auto_update_always": schema.BoolAttribute{
+				MarkdownDescription: "When true, updates are installed automatically in the background. When false, updates require user interaction from the UI.",
+				Optional:            true,
+				Computed:            true,
+				// Leave an omitted value unknown during updates. Update adopts the current
+				// server value instead of writing a stale value copied from prior state.
+			},
 			"dns_domain": schema.StringAttribute{
 				MarkdownDescription: "Allows to define a custom DNS domain for the account",
 				Optional:            true,
@@ -250,6 +258,7 @@ func accountAPIToTerraform(ctx context.Context, account *api.Account, data *Acco
 	data.NetworkTrafficLogsEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficLogsEnabled)
 	data.NetworkTrafficPacketCounterEnabled = types.BoolValue(account.Settings.Extra.NetworkTrafficPacketCounterEnabled)
 	data.AutoUpdateVersion = types.StringPointerValue(account.Settings.AutoUpdateVersion)
+	data.AutoUpdateAlways = types.BoolPointerValue(account.Settings.AutoUpdateAlways)
 	data.DnsDomain = types.StringPointerValue(account.Settings.DnsDomain)
 	data.NetworkRange = types.StringPointerValue(account.Settings.NetworkRange)
 	data.LazyConnectionEnabled = types.BoolPointerValue(account.Settings.LazyConnectionEnabled)
@@ -284,6 +293,7 @@ func accountTerraformToAPI(ctx context.Context, account *api.Account, data Accou
 			RegularUsersViewBlocked:         boolDefault(data.RegularUsersViewBlocked, account.Settings.RegularUsersViewBlocked),
 			RoutingPeerDnsResolutionEnabled: boolDefaultPointer(data.RoutingPeerDnsResolutionEnabled, account.Settings.RoutingPeerDnsResolutionEnabled),
 			AutoUpdateVersion:               stringDefaultPointer(data.AutoUpdateVersion, account.Settings.AutoUpdateVersion),
+			AutoUpdateAlways:                boolDefaultPointer(data.AutoUpdateAlways, account.Settings.AutoUpdateAlways),
 			DnsDomain:                       stringDefaultPointer(data.DnsDomain, account.Settings.DnsDomain),
 			NetworkRange:                    stringDefaultPointer(data.NetworkRange, account.Settings.NetworkRange),
 			LazyConnectionEnabled:           boolDefaultPointer(data.LazyConnectionEnabled, account.Settings.LazyConnectionEnabled),

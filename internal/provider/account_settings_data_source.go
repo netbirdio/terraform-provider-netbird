@@ -95,6 +95,10 @@ func (d *AccountSettingsDataSource) Schema(ctx context.Context, req datasource.S
 				MarkdownDescription: "Set Clients auto-update version. \"latest\", \"disabled\", or a specific version (e.g \"0.64.5\")",
 				Computed:            true,
 			},
+			"auto_update_always": schema.BoolAttribute{
+				MarkdownDescription: "When true, updates are installed automatically in the background. When false, updates require user interaction from the UI.",
+				Computed:            true,
+			},
 			"dns_domain": schema.StringAttribute{
 				MarkdownDescription: "Allows to define a custom DNS domain for the account",
 				Computed:            true,

@@ -27,6 +27,7 @@ resource "netbird_account_settings" "example" {
   peer_approval_enabled                  = false
   network_traffic_logs_enabled           = false
   network_traffic_packet_counter_enabled = false
+  auto_update_always                     = false
 }
 ```
 
@@ -35,6 +36,7 @@ resource "netbird_account_settings" "example" {
 
 ### Optional
 
+- `auto_update_always` (Boolean) When true, updates are installed automatically in the background. When false, updates require user interaction from the UI.
 - `auto_update_version` (String) Set Clients auto-update version. "latest", "disabled", or a specific version (e.g "0.64.5")
 - `dns_domain` (String) Allows to define a custom DNS domain for the account
 - `groups_propagation_enabled` (Boolean) Allows propagate the new user auto groups to peers that belongs to the user
