@@ -20,6 +20,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				Id: "a",
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               nil,
+					AutoUpdateAlways:                nil,
 					DnsDomain:                       nil,
 					NetworkRange:                    nil,
 					LazyConnectionEnabled:           nil,
@@ -60,6 +61,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				NetworkTrafficLogsEnabled:          types.BoolValue(false),
 				NetworkTrafficPacketCounterEnabled: types.BoolValue(false),
 				AutoUpdateVersion:                  types.StringNull(),
+				AutoUpdateAlways:                   types.BoolNull(),
 				DnsDomain:                          types.StringNull(),
 				NetworkRange:                       types.StringNull(),
 				LazyConnectionEnabled:              types.BoolNull(),
@@ -74,6 +76,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				Id: "b",
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               valPtr("latest"),
+					AutoUpdateAlways:                valPtr(true),
 					DnsDomain:                       valPtr("custom.com"),
 					NetworkRange:                    valPtr("100.64.0.0/10"),
 					LazyConnectionEnabled:           valPtr(true),
@@ -114,6 +117,7 @@ func Test_accountAPIToTerraform(t *testing.T) {
 				NetworkTrafficLogsEnabled:          types.BoolValue(true),
 				NetworkTrafficPacketCounterEnabled: types.BoolValue(true),
 				AutoUpdateVersion:                  types.StringValue("latest"),
+				AutoUpdateAlways:                   types.BoolValue(true),
 				DnsDomain:                          types.StringValue("custom.com"),
 				NetworkRange:                       types.StringValue("100.64.0.0/10"),
 				LazyConnectionEnabled:              types.BoolValue(true),
@@ -149,6 +153,7 @@ func Test_accountTerraformToAPI(t *testing.T) {
 				Id: "a1",
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               nil,
+					AutoUpdateAlways:                valPtr(true),
 					DnsDomain:                       nil,
 					NetworkRange:                    nil,
 					LazyConnectionEnabled:           nil,
@@ -180,6 +185,7 @@ func Test_accountTerraformToAPI(t *testing.T) {
 			expected: api.AccountRequest{
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               nil,
+					AutoUpdateAlways:                valPtr(true),
 					DnsDomain:                       nil,
 					NetworkRange:                    nil,
 					LazyConnectionEnabled:           nil,
@@ -210,6 +216,7 @@ func Test_accountTerraformToAPI(t *testing.T) {
 				Id: "a2",
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               nil,
+					AutoUpdateAlways:                nil,
 					DnsDomain:                       nil,
 					NetworkRange:                    nil,
 					LazyConnectionEnabled:           nil,
@@ -250,6 +257,7 @@ func Test_accountTerraformToAPI(t *testing.T) {
 				PeerInactivityExpiration:           types.Int32Value(3600),
 				JwtGroupsClaimName:                 types.StringValue("name"),
 				AutoUpdateVersion:                  types.StringValue("latest"),
+				AutoUpdateAlways:                   types.BoolValue(true),
 				DnsDomain:                          types.StringValue("custom.com"),
 				NetworkRange:                       types.StringValue("100.64.0.0/10"),
 				LazyConnectionEnabled:              types.BoolValue(true),
@@ -261,6 +269,7 @@ func Test_accountTerraformToAPI(t *testing.T) {
 			expected: api.AccountRequest{
 				Settings: api.AccountSettings{
 					AutoUpdateVersion:               valPtr("latest"),
+					AutoUpdateAlways:                valPtr(true),
 					DnsDomain:                       valPtr("custom.com"),
 					NetworkRange:                    valPtr("100.64.0.0/10"),
 					LazyConnectionEnabled:           valPtr(true),
@@ -283,6 +292,40 @@ func Test_accountTerraformToAPI(t *testing.T) {
 						UserApprovalRequired:               true,
 						NetworkTrafficLogsGroups:           []string{"group1"},
 					},
+				},
+			},
+		},
+		{
+			currentAccount: &api.Account{
+				Settings: api.AccountSettings{
+					AutoUpdateAlways: valPtr(true),
+					Extra:            &api.AccountExtraSettings{},
+				},
+			},
+			data: AccountSettingsModel{
+				AutoUpdateAlways: types.BoolValue(false),
+			},
+			expected: api.AccountRequest{
+				Settings: api.AccountSettings{
+					AutoUpdateAlways: valPtr(false),
+					Extra:            &api.AccountExtraSettings{},
+				},
+			},
+		},
+		{
+			currentAccount: &api.Account{
+				Settings: api.AccountSettings{
+					AutoUpdateAlways: valPtr(true),
+					Extra:            &api.AccountExtraSettings{},
+				},
+			},
+			data: AccountSettingsModel{
+				AutoUpdateAlways: types.BoolUnknown(),
+			},
+			expected: api.AccountRequest{
+				Settings: api.AccountSettings{
+					AutoUpdateAlways: valPtr(true),
+					Extra:            &api.AccountExtraSettings{},
 				},
 			},
 		},

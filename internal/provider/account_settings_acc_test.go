@@ -57,6 +57,7 @@ func Test_Account_Create(t *testing.T) {
 							"jwt_groups_enabled":                 {attrs["jwt_groups_enabled"], fmt.Sprint(valOr(settings.JwtGroupsEnabled, false))},
 							"routing_peer_dns_resolution_enabled": {attrs["routing_peer_dns_resolution_enabled"],
 								fmt.Sprint(valOr(settings.RoutingPeerDnsResolutionEnabled, false))},
+							"auto_update_always": {attrs["auto_update_always"], fmt.Sprint(valOr(settings.AutoUpdateAlways, false))},
 						})
 					},
 				),
@@ -97,6 +98,67 @@ func Test_Account_Update(t *testing.T) {
 			},
 		},
 	})
+}
+
+func Test_Account_AutoUpdateAlways(t *testing.T) {
+	env := testE2E(t)
+	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	rNameFull := "netbird_account_settings." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckAccountAutoUpdateAlways(env.AccountID, false),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccountResourceWithAutoUpdateAlways(rName, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
+					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "true"),
+					testCheckAccountAutoUpdateAlways(env.AccountID, true),
+				),
+			},
+			{
+				Config: testAccountResourceWithAutoUpdateAlways(rName, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
+					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "false"),
+					testCheckAccountAutoUpdateAlways(env.AccountID, false),
+				),
+			},
+			{
+				ResourceName:      rNameFull,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func testCheckAccountAutoUpdateAlways(accountID string, expected bool) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		accounts, err := testClient().Accounts.List(context.Background())
+		if err != nil {
+			return err
+		}
+		idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == accountID })
+		if idx < 0 {
+			return fmt.Errorf("account %s is not among the %d accounts on the management server", accountID, len(accounts))
+		}
+		actual := accounts[idx].Settings.AutoUpdateAlways
+		if actual == nil {
+			return fmt.Errorf("auto_update_always is null, expected %t", expected)
+		}
+		if *actual != expected {
+			return fmt.Errorf("auto_update_always is %t, expected %t", *actual, expected)
+		}
+		return nil
+	}
+}
+
+func testAccountResourceWithAutoUpdateAlways(rName string, enabled bool) string {
+	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {
+auto_update_always = %v
+}`, rName, enabled)
 }
 
 func testAccountResource(rName string) string {
