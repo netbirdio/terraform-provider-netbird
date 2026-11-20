@@ -10,7 +10,9 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -104,16 +106,20 @@ func Test_Account_AutoUpdateAlways(t *testing.T) {
 	env := testE2E(t)
 	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	rNameFull := "netbird_account_settings." + rName
+	dataSourceName := "data.netbird_account_settings." + rName
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testCheckAccountAutoUpdateAlways(env.AccountID, false),
+		// Account settings are a singleton with a no-op Delete. Verify that
+		// destroying the Terraform resource preserves the account and final setting.
+		CheckDestroy: testCheckAccountAutoUpdateAlways(env.AccountID, false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccountResourceWithAutoUpdateAlways(rName, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
 					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "true"),
+					resource.TestCheckResourceAttr(dataSourceName, "auto_update_always", "true"),
 					testCheckAccountAutoUpdateAlways(env.AccountID, true),
 				),
 			},
@@ -122,6 +128,7 @@ func Test_Account_AutoUpdateAlways(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(rNameFull, "id", env.AccountID),
 					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "false"),
+					resource.TestCheckResourceAttr(dataSourceName, "auto_update_always", "false"),
 					testCheckAccountAutoUpdateAlways(env.AccountID, false),
 				),
 			},
@@ -129,6 +136,57 @@ func Test_Account_AutoUpdateAlways(t *testing.T) {
 				ResourceName:      rNameFull,
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func Test_Account_AutoUpdateAlwaysAdoptsServerValue(t *testing.T) {
+	env := testE2E(t)
+	rName := "acc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	rNameFull := "netbird_account_settings." + rName
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testEnsureManagementRunning(t)
+			if err := setAccountAutoUpdateAlways(env.AccountID, false); err != nil {
+				t.Fatalf("set auto_update_always before test: %v", err)
+			}
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		AdditionalCLIOptions: &resource.AdditionalCLIOptions{
+			Plan: resource.PlanOptions{NoRefresh: true},
+		},
+		// Account settings are a singleton with a no-op Delete. The final step
+		// restores false, which must remain after the Terraform resource is destroyed.
+		CheckDestroy: testCheckAccountAutoUpdateAlways(env.AccountID, false),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccountResourceWithJWT(rName, true),
+				Check:  resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "false"),
+			},
+			{
+				PreConfig: func() {
+					if err := setAccountAutoUpdateAlways(env.AccountID, true); err != nil {
+						t.Fatalf("change auto_update_always outside Terraform: %v", err)
+					}
+				},
+				Config: testAccountResourceWithJWT(rName, false),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectUnknownValue(rNameFull, tfjsonpath.New("auto_update_always")),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "true"),
+					testCheckAccountAutoUpdateAlways(env.AccountID, true),
+				),
+			},
+			{
+				Config: testAccountResourceWithAutoUpdateAlways(rName, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(rNameFull, "auto_update_always", "false"),
+					testCheckAccountAutoUpdateAlways(env.AccountID, false),
+				),
 			},
 		},
 	})
@@ -155,10 +213,30 @@ func testCheckAccountAutoUpdateAlways(accountID string, expected bool) resource.
 	}
 }
 
+func setAccountAutoUpdateAlways(accountID string, value bool) error {
+	accounts, err := testClient().Accounts.List(context.Background())
+	if err != nil {
+		return fmt.Errorf("list accounts: %w", err)
+	}
+	idx := slices.IndexFunc(accounts, func(a api.Account) bool { return a.Id == accountID })
+	if idx < 0 {
+		return fmt.Errorf("account %s is not among the %d accounts on the management server", accountID, len(accounts))
+	}
+	request := api.AccountRequest{Settings: accounts[idx].Settings}
+	request.Settings.AutoUpdateAlways = &value
+	if _, err := testClient().Accounts.Update(context.Background(), accountID, request); err != nil {
+		return fmt.Errorf("update account settings: %w", err)
+	}
+	return nil
+}
+
 func testAccountResourceWithAutoUpdateAlways(rName string, enabled bool) string {
 	return fmt.Sprintf(`resource "netbird_account_settings" "%s" {
 auto_update_always = %v
-}`, rName, enabled)
+}`, rName, enabled) + fmt.Sprintf(`
+data "netbird_account_settings" "%[1]s" {
+depends_on = [netbird_account_settings.%[1]s]
+}`, rName)
 }
 
 func testAccountResource(rName string) string {

@@ -170,7 +170,8 @@ func (r *AccountSettings) Schema(ctx context.Context, req resource.SchemaRequest
 				MarkdownDescription: "When true, updates are installed automatically in the background. When false, updates require user interaction from the UI.",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				// Leave an omitted value unknown during updates. Update adopts the current
+				// server value instead of writing a stale value copied from prior state.
 			},
 			"dns_domain": schema.StringAttribute{
 				MarkdownDescription: "Allows to define a custom DNS domain for the account",
