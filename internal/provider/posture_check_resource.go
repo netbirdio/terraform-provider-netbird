@@ -192,7 +192,10 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 	var d diag.Diagnostics
 	data.Id = types.StringValue(postureCheck.Id)
 	data.Name = types.StringValue(postureCheck.Name)
-	if postureCheck.Description != nil {
+	// The API reports an unset description as "", so keep "" only where the
+	// prior value is set; an omitted description otherwise never matches.
+	keepEmpty := !data.Description.IsNull() && !data.Description.IsUnknown()
+	if postureCheck.Description != nil && (*postureCheck.Description != "" || keepEmpty) {
 		data.Description = types.StringValue(*postureCheck.Description)
 	} else {
 		data.Description = types.StringNull()

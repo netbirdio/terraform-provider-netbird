@@ -203,3 +203,39 @@ func testPostureCheckResource(rName, desc, nbVersion, andVersion, iosVersion, ma
   }
 }`, rName, rName, desc, nbVersion, andVersion, iosVersion, macVersion, linuxVersion, winVersion, country, city, geoAction, netRange, netRangeAction, processLinux, processWindows, processMac)
 }
+
+// Test_PostureCheck_WithoutDescription covers the most common configuration:
+// no description at all. The server stores it as "", which must not surface as
+// an inconsistent result on create or as a diff afterwards.
+func Test_PostureCheck_WithoutDescription(t *testing.T) {
+	testE2E(t)
+	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_posture_check." + rName
+	cfg := fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  netbird_version_check {
+    min_version = "0.40.0"
+  }
+}`, rName)
+	var createdID string
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testEnsureManagementRunning(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testCheckGone(testClient().PostureChecks.Get, &createdID),
+		Steps: []resource.TestStep{
+			{
+				Config: cfg,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testRecordID(address, &createdID),
+					resource.TestCheckNoResourceAttr(address, "description"),
+				),
+			},
+			{
+				ResourceName:      address,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}

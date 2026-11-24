@@ -288,3 +288,32 @@ func Test_postureCheckTerraformToAPI(t *testing.T) {
 		}
 	}
 }
+
+// The API returns an unset description as "", while a configuration that omits
+// it plans null; mapping "" to "" made every such check fail its first apply.
+func Test_postureCheckAPIToTerraform_Description(t *testing.T) {
+	cases := []struct {
+		name     string
+		prior    types.String
+		api      *string
+		expected types.String
+	}{
+		{name: "omitted and empty on the server", prior: types.StringNull(), api: valPtr(""), expected: types.StringNull()},
+		{name: "omitted and absent on the server", prior: types.StringNull(), api: nil, expected: types.StringNull()},
+		{name: "configured as empty", prior: types.StringValue(""), api: valPtr(""), expected: types.StringValue("")},
+		{name: "cleared out of band", prior: types.StringValue("set"), api: valPtr(""), expected: types.StringValue("")},
+		{name: "set on the server", prior: types.StringNull(), api: valPtr("set"), expected: types.StringValue("set")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := PostureCheckModel{Description: c.prior}
+			diags := postureCheckAPIToTerraform(context.Background(), &api.PostureCheck{Id: "pc", Name: "pc", Description: c.api}, &data)
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics: %v", diags)
+			}
+			if !data.Description.Equal(c.expected) {
+				t.Fatalf("expected %s, found %s", c.expected, data.Description)
+			}
+		})
+	}
+}
