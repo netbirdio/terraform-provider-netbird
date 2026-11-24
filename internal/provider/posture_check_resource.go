@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	"github.com/netbirdio/netbird/shared/management/certposture"
 	netbird "github.com/netbirdio/netbird/shared/management/client/rest"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -29,6 +30,7 @@ import (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &PostureCheck{}
 var _ resource.ResourceWithImportState = &PostureCheck{}
+var _ resource.ResourceWithValidateConfig = &PostureCheck{}
 
 func NewPostureCheck() resource.Resource {
 	return &PostureCheck{}
@@ -49,6 +51,12 @@ type PostureCheckModel struct {
 	GeoLocationCheck      types.Object `tfsdk:"geo_location_check"`
 	PeerNetworkRangeCheck types.Object `tfsdk:"peer_network_range_check"`
 	ProcessCheck          types.List   `tfsdk:"process_check"`
+	CertificateCheck      types.Object `tfsdk:"certificate_check"`
+}
+
+// certificateCheckAttrTypes is the object type of the certificate_check block.
+var certificateCheckAttrTypes = map[string]attr.Type{
+	"ca_certificates": types.ListType{ElemType: types.StringType},
 }
 
 func (r *PostureCheck) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -126,6 +134,17 @@ func (r *PostureCheck) Schema(ctx context.Context, req resource.SchemaRequest, r
 					"action": schema.StringAttribute{
 						Optional:   true,
 						Validators: []validator.String{stringvalidator.OneOf("allow", "deny")},
+					},
+				},
+			},
+			"certificate_check": schema.SingleNestedBlock{
+				MarkdownDescription: "Requires the peer to hold a certificate that chains to one of the given CA certificates. Not supported on mobile devices (iOS and Android), which always fail this check.",
+				Attributes: map[string]schema.Attribute{
+					"ca_certificates": schema.ListAttribute{
+						MarkdownDescription: "PEM encoded CA certificates the peer's certificate must chain to. Each entry may hold one or more certificates.",
+						ElementType:         types.StringType,
+						Optional:            true,
+						Validators:          []validator.List{listvalidator.SizeAtLeast(1)},
 					},
 				},
 			},
@@ -395,6 +414,17 @@ func postureCheckAPIToTerraform(ctx context.Context, postureCheck *api.PostureCh
 			},
 		})
 	}
+
+	if postureCheck.Checks.CertificateCheck != nil {
+		caCertificates, cd := sortedStringList(ctx, objectListAttr(data.CertificateCheck, "ca_certificates"), postureCheck.Checks.CertificateCheck.CaCertificates)
+		ret.Append(cd...)
+		data.CertificateCheck, d = types.ObjectValue(certificateCheckAttrTypes, map[string]attr.Value{
+			"ca_certificates": caCertificates,
+		})
+		ret.Append(d...)
+	} else {
+		data.CertificateCheck = types.ObjectNull(certificateCheckAttrTypes)
+	}
 	return ret
 }
 
@@ -557,7 +587,55 @@ func postureCheckTerraformToAPI(ctx context.Context, data PostureCheckModel) (ap
 		}
 	}
 
+	if !data.CertificateCheck.IsNull() && !data.CertificateCheck.IsUnknown() {
+		caCertificates, ok := data.CertificateCheck.Attributes()["ca_certificates"].(types.List)
+		if !ok {
+			ret.AddError("Unexpected Value", fmt.Sprintf("data.certificate_check.ca_certificates expected to be types.List, found %T", data.CertificateCheck.Attributes()["ca_certificates"]))
+			return postureCheckReq, ret
+		}
+		postureCheckReq.Checks.CertificateCheck = &api.CertificateCheck{}
+		ret.Append(caCertificates.ElementsAs(ctx, &postureCheckReq.Checks.CertificateCheck.CaCertificates, false)...)
+	}
+
 	return postureCheckReq, ret
+}
+
+// ValidateConfig applies the server's certificate_check rules at plan time: the
+// block needs at least one CA, and every entry must hold a PEM certificate.
+// Unknown values are skipped, since a CA may come from another resource.
+func (r *PostureCheck) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var certificateCheck types.Object
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("certificate_check"), &certificateCheck)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(validateCertificateCheck(certificateCheck)...)
+}
+
+func validateCertificateCheck(certificateCheck types.Object) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if certificateCheck.IsNull() || certificateCheck.IsUnknown() {
+		return diags
+	}
+	caPath := path.Root("certificate_check").AtName("ca_certificates")
+	caCertificates, ok := certificateCheck.Attributes()["ca_certificates"].(types.List)
+	if !ok || caCertificates.IsUnknown() {
+		return diags
+	}
+	if caCertificates.IsNull() {
+		diags.AddAttributeError(caPath, "Missing CA certificates", "certificate_check requires at least one entry in ca_certificates.")
+		return diags
+	}
+	for i, v := range caCertificates.Elements() {
+		pem, ok := v.(types.String)
+		if !ok || pem.IsNull() || pem.IsUnknown() {
+			continue
+		}
+		if _, err := certposture.ParseCAs([]string{pem.ValueString()}); err != nil {
+			diags.AddAttributeError(caPath.AtListIndex(i), "Invalid CA certificate", fmt.Sprintf("ca_certificates[%d] does not hold a PEM encoded certificate.", i))
+		}
+	}
+	return diags
 }
 
 func (r *PostureCheck) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

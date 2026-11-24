@@ -19,6 +19,7 @@ package provider
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -95,6 +96,19 @@ func Test_PostureCheck_DataSource(t *testing.T) {
 		`EG`, `Cairo`, `allow`, `15.160.0.0/16`, `deny`, `/root`, `C:\\process.exe`, `/macpath`)
 	dsCase(t, cfg+dataSourceByID("posture_check", rName),
 		samePair("posture_check", rName, "name", "description"))
+}
+
+func Test_PostureCheck_DataSource_CertificateCheck(t *testing.T) {
+	testE2E(t)
+	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	// The resource keeps the configured order and the data source sorts, so
+	// configure the CAs sorted for the pairs to line up.
+	cas := []string{testCAPEM(t, "data source CA 1"), testCAPEM(t, "data source CA 2")}
+	slices.Sort(cas)
+	cfg := testPostureCheckCertificateResource(rName, cas...)
+	dsCase(t, cfg+dataSourceByID("posture_check", rName),
+		samePair("posture_check", rName, "name", "certificate_check.ca_certificates.#",
+			"certificate_check.ca_certificates.0", "certificate_check.ca_certificates.1"))
 }
 
 func Test_Route_DataSource(t *testing.T) {
