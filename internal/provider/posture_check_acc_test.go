@@ -210,7 +210,7 @@ func testPostureCheckResource(rName, desc, nbVersion, andVersion, iosVersion, ma
 }
 
 // Test_PostureCheck_CertificateCheck walks the block through its lifecycle next to
-// another check type: create, add and reorder CAs, import, and remove the block.
+// another check type: create, import, add and reorder CAs, and remove the block.
 func Test_PostureCheck_CertificateCheck(t *testing.T) {
 	testE2E(t)
 	rName := "pc" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
@@ -234,6 +234,13 @@ func Test_PostureCheck_CertificateCheck(t *testing.T) {
 				),
 			},
 			{
+				// Import before the reorder: an import has no configured order and
+				// sorts, which Test_ListOrder_PostureCheck covers.
+				ResourceName:      address,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
 				// B first: the configured order must survive the read.
 				Config:           testPostureCheckCertificateResource(rName, caB, caA),
 				ConfigPlanChecks: updatesInPlace(address),
@@ -244,11 +251,6 @@ func Test_PostureCheck_CertificateCheck(t *testing.T) {
 					resource.TestCheckResourceAttr(address, "certificate_check.ca_certificates.1", caA),
 					testPostureCheckServerCAs(address, caA, caB),
 				),
-			},
-			{
-				ResourceName:      address,
-				ImportState:       true,
-				ImportStateVerify: true,
 			},
 			{
 				Config:           testPostureCheckCertificateResource(rName),
