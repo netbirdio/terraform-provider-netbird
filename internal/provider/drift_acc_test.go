@@ -35,12 +35,16 @@ import (
 // The mutation runs in PreConfig, which is called after the previous step and
 // before this one is planned, so the refresh that opens the step is the first
 // thing to see it.
-func driftCase(t *testing.T, address, config string, mutate func(id string) error, back ...resource.TestCheckFunc) {
+//
+// gone builds the destroy check from the recorded ID, so each case asks the
+// server whether its own kind of object is still there once the test ends.
+func driftCase(t *testing.T, address, config string, gone func(id *string) func(*terraform.State) error, mutate func(id string) error, back ...resource.TestCheckFunc) {
 	t.Helper()
 	var id string
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testEnsureManagementRunning(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             gone(&id),
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -67,6 +71,7 @@ func Test_Drift_Group(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	driftCase(t, "netbird_group."+rName, testGroupResource(rName, `[]`),
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Groups.Get, id) },
 		func(id string) error {
 			_, err := testClient().Groups.Update(context.Background(), id, api.GroupRequest{
 				Name: rName + "-changed-elsewhere", Peers: &[]string{},
@@ -81,6 +86,7 @@ func Test_Drift_Network(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	driftCase(t, "netbird_network."+rName, testNetworkResource(rName, `Test`),
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Networks.Get, id) },
 		func(id string) error {
 			desc := "changed elsewhere"
 			_, err := testClient().Networks.Update(context.Background(), id, api.NetworkRequest{
@@ -102,6 +108,7 @@ func Test_Drift_DNSZone(t *testing.T) {
   distribution_groups = [%[2]q]
 }`, rName, e2eGroupNotAllID())
 	driftCase(t, "netbird_dns_zone."+rName, cfg,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().DNSZones.GetZone, id) },
 		func(id string) error {
 			off := false
 			zone, err := testClient().DNSZones.GetZone(context.Background(), id)
@@ -123,6 +130,9 @@ func Test_Drift_NameserverGroup(t *testing.T) {
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	cfg := testNameserverGroupResource(rName, `1.1.1.1`, `53`, fmt.Sprintf("[%q]", e2eGroupAllID()))
 	driftCase(t, "netbird_nameserver_group."+rName, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testClient().DNS.GetNameserverGroup, id)
+		},
 		func(id string) error {
 			// Everything except the flag under test is carried over: the server
 			// refuses a nameserver group that is neither primary nor scoped to a
@@ -150,6 +160,7 @@ func Test_Drift_Route(t *testing.T) {
 	cfg := testRouteResource(rName, e2eGroupAllID(), `null`, `desc`, `null`, `["example.com"]`,
 		fmt.Sprintf("[%q]", e2eGroupNotAllID()), `null`)
 	driftCase(t, "netbird_route."+rName, cfg,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Routes.Get, id) },
 		func(id string) error {
 			route, err := testClient().Routes.Get(context.Background(), id)
 			if err != nil {
@@ -186,6 +197,7 @@ func Test_Drift_SetupKey(t *testing.T) {
   auto_groups    = [%[2]q]
 }`, rName, e2eGroupNotAllID())
 	driftCase(t, "netbird_setup_key."+rName, cfg,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().SetupKeys.Get, id) },
 		func(id string) error {
 			_, err := testClient().SetupKeys.Update(context.Background(), id, api.SetupKeyRequest{
 				AutoGroups: []string{}, Revoked: false,
@@ -202,6 +214,9 @@ func Test_Drift_User(t *testing.T) {
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	cfg := testUserResource(rName, fmt.Sprintf("[%q]", e2eGroupNotAllID()), `false`, `user`)
 	driftCase(t, "netbird_user."+rName, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckAbsentFromList(testClient().Users.List, func(u api.User) string { return u.Id }, id)
+		},
 		func(id string) error {
 			_, err := testClient().Users.Update(context.Background(), id, api.UserRequest{
 				Role: "admin", AutoGroups: []string{e2eGroupNotAllID()}, IsBlocked: false,
@@ -218,6 +233,7 @@ func Test_Drift_Policy(t *testing.T) {
 	cfg := testPolicyResourceGroups(rName, rName, "desc", "accept", "tcp",
 		e2eGroupAllID(), e2eGroupNotAllID(), "443")
 	driftCase(t, "netbird_policy."+rName, cfg,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Policies.Get, id) },
 		func(id string) error {
 			p, err := testClient().Policies.Get(context.Background(), id)
 			if err != nil {
@@ -264,6 +280,7 @@ func Test_Drift_Peer(t *testing.T) {
 	peerID := testPeerID(t, "peer6")
 	cfg := testPeerResource(rName, peerID, rName)
 	driftCase(t, "netbird_peer."+rName, cfg,
+		func(id *string) func(*terraform.State) error { return testCheckGone(testClient().Peers.Get, id) },
 		func(id string) error {
 			p, err := testClient().Peers.Get(context.Background(), id)
 			if err != nil {
@@ -286,6 +303,11 @@ func Test_Drift_NetworkResource(t *testing.T) {
 	cfg := testNetworkResourceResource(rName, netID, `example.com`,
 		fmt.Sprintf("[%q]", e2eGroupNotAllID()), rName)
 	driftCase(t, "netbird_network_resource."+rName, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(func(ctx context.Context, id string) (*api.NetworkResource, error) {
+				return testClient().Networks.Resources(netID).Get(ctx, id)
+			}, id)
+		},
 		func(id string) error {
 			desc := "changed elsewhere"
 			_, err := testClient().Networks.Resources(netID).Update(context.Background(), id,
@@ -404,6 +426,11 @@ func Test_Drift_NetworkRouter(t *testing.T) {
   metric      = 9999
 }`, rName, netID, e2eGroupNotAllID())
 	driftCase(t, address, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(func(ctx context.Context, id string) (*api.NetworkRouter, error) {
+				return testClient().Networks.Routers(netID).Get(ctx, id)
+			}, id)
+		},
 		func(id string) error {
 			groups := []string{e2eGroupNotAllID()}
 			_, err := testClient().Networks.Routers(netID).Update(context.Background(), id,
@@ -430,6 +457,9 @@ func Test_Drift_PostureCheck(t *testing.T) {
   }
 }`, rName)
 	driftCase(t, address, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testClient().PostureChecks.Get, id)
+		},
 		func(id string) error {
 			check, err := testClient().PostureChecks.Get(context.Background(), id)
 			if err != nil {
@@ -451,6 +481,9 @@ func Test_Drift_IdentityProvider(t *testing.T) {
 	cfg := testIdentityProviderResource(rName, rName, "oidc", "client-id", "client-secret",
 		"https://oauth.id.jumpcloud.com/")
 	driftCase(t, address, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testClient().IdentityProviders.Get, id)
+		},
 		func(id string) error {
 			// The issuer stays as it is: the server checks it can be reached
 			// before accepting the change, so drifting it would test the network
@@ -475,6 +508,9 @@ func Test_Drift_AgentNetworkProvider(t *testing.T) {
 	// can drift, and this resource's helper does not set enabled.
 	cfg := testAgentNetworkProviderResource(rName, rName, `{ "x-portkey-config" = "pc-drift" }`, "false")
 	driftCase(t, address, cfg,
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testAgentNetworkClient().GetProvider, id)
+		},
 		func(id string) error {
 			// The upstream stays as configured: moving it makes the server check
 			// the credential again, which is not what this case is about.
@@ -496,6 +532,9 @@ func Test_Drift_AgentNetworkGuardrail(t *testing.T) {
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	address := "netbird_agent_network_guardrail." + rName
 	driftCase(t, address, testAgentNetworkGuardrailResource(rName),
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testAgentNetworkClient().GetGuardrail, id)
+		},
 		func(id string) error {
 			// The checks are read back and carried through unchanged, since the
 			// request replaces them wholesale and the case is about the name and
@@ -522,6 +561,9 @@ func Test_Drift_AgentNetworkPolicy(t *testing.T) {
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	address := "netbird_agent_network_policy." + rName
 	driftCase(t, address, testAgentNetworkPolicyResource(rName),
+		func(id *string) func(*terraform.State) error {
+			return testCheckGone(testAgentNetworkClient().GetPolicy, id)
+		},
 		func(id string) error {
 			// A policy points at a provider and a guardrail, and the update
 			// replaces the whole object, so both have to be carried through from
