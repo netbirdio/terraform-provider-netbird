@@ -34,7 +34,7 @@ data "netbird_posture_check" "example" {
 
 ### Read-Only
 
-- `certificate_check` (Attributes) Requires the peer to hold a certificate that chains to one of the given CA certificates. (see [below for nested schema](#nestedatt--certificate_check))
+- `certificate_check` (Attributes) Requires the peer to hold a certificate that chains to one of the given CA certificates. Not supported on mobile devices (iOS and Android), which always fail this check. (see [below for nested schema](#nestedatt--certificate_check))
 - `description` (String) PostureCheck description
 - `geo_location_check` (Attributes) (see [below for nested schema](#nestedatt--geo_location_check))
 - `netbird_version_check` (Attributes) (see [below for nested schema](#nestedatt--netbird_version_check))
@@ -47,7 +47,7 @@ data "netbird_posture_check" "example" {
 
 Read-Only:
 
-- `ca_certificates` (List of String) PEM encoded CA certificates the peer's certificate must chain to.
+- `ca_certificates` (List of String) PEM encoded CA certificates the peer's certificate must chain to. Each entry may hold one or more certificates.
 
 
 <a id="nestedatt--geo_location_check"></a>
