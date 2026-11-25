@@ -106,9 +106,11 @@ func Test_PostureCheck_DataSource_CertificateCheck(t *testing.T) {
 	cas := []string{testCAPEM(t, "data source CA 1"), testCAPEM(t, "data source CA 2")}
 	slices.Sort(cas)
 	cfg := testPostureCheckCertificateResource(rName, cas...)
-	dsCase(t, cfg+dataSourceByID("posture_check", rName),
+	dsCase(t, cfg+dataSourceByID("posture_check", rName), resource.ComposeAggregateTestCheckFunc(
 		samePair("posture_check", rName, "name", "certificate_check.ca_certificates.#",
-			"certificate_check.ca_certificates.0", "certificate_check.ca_certificates.1"))
+			"certificate_check.ca_certificates.0", "certificate_check.ca_certificates.1"),
+		testPostureCheckServerCAs("netbird_posture_check."+rName, cas...),
+	))
 }
 
 func Test_Route_DataSource(t *testing.T) {

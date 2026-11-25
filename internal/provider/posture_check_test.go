@@ -463,6 +463,12 @@ func Test_validateCertificateCheck(t *testing.T) {
 			errorText: "at least one entry",
 		},
 		{
+			name:      "null entry",
+			value:     list(types.StringValue(ca), types.StringNull()),
+			errorPath: path.Root("certificate_check").AtName("ca_certificates").AtListIndex(1),
+			errorText: "ca_certificates[1]",
+		},
+		{
 			name:      "not PEM",
 			value:     list(types.StringValue(ca), types.StringValue("not a certificate")),
 			errorPath: path.Root("certificate_check").AtName("ca_certificates").AtListIndex(1),

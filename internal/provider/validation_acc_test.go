@@ -437,6 +437,18 @@ resource "netbird_posture_check" "%[1]s" {
 }`, rName),
 		},
 		{
+			name: "posture_check certificate_check with a null entry",
+			want: regexp.MustCompile(`(?s)Missing CA certificate`),
+			config: fmt.Sprintf(`
+resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {
+    ca_certificates = [null]
+  }
+}`, rName),
+		},
+		{
 			name: "posture_check certificate_check with an empty list",
 			want: wrongSize,
 			config: fmt.Sprintf(`

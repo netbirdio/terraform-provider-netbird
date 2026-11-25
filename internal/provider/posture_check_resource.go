@@ -601,8 +601,8 @@ func postureCheckTerraformToAPI(ctx context.Context, data PostureCheckModel) (ap
 }
 
 // ValidateConfig applies the server's certificate_check rules at plan time: the
-// block needs at least one CA, and every entry must hold a PEM certificate.
-// Unknown values are skipped, since a CA may come from another resource.
+// block needs at least one CA, and every entry must be a PEM certificate, not
+// null. Unknown values are skipped, since a CA may come from another resource.
 func (r *PostureCheck) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var certificateCheck types.Object
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("certificate_check"), &certificateCheck)...)
@@ -628,7 +628,11 @@ func validateCertificateCheck(certificateCheck types.Object) diag.Diagnostics {
 	}
 	for i, v := range caCertificates.Elements() {
 		pem, ok := v.(types.String)
-		if !ok || pem.IsNull() || pem.IsUnknown() {
+		if !ok || pem.IsUnknown() {
+			continue
+		}
+		if pem.IsNull() {
+			diags.AddAttributeError(caPath.AtListIndex(i), "Missing CA certificate", fmt.Sprintf("ca_certificates[%d] is null.", i))
 			continue
 		}
 		if _, err := certposture.ParseCAs([]string{pem.ValueString()}); err != nil {
