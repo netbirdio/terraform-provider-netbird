@@ -34,6 +34,10 @@ resource "netbird_posture_check" "example" {
     action = "allow"
   }
 
+  certificate_check {
+    ca_certificates = [file("device-ca.pem")]
+  }
+
   process_check {
     linux_path = "/some/path/in/linux"
     mac_path   = "/some/path/in/mac"

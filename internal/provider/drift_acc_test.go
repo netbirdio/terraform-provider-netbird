@@ -444,6 +444,38 @@ func Test_Drift_PostureCheck(t *testing.T) {
 	)
 }
 
+// A CA swapped in the dashboard is the change this check exists to catch: it
+// decides which devices reach the routes behind it.
+func Test_Drift_PostureCheckCertificate(t *testing.T) {
+	testE2E(t)
+	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
+	address := "netbird_posture_check." + rName
+	configured, swapped := testCAPEM(t, "configured CA"), testCAPEM(t, "swapped CA")
+	cfg := fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {
+    ca_certificates = [%[2]q]
+  }
+}`, rName, configured)
+	driftCase(t, address, cfg,
+		func(id string) error {
+			check, err := testClient().PostureChecks.Get(context.Background(), id)
+			if err != nil {
+				return err
+			}
+			check.Checks.CertificateCheck = &api.CertificateCheck{CaCertificates: []string{swapped}}
+			_, err = testClient().PostureChecks.Update(context.Background(), id, api.PostureCheckUpdate{
+				Name: check.Name, Checks: &check.Checks,
+			})
+			return err
+		},
+		resource.TestCheckResourceAttr(address, "certificate_check.ca_certificates.#", "1"),
+		resource.TestCheckResourceAttr(address, "certificate_check.ca_certificates.0", configured),
+		testPostureCheckServerCAs(address, configured),
+	)
+}
+
 func Test_Drift_IdentityProvider(t *testing.T) {
 	testE2E(t)
 	rName := "d" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)

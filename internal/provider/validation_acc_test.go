@@ -413,6 +413,54 @@ resource "netbird_token" "%[1]s" {
 }`, rName, mustE2E().UserID),
 		},
 		{
+			// The server rejects an entry that holds no PEM certificate; the
+			// provider applies the same parser at plan time.
+			name: "posture_check certificate_check entry that is not PEM",
+			want: regexp.MustCompile(`(?s)Invalid CA certificate`),
+			config: fmt.Sprintf(`
+resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {
+    ca_certificates = ["not a certificate"]
+  }
+}`, rName),
+		},
+		{
+			name: "posture_check certificate_check without ca_certificates",
+			want: regexp.MustCompile(`(?s)Missing CA certificates`),
+			config: fmt.Sprintf(`
+resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {}
+}`, rName),
+		},
+		{
+			name: "posture_check certificate_check with a null entry",
+			want: regexp.MustCompile(`(?s)Missing CA certificate`),
+			config: fmt.Sprintf(`
+resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {
+    ca_certificates = [null]
+  }
+}`, rName),
+		},
+		{
+			name: "posture_check certificate_check with an empty list",
+			want: wrongSize,
+			config: fmt.Sprintf(`
+resource "netbird_posture_check" "%[1]s" {
+  name = "%[1]s"
+
+  certificate_check {
+    ca_certificates = []
+  }
+}`, rName),
+		},
+		{
 			// Not a validator but the same contract: the combination cannot be
 			// satisfied, so it is refused before the apply rather than after.
 			name: "one-off setup key with a usage limit it cannot honour",

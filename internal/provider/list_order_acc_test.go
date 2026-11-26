@@ -432,11 +432,17 @@ data "netbird_agent_network_guardrail" "%[1]s" {
 }
 
 // Test_ListOrder_PostureCheck covers lists of objects: geo locations nested in a block,
-// network ranges nested in a block, and the process_check blocks themselves.
+// network ranges and CA certificates nested in a block, and the process_check blocks
+// themselves.
 func Test_ListOrder_PostureCheck(t *testing.T) {
 	testE2E(t)
 	rName := "lo" + acctest.RandStringFromCharSet(10, acctest.CharSetAlpha)
 	address := "netbird_posture_check." + rName
+	// Generated CAs have no predictable order, so sort them and configure the
+	// larger one first, which is the opposite of what a sorted read returns.
+	cas := []string{testCAPEM(t, "list order CA 1"), testCAPEM(t, "list order CA 2")}
+	slices.Sort(cas)
+	caFirst, caSecond := cas[1], cas[0]
 
 	cfg := fmt.Sprintf(`resource "netbird_posture_check" "%[1]s" {
   name        = "%[1]s"
@@ -455,6 +461,10 @@ func Test_ListOrder_PostureCheck(t *testing.T) {
     action = "deny"
   }
 
+  certificate_check {
+    ca_certificates = [%[2]q, %[3]q]
+  }
+
   process_check {
     linux_path = "/usr/bin/zsh"
   }
@@ -463,7 +473,7 @@ func Test_ListOrder_PostureCheck(t *testing.T) {
     linux_path = "/usr/bin/bash"
   }
 }
-`, rName)
+`, rName, caFirst, caSecond)
 	ds := fmt.Sprintf(`
 data "netbird_posture_check" "%[1]s" {
   id = netbird_posture_check.%[1]s.id
@@ -483,6 +493,7 @@ data "netbird_posture_check" "%[1]s" {
 			slices.Reverse(checks.GeoLocationCheck.Locations)
 			slices.Reverse(checks.PeerNetworkRangeCheck.Ranges)
 			slices.Reverse(checks.ProcessCheck.Processes)
+			slices.Reverse(checks.CertificateCheck.CaCertificates)
 			_, err = testClient().PostureChecks.Update(context.Background(), id, api.PostureCheckUpdate{
 				Name: pc.Name, Description: valOr(pc.Description, ""), Checks: &checks,
 			})
@@ -492,16 +503,19 @@ data "netbird_posture_check" "%[1]s" {
 			resource.TestCheckResourceAttr(address, "geo_location_check.locations.0.city_name", "Cairo"),
 			resource.TestCheckResourceAttr(address, "peer_network_range_check.ranges.0", "10.2.0.0/16"),
 			resource.TestCheckResourceAttr(address, "process_check.0.linux_path", "/usr/bin/zsh"),
+			resource.TestCheckResourceAttr(address, "certificate_check.ca_certificates.0", caFirst),
 		},
 		[]resource.TestCheckFunc{
 			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "geo_location_check.locations.0.city_name", "Berlin"),
 			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "peer_network_range_check.ranges.0", "10.1.0.0/16"),
 			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "process_check.0.linux_path", "/usr/bin/bash"),
+			resource.TestCheckResourceAttr("data.netbird_posture_check."+rName, "certificate_check.ca_certificates.0", caSecond),
 		},
 		map[string]string{
 			"geo_location_check.locations.0.city_name": "Berlin",
 			"peer_network_range_check.ranges.0":        "10.1.0.0/16",
 			"process_check.0.linux_path":               "/usr/bin/bash",
+			"certificate_check.ca_certificates.0":      caSecond,
 		},
 	)
 }
