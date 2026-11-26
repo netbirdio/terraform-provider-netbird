@@ -49,6 +49,10 @@ resource "netbird_posture_check" "example" {
     action = "allow"
   }
 
+  certificate_check {
+    ca_certificates = [file("device-ca.pem")]
+  }
+
   process_check {
     linux_path = "/some/path/in/linux"
     mac_path   = "/some/path/in/mac"
@@ -70,6 +74,7 @@ resource "netbird_posture_check" "example" {
 
 ### Optional
 
+- `certificate_check` (Block, Optional) Requires the peer to hold a certificate that chains to one of the given CA certificates. Not supported on mobile devices (iOS and Android), which always fail this check. (see [below for nested schema](#nestedblock--certificate_check))
 - `description` (String) PostureCheck description
 - `geo_location_check` (Block, Optional) (see [below for nested schema](#nestedblock--geo_location_check))
 - `netbird_version_check` (Block, Optional) (see [below for nested schema](#nestedblock--netbird_version_check))
@@ -80,6 +85,14 @@ resource "netbird_posture_check" "example" {
 ### Read-Only
 
 - `id` (String) PostureCheck ID
+
+<a id="nestedblock--certificate_check"></a>
+### Nested Schema for `certificate_check`
+
+Optional:
+
+- `ca_certificates` (List of String) PEM encoded CA certificates the peer's certificate must chain to. Each entry may hold one or more certificates.
+
 
 <a id="nestedblock--geo_location_check"></a>
 ### Nested Schema for `geo_location_check`
